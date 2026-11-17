@@ -1,0 +1,202 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-open-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
+
+  /* Official IEEE EMBS Brand Tokens (Visual Identity Guidelines) */
+  --color-embs-purple: var(--embs-purple);
+  --color-embs-purple-deep: var(--embs-purple-deep);
+  --color-embs-purple-tint: var(--embs-purple-tint);
+  --color-ieee-blue: var(--ieee-blue);
+  --color-ieee-navy: var(--ieee-navy);
+  --color-ieee-blue-tint: var(--ieee-blue-tint);
+  --color-embs-teal: var(--embs-teal);
+  --color-embs-teal-deep: var(--embs-teal-deep);
+  --color-embs-green: var(--embs-green);
+  --color-embs-cyan: var(--embs-cyan);
+  --color-cubes-gold: var(--cubes-gold);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  /* IEEE EMBS Official Palette */
+  --embs-purple: #772583;
+  --embs-purple-deep: #5a1b63;
+  --embs-purple-tint: #f5edf7;
+  --ieee-blue: #00629b;
+  --ieee-navy: #002855;
+  --ieee-blue-tint: #ebf3f8;
+  --embs-teal: #009ca6;
+  --embs-teal-deep: #007377;
+  --embs-green: #78be20;
+  --embs-cyan: #00a3e0;
+  --cubes-gold: #ffc627;
+
+  /* Core UI Surfaces */
+  --background: #f8f9fb;
+  --foreground: #0f1c2e;
+  --card: #ffffff;
+  --card-foreground: #0f1c2e;
+  --popover: #ffffff;
+  --popover-foreground: #0f1c2e;
+
+  --primary: #772583;
+  --primary-foreground: #ffffff;
+
+  --secondary: #ebf3f8;
+  --secondary-foreground: #002855;
+
+  --muted: #f0f3f7;
+  --muted-foreground: #4c5a6d;
+
+  --accent: #f5edf7;
+  --accent-foreground: #5a1b63;
+
+  --destructive: #ba0c2f;
+  --border: #dde3ec;
+  --input: #cfd8e5;
+  --ring: #772583;
+
+  /* Data Visualization Palette */
+  --chart-1: #772583;
+  --chart-2: #00629b;
+  --chart-3: #009ca6;
+  --chart-4: #007377;
+  --chart-5: #78be20;
+
+  --radius: 0.5rem;
+
+  /* Portal Sidebar */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f1c2e;
+  --sidebar-primary: #772583;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f5edf7;
+  --sidebar-accent-foreground: #5a1b63;
+  --sidebar-border: #dde3ec;
+  --sidebar-ring: #772583;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground overflow-x-clip;
+    caret-color: var(--embs-purple);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background-color: #e5d2e5;
+    color: #002855;
+  }
+
+  a {
+    text-underline-offset: 0.2em;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes embs-bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes embs-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-5px);
+  }
+  45% {
+    transform: translateX(4px);
+  }
+  70% {
+    transform: translateX(-3px);
+  }
+  88% {
+    transform: translateX(2px);
+  }
+}
+
+.embs-bar-fill {
+  transform-origin: left center;
+  animation: embs-bar-grow 450ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.embs-shake {
+  animation: embs-shake 260ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .embs-bar-fill,
+  .embs-shake {
+    animation: none;
+    transform: none;
+  }
+}
