@@ -1,0 +1,577 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Plus,
+  QrCode,
+  Radio,
+  StopCircle,
+  X,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import type { MembershipRole } from "@/lib/auth-helpers";
+import {
+  createSessionAction,
+  toggleSessionCheckinAction,
+  type CreateSessionInput,
+} from "@/app/hr/attendance/actions";
+
+export interface SessionItem {
+  id: string;
+  title: string;
+  committeeId?: string | null;
+  committeeName: string;
+  startsAt: Date;
+  checkinOpen: boolean;
+  checkinCode: string | null;
+  checkinExpiresAt?: Date | null;
+  basePoints: number;
+  punctualityBonus: number;
+  attendanceCount: number;
+}
+
+export interface CommitteeRef {
+  id: string;
+  name: string;
+}
+
+interface AttendanceManagerViewProps {
+  sessions: SessionItem[];
+  currentUserRole?: MembershipRole;
+  currentUserCommitteeId?: string | null;
+  currentUserCommitteeName?: string | null;
+  committees?: CommitteeRef[];
+  onCreateSession?: (input: CreateSessionInput) => Promise<unknown>;
+  onToggleCheckin?: (
+    sessionId: string,
+    open: boolean,
+    windowMinutes?: number
+  ) => Promise<unknown>;
+}
+
+export function AttendanceManagerView({
+  sessions,
+  currentUserRole = "hr_admin",
+  currentUserCommitteeId = null,
+  currentUserCommitteeName = null,
+  committees = [],
+  onCreateSession,
+  onToggleCheckin,
+}: AttendanceManagerViewProps) {
+  const [liveCheckinSession, setLiveCheckinSession] =
+    useState<SessionItem | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Form state
+  const [newTitle, setNewTitle] = useState("");
+  const [newStartsAt, setNewStartsAt] = useState(() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  });
+  const [newCommitteeId, setNewCommitteeId] = useState<string>(
+    currentUserCommitteeId ?? ""
+  );
+  const [newWindowMinutes, setNewWindowMinutes] = useState(30);
+  const [newPunctualityCutoff, setNewPunctualityCutoff] = useState(15);
+  const [newBasePoints, setNewBasePoints] = useState(10);
+  const [newPunctualityBonus, setNewPunctualityBonus] = useState(5);
+  const [newOpenImmediately, setNewOpenImmediately] = useState(true);
+
+  const canCreate =
+    currentUserRole === "master_admin" ||
+    currentUserRole === "hr_admin" ||
+    currentUserRole === "committee_head";
+
+  const handleCreateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle.trim()) return;
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    const input: CreateSessionInput = {
+      title: newTitle.trim(),
+      startsAt: new Date(newStartsAt).toISOString(),
+      committeeId:
+        currentUserRole === "committee_head"
+          ? currentUserCommitteeId
+          : newCommitteeId || null,
+      checkinWindowMinutes: newWindowMinutes,
+      punctualityCutoffMinutes: newPunctualityCutoff,
+      basePoints: newBasePoints,
+      punctualityBonus: newPunctualityBonus,
+      openCheckinImmediately: newOpenImmediately,
+    };
+
+    try {
+      if (onCreateSession) {
+        await onCreateSession(input);
+      } else {
+        const res = await createSessionAction(
+          input,
+          currentUserRole,
+          currentUserCommitteeId
+        );
+        if (!res.ok) {
+          setErrorMessage(res.error || "Failed to create session");
+          return;
+        }
+      }
+
+      setShowCreateModal(false);
+      setNewTitle("");
+    } catch (err: unknown) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Error creating session"
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleCheckin = async (
+    sessionId: string,
+    open: boolean,
+    windowMinutes: number = 30
+  ) => {
+    try {
+      if (onToggleCheckin) {
+        await onToggleCheckin(sessionId, open, windowMinutes);
+      } else {
+        await toggleSessionCheckinAction(
+          sessionId,
+          open,
+          windowMinutes,
+          currentUserRole,
+          currentUserCommitteeId
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#002855] sm:text-3xl">
+            Sessions & Live QR Attendance
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Project live QR codes for meetings, track punctuality bonuses, and log attendance.
+          </p>
+        </div>
+
+        {canCreate && (
+          <Button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="h-10 gap-2 bg-[#772583] px-4 text-xs font-bold text-white shadow-xs hover:bg-[#5a1b63]"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Create Session</span>
+          </Button>
+        )}
+      </div>
+
+      {/* Create Session Modal */}
+      {showCreateModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+        >
+          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-white p-6 shadow-2xl animate-in zoom-in-95">
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(false)}
+              className="absolute right-4 top-4 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+              <span className="sr-only">Close</span>
+            </button>
+
+            <div className="border-b border-border/70 pb-3">
+              <h2 className="font-heading text-xl font-extrabold text-[#002855]">
+                Create New Session
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Set up a session with a designated live check-in window and points.
+              </p>
+            </div>
+
+            {errorMessage && (
+              <div className="mt-3 rounded bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">
+                {errorMessage}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateSubmit} className="mt-4 space-y-4">
+              <div>
+                <label
+                  htmlFor="session-title-input"
+                  className="block font-heading text-xs font-bold text-[#002855]"
+                >
+                  Session Title
+                </label>
+                <Input
+                  id="session-title-input"
+                  type="text"
+                  required
+                  placeholder="e.g. AI & ML Workshop: Neural Networks"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="mt-1 h-10 text-sm"
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="session-starts-input"
+                    className="block font-heading text-xs font-bold text-[#002855]"
+                  >
+                    Date & Time
+                  </label>
+                  <Input
+                    id="session-starts-input"
+                    type="datetime-local"
+                    required
+                    value={newStartsAt}
+                    onChange={(e) => setNewStartsAt(e.target.value)}
+                    className="mt-1 h-10 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="session-committee-select"
+                    className="block font-heading text-xs font-bold text-[#002855]"
+                  >
+                    Committee
+                  </label>
+                  {currentUserRole === "committee_head" ? (
+                    <Input
+                      id="session-committee-select"
+                      disabled
+                      value={currentUserCommitteeName ?? "My Committee"}
+                      className="mt-1 h-10 bg-muted text-xs font-semibold text-[#002855]"
+                    />
+                  ) : (
+                    <select
+                      id="session-committee-select"
+                      value={newCommitteeId}
+                      onChange={(e) => setNewCommitteeId(e.target.value)}
+                      className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                    >
+                      <option value="">Branch-wide (All Members)</option>
+                      {committees.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <label
+                    htmlFor="session-window-select"
+                    className="block font-heading text-xs font-bold text-[#002855]"
+                  >
+                    Check-in Window
+                  </label>
+                  <select
+                    id="session-window-select"
+                    value={newWindowMinutes}
+                    onChange={(e) =>
+                      setNewWindowMinutes(parseInt(e.target.value, 10))
+                    }
+                    className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                  >
+                    <option value={15}>15 Minutes</option>
+                    <option value={30}>30 Minutes</option>
+                    <option value={45}>45 Minutes</option>
+                    <option value={60}>60 Minutes</option>
+                    <option value={120}>2 Hours</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="session-punctual-input"
+                    className="block font-heading text-xs font-bold text-[#002855]"
+                  >
+                    Punctual Cutoff (min)
+                  </label>
+                  <Input
+                    id="session-punctual-input"
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={newPunctualityCutoff}
+                    onChange={(e) =>
+                      setNewPunctualityCutoff(
+                        parseInt(e.target.value, 10) || 15
+                      )
+                    }
+                    className="mt-1 h-10 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="session-points-input"
+                    className="block font-heading text-xs font-bold text-[#002855]"
+                  >
+                    Base + Bonus
+                  </label>
+                  <div className="mt-1 flex items-center gap-1">
+                    <Input
+                      id="session-points-input"
+                      type="number"
+                      min={0}
+                      value={newBasePoints}
+                      onChange={(e) =>
+                        setNewBasePoints(parseInt(e.target.value, 10) || 10)
+                      }
+                      className="h-10 text-xs"
+                      title="Base points"
+                    />
+                    <span className="text-xs font-bold text-muted-foreground">
+                      +
+                    </span>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={newPunctualityBonus}
+                      onChange={(e) =>
+                        setNewPunctualityBonus(
+                          parseInt(e.target.value, 10) || 5
+                        )
+                      }
+                      className="h-10 text-xs"
+                      title="Punctuality bonus points"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="session-immediate-checkin"
+                  checked={newOpenImmediately}
+                  onChange={(e) => setNewOpenImmediately(e.target.checked)}
+                  className="h-4 w-4 rounded border-border text-[#772583] focus:ring-[#772583]"
+                />
+                <label
+                  htmlFor="session-immediate-checkin"
+                  className="text-xs font-medium text-foreground"
+                >
+                  Open check-in immediately upon creation
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-border/70 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowCreateModal(false)}
+                  className="h-10 px-4 text-xs font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || !newTitle.trim()}
+                  className="h-10 gap-2 bg-[#772583] px-5 text-xs font-bold text-white hover:bg-[#5a1b63]"
+                >
+                  <span>Save Session</span>
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Sessions Grid */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {sessions.map((sess) => {
+          const canManageThis =
+            currentUserRole === "master_admin" ||
+            currentUserRole === "hr_admin" ||
+            (currentUserRole === "committee_head" &&
+              sess.committeeId === currentUserCommitteeId);
+
+          return (
+            <Card key={sess.id} className="border-border bg-white shadow-xs">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <Badge
+                    className={
+                      sess.checkinOpen
+                        ? "bg-[#78be20] text-white font-semibold text-[11px]"
+                        : "bg-muted text-muted-foreground font-semibold text-[11px]"
+                    }
+                  >
+                    {sess.checkinOpen ? "Check-in Open" : "Closed"}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {sess.startsAt.toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </span>
+                </div>
+                <CardTitle className="mt-2 font-heading text-base font-bold text-[#002855]">
+                  {sess.title}
+                </CardTitle>
+                <p className="text-xs font-semibold text-[#00629b]">
+                  {sess.committeeName}
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-2 border-y border-border/70 py-2.5 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Points:</span>
+                    <p className="font-heading font-bold text-[#002855]">
+                      {sess.basePoints} + {sess.punctualityBonus} bonus
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Attended:</span>
+                    <p className="font-heading font-bold text-[#002855]">
+                      {sess.attendanceCount} members
+                    </p>
+                  </div>
+                </div>
+
+                {sess.checkinOpen && sess.checkinCode && (
+                  <div className="flex items-center justify-between rounded-lg bg-[#002855]/5 px-3 py-1.5 text-xs">
+                    <span className="font-semibold text-muted-foreground">
+                      Code:
+                    </span>
+                    <span className="font-mono text-sm font-extrabold text-[#772583]">
+                      {sess.checkinCode}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2 pt-1">
+                  <Button
+                    type="button"
+                    onClick={() => setLiveCheckinSession(sess)}
+                    className="w-full h-10 gap-2 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
+                  >
+                    <QrCode className="h-4 w-4" aria-hidden="true" />
+                    <span>Open Live Check-In</span>
+                  </Button>
+
+                  {canManageThis && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        handleToggleCheckin(sess.id, !sess.checkinOpen, 30)
+                      }
+                      className={`h-9 text-xs font-semibold ${
+                        sess.checkinOpen
+                          ? "text-destructive hover:bg-destructive/10"
+                          : "text-[#1e6b0a] hover:bg-[#78be20]/10"
+                      }`}
+                    >
+                      {sess.checkinOpen ? (
+                        <>
+                          <StopCircle className="mr-1.5 h-3.5 w-3.5" />
+                          Close Check-In
+                        </>
+                      ) : (
+                        <>
+                          <Radio className="mr-1.5 h-3.5 w-3.5" />
+                          Open Check-In (30m)
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Full-Screen Live Check-In Projector View */}
+      {liveCheckinSession && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
+        >
+          <div className="relative flex w-full max-w-lg flex-col items-center rounded-2xl border border-border bg-white p-8 text-center shadow-2xl animate-in zoom-in-95">
+            <button
+              type="button"
+              onClick={() => setLiveCheckinSession(null)}
+              className="absolute right-4 top-4 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+              <span className="sr-only">Close check-in</span>
+            </button>
+
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f5edf7] px-3 py-1 font-heading text-xs font-bold text-[#772583]">
+              <Radio className="h-3.5 w-3.5 animate-pulse text-[#772583]" />
+              Live Check-In Active
+            </span>
+
+            <h2 className="mt-3 font-heading text-2xl font-extrabold text-[#002855]">
+              {liveCheckinSession.title}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {liveCheckinSession.committeeName} · Base{" "}
+              {liveCheckinSession.basePoints} pts +{" "}
+              {liveCheckinSession.punctualityBonus} punctuality bonus
+            </p>
+
+            {/* High-contrast QR display */}
+            <div className="mt-6 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#772583]/40 bg-[#f8f9fb] p-6">
+              <div className="flex h-48 w-48 items-center justify-center rounded-lg bg-white p-2 shadow-sm border border-border">
+                <svg
+                  viewBox="0 0 100 100"
+                  className="h-40 w-40 text-[#002855]"
+                  aria-hidden="true"
+                >
+                  <rect width="100" height="100" fill="white" />
+                  <path
+                    d="M10 10h30v30H10zm4v4h22v22H14zm4 4h14v14H18zM60 10h30v30H60zm4 4h22v22H64zm4 4h14v14H68zM10 60h30v30H10zm4 4h22v22H14zm4 4h14v14H18zm46 0h8v8h-8zm12 0h8v8h-8zm-8 12h8v8h-8zm16 8h8v8h-8zm-20 4h8v8h-8zm16-8h8v8h-8zm-8 12h8v8h-8z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </div>
+
+              <p className="mt-4 text-xs font-semibold text-foreground/85">
+                Scan QR or enter code on your portal
+              </p>
+
+              <div className="mt-2 inline-flex items-center gap-2 rounded-lg bg-[#002855] px-4 py-2 font-mono text-2xl font-extrabold tracking-widest text-white shadow-inner">
+                {liveCheckinSession.checkinCode ?? "948216"}
+              </div>
+            </div>
+
+            <p className="mt-6 text-xs text-muted-foreground">
+              Codes rotate periodically to prevent remote sharing.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

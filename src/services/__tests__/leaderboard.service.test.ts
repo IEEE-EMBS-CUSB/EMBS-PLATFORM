@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MOCK_LEADERBOARD_SNAPSHOTS } from "@/data/mock/leaderboards";
+import { MOCK_LEADERBOARD_SNAPSHOTS } from "@/db/leaderboard-snapshots";
 import {
   getCommitteeLeaderboard,
   getCommitteeLeaders,

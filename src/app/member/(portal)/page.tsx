@@ -5,6 +5,7 @@ import { ArrowRight, TrendingUp } from "lucide-react";
 import { ActivityList } from "@/components/data-display/activity-list";
 import { FeedbackList } from "@/components/data-display/feedback-list";
 import { ScoreBreakdown } from "@/components/data-display/score-breakdown";
+import { MemberEngagementCard } from "@/components/data-display/member-engagement-card";
 import { EmptyState } from "@/components/states/empty-state";
 import { PageLoadingState } from "@/components/states/loading-state";
 import { requireMemberSession } from "@/lib/portal-guards";
@@ -35,13 +36,13 @@ async function MemberDashboardContent() {
     currentMonthScore?.overallRank !== null &&
     currentMonthScore?.overallRank !== undefined
       ? `#${currentMonthScore.overallRank}`
-      : "—";
+      : "-";
 
   const committeeRankText =
     currentMonthScore?.committeeRank !== null &&
     currentMonthScore?.committeeRank !== undefined
       ? `#${currentMonthScore.committeeRank}`
-      : "—";
+      : "-";
 
   const firstName = profile.fullName.split(" ")[0];
   const rankClimb =
@@ -82,6 +83,11 @@ async function MemberDashboardContent() {
         </Link>
       </div>
 
+      {/* Real-time Middle-80% Member Engagement Progress */}
+      {dashboard.engagement && (
+        <MemberEngagementCard {...dashboard.engagement} />
+      )}
+
       {/* Single unified summary band instead of 7 separate metric boxes */}
       <section
         aria-label="Monthly standing"
@@ -93,7 +99,7 @@ async function MemberDashboardContent() {
               Monthly score
             </p>
             <p className="mt-1.5 font-heading text-2xl font-bold text-[#772583] tabular-nums">
-              {currentMonthScore ? currentMonthScore.totalScore : "—"}
+              {currentMonthScore ? currentMonthScore.totalScore : "-"}
             </p>
           </div>
 

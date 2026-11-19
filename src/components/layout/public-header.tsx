@@ -48,7 +48,7 @@ export function PublicHeaderFallback() {
         </nav>
         <div className="hidden items-center gap-3 md:flex">
           <Link
-            href="/access"
+            href="/login"
             className={cn(
               buttonVariants({ size: "sm" }),
               "h-9 gap-2 bg-white px-3.5 text-sm font-semibold text-[#5a1b63] hover:bg-[#f5edf7]"
@@ -67,11 +67,19 @@ export function PublicHeader({ session }: PublicHeaderProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const portalHref = session
-    ? session.participantType === "member"
-      ? "/member"
-      : "/attendee"
-    : "/access";
+  let portalHref = "/login";
+  if (session) {
+    if (session.participantType === "attendee") {
+      portalHref = "/attendee";
+    } else if (
+      session.membershipRole === "director" ||
+      session.membershipRole === "master_admin"
+    ) {
+      portalHref = "/hr";
+    } else {
+      portalHref = "/member";
+    }
+  }
 
   function isLinkActive(href: string) {
     if (href === "/") return pathname === "/";

@@ -16,6 +16,7 @@ import {
 import { formatDisplayDate } from "@/lib/format";
 import { requireMemberSession } from "@/lib/portal-guards";
 import { getMemberAttendance } from "@/services/member.service";
+import { LiveCheckinCard } from "@/components/member/live-checkin-card";
 import type { SessionType } from "@/types";
 
 export const metadata: Metadata = {
@@ -51,6 +52,8 @@ async function MemberAttendanceContent() {
           Attendance
         </h1>
       </div>
+
+      <LiveCheckinCard membershipId={session.participantId} />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         <MetricCard label="Attended" value={attendedCount} accent="teal" />

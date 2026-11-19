@@ -1,48 +1,45 @@
-import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { PortalShell } from "@/components/layout/portal-shell";
-import { PageLoadingState } from "@/components/states/loading-state";
 import { requireMemberSession } from "@/lib/portal-guards";
-import { getMemberProfile } from "@/services/member.service";
+import {
+  getMemberProfile,
+  getOperationalUserProfile,
+} from "@/services/member.service";
+import type { MembershipRole } from "@/lib/auth-helpers";
 
-async function MemberPortalFrame({ children }: { children: React.ReactNode }) {
+export default async function MemberPortalLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const session = await requireMemberSession();
-  const profile = await getMemberProfile(session.participantId);
+  const [profile, opProfile] = await Promise.all([
+    getMemberProfile(session.participantId),
+    getOperationalUserProfile(session.participantId),
+  ]);
 
   if (!profile) {
-    redirect("/member/access");
+    redirect("/login");
   }
+
+  // Chapter leadership roles without committee assignments (Director, Master Admin)
+  // operate exclusively through the HR & Operations console at /hr.
+  if (opProfile?.role === "director" || opProfile?.role === "master_admin") {
+    redirect("/hr");
+  }
+
+  const role: MembershipRole =
+    opProfile?.role ??
+    (profile.role === "Head" ? "committee_head" : "member");
 
   return (
     <PortalShell
       portalType="member"
       userName={profile.fullName}
       subtitle={`${profile.committee.name} · ${profile.role}`}
+      currentUserRole={role}
     >
       {children}
     </PortalShell>
-  );
-}
-
-function MemberShellFallback() {
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="h-16 w-full border-b border-[#5a1b63] bg-[#772583]" />
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        <PageLoadingState />
-      </div>
-    </div>
-  );
-}
-
-export default function MemberPortalLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <Suspense fallback={<MemberShellFallback />}>
-      <MemberPortalFrame>{children}</MemberPortalFrame>
-    </Suspense>
   );
 }

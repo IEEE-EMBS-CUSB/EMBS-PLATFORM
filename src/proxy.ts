@@ -9,8 +9,27 @@ import {
   encodeSessionToken,
   renewSessionUser,
 } from "@/services/session.service";
+import type { SessionUser } from "@/types";
 
-const ACCESS_PATHS = new Set(["/access", "/member/access", "/attendee/access"]);
+const AUTH_PAGES = new Set([
+  "/login",
+  "/access",
+  "/member/access",
+  "/attendee/access",
+]);
+
+function getLandingDestination(sessionUser: SessionUser): string {
+  if (sessionUser.participantType === "attendee") {
+    return "/attendee";
+  }
+  if (
+    sessionUser.membershipRole === "director" ||
+    sessionUser.membershipRole === "master_admin"
+  ) {
+    return "/hr";
+  }
+  return "/member";
+}
 
 function isMemberPortalPath(pathname: string): boolean {
   return (
@@ -24,6 +43,10 @@ function isAttendeePortalPath(pathname: string): boolean {
     (pathname === "/attendee" || pathname.startsWith("/attendee/")) &&
     pathname !== "/attendee/access"
   );
+}
+
+function isHrPortalPath(pathname: string): boolean {
+  return pathname === "/hr" || pathname.startsWith("/hr/");
 }
 
 export function proxy(request: NextRequest) {
@@ -49,10 +72,10 @@ export function proxy(request: NextRequest) {
     return response;
   };
 
-  if (ACCESS_PATHS.has(pathname)) {
+  // If visiting login/access page while already authenticated, redirect to portal
+  if (AUTH_PAGES.has(pathname)) {
     if (sessionUser) {
-      const destination =
-        sessionUser.participantType === "member" ? "/member" : "/attendee";
+      const destination = getLandingDestination(sessionUser);
       return attachSessionCookie(
         NextResponse.redirect(new URL(destination, request.url))
       );
@@ -60,10 +83,11 @@ export function proxy(request: NextRequest) {
     return attachSessionCookie(NextResponse.next());
   }
 
+  // Member Portal Guard
   if (isMemberPortalPath(pathname)) {
     if (!sessionUser) {
       return attachSessionCookie(
-        NextResponse.redirect(new URL("/member/access", request.url))
+        NextResponse.redirect(new URL("/login", request.url))
       );
     }
     if (sessionUser.participantType !== "member") {
@@ -71,16 +95,47 @@ export function proxy(request: NextRequest) {
         NextResponse.redirect(new URL("/attendee", request.url))
       );
     }
+    if (
+      sessionUser.membershipRole === "director" ||
+      sessionUser.membershipRole === "master_admin"
+    ) {
+      return attachSessionCookie(
+        NextResponse.redirect(new URL("/hr", request.url))
+      );
+    }
     return attachSessionCookie(NextResponse.next());
   }
 
+  // Attendee Portal Guard
   if (isAttendeePortalPath(pathname)) {
     if (!sessionUser) {
       return attachSessionCookie(
-        NextResponse.redirect(new URL("/attendee/access", request.url))
+        NextResponse.redirect(new URL("/login", request.url))
       );
     }
     if (sessionUser.participantType !== "attendee") {
+      return attachSessionCookie(
+        NextResponse.redirect(
+          new URL(getLandingDestination(sessionUser), request.url)
+        )
+      );
+    }
+    return attachSessionCookie(NextResponse.next());
+  }
+
+  // HR Portal Guard
+  if (isHrPortalPath(pathname)) {
+    if (!sessionUser) {
+      return attachSessionCookie(
+        NextResponse.redirect(new URL("/login", request.url))
+      );
+    }
+    if (sessionUser.participantType !== "member") {
+      return attachSessionCookie(
+        NextResponse.redirect(new URL("/attendee", request.url))
+      );
+    }
+    if (sessionUser.membershipRole === "member") {
       return attachSessionCookie(
         NextResponse.redirect(new URL("/member", request.url))
       );
@@ -94,9 +149,11 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     "/",
+    "/login",
     "/access",
     "/leaderboards/:path*",
     "/member/:path*",
     "/attendee/:path*",
+    "/hr/:path*",
   ],
 };

@@ -14,6 +14,7 @@ import {
   Menu,
   MessageSquare,
   MoreHorizontal,
+  Shield,
   Trophy,
   type LucideIcon,
 } from "lucide-react";
@@ -27,6 +28,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import type { MembershipRole } from "@/lib/auth-helpers";
 import { cn } from "@/lib/utils";
 import type { ParticipantType } from "@/types";
 
@@ -110,6 +112,7 @@ interface PortalShellProps {
   portalType: ParticipantType;
   userName: string;
   subtitle: string;
+  currentUserRole?: MembershipRole;
   children: ReactNode;
 }
 
@@ -117,6 +120,7 @@ export function PortalShell({
   portalType,
   userName,
   subtitle,
+  currentUserRole,
   children,
 }: PortalShellProps) {
   const pathname = usePathname();
@@ -194,6 +198,18 @@ export function PortalShell({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {currentUserRole &&
+              currentUserRole !== "member" &&
+              currentUserRole !== "attendee" && (
+                <Link
+                  href="/hr"
+                  className="hidden items-center gap-1.5 rounded-md bg-white/15 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-white/25 sm:inline-flex"
+                >
+                  <Shield className="h-3.5 w-3.5 text-[#ffc627]" aria-hidden="true" />
+                  <span>Management Console</span>
+                </Link>
+              )}
+
             <Link
               href="/leaderboards"
               className="hidden items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-white/90 transition-colors hover:bg-white/15 hover:text-white md:inline-flex"

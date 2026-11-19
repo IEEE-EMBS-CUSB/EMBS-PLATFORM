@@ -33,7 +33,7 @@ export function LogoutButton({
     } catch {
       // Fall through to access screen even if offline
     } finally {
-      navigateHard("/access");
+      navigateHard("/login");
     }
   }
 

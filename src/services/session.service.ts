@@ -1,10 +1,7 @@
-import {
-  findActiveAccessKeyVersion,
-  MOCK_ACCESS_KEYS,
-} from "@/data/mock/access-keys";
-import { MOCK_ATTENDEES } from "@/data/mock/attendees";
-import { MOCK_MEMBERS } from "@/data/mock/members";
+import * as store from "@/db/store";
+import type { MembershipRole } from "@/lib/auth-helpers";
 import type {
+  AccessKeyStatus,
   AccessKeyVerificationResult,
   ParticipantType,
   SessionUser,
@@ -12,6 +9,83 @@ import type {
 
 export const SESSION_DURATION_DAYS = 30;
 export const SESSION_DURATION_SECONDS = SESSION_DURATION_DAYS * 24 * 60 * 60;
+
+interface AccessKeyRecord {
+  accessKey: string;
+  participantId: string;
+  participantType: ParticipantType;
+  status: AccessKeyStatus;
+  keyVersion: number;
+}
+
+const STATIC_ACCESS_KEYS: readonly AccessKeyRecord[] = [
+  {
+    accessKey: "EMBS-MEM-2026-SALMA",
+    participantId: "mem-101",
+    participantType: "member",
+    status: "active",
+    keyVersion: 2,
+  },
+  {
+    accessKey: "EMBS-MEM-2026-OMAR",
+    participantId: "mem-102",
+    participantType: "member",
+    status: "active",
+    keyVersion: 1,
+  },
+  {
+    accessKey: "EMBS-MEM-2026-NOUR",
+    participantId: "mem-103",
+    participantType: "member",
+    status: "active",
+    keyVersion: 1,
+  },
+  {
+    accessKey: "EMBS-ATT-2026-MARIAM",
+    participantId: "att-201",
+    participantType: "attendee",
+    status: "active",
+    keyVersion: 1,
+  },
+  {
+    accessKey: "EMBS-ATT-2026-YOUSSEF",
+    participantId: "att-202",
+    participantType: "attendee",
+    status: "active",
+    keyVersion: 1,
+  },
+  {
+    accessKey: "EMBS-MEM-2026-REVOKED",
+    participantId: "mem-101",
+    participantType: "member",
+    status: "revoked",
+    keyVersion: 1,
+  },
+];
+
+function findActiveAccessKeyVersion(
+  participantId: string,
+  participantType: ParticipantType
+): number | null {
+  const hasLegacyRecord = STATIC_ACCESS_KEYS.some(
+    (entry) =>
+      entry.participantId === participantId &&
+      entry.participantType === participantType
+  );
+
+  if (!hasLegacyRecord) {
+    // Database-backed membership sessions default to active key version 1
+    return 1;
+  }
+
+  const match = STATIC_ACCESS_KEYS.find(
+    (entry) =>
+      entry.participantId === participantId &&
+      entry.participantType === participantType &&
+      entry.status === "active"
+  );
+  return match ? match.keyVersion : null;
+}
 
 function computeExpirationIso(from: Date): string {
   return new Date(from.getTime() + SESSION_DURATION_SECONDS * 1000).toISOString();
@@ -22,20 +96,20 @@ function resolveParticipantIdentity(
   participantType: ParticipantType
 ): { displayId: string; fullName: string } | null {
   if (participantType === "member") {
-    const member = MOCK_MEMBERS[participantId];
+    const member = store.getMemberProfile(participantId);
     return member
       ? {
-          displayId: member.profile.displayId,
-          fullName: member.profile.fullName,
+          displayId: member.displayId,
+          fullName: member.fullName,
         }
       : null;
   }
 
-  const attendee = MOCK_ATTENDEES[participantId];
+  const attendee = store.getAttendeeProfile(participantId);
   return attendee
     ? {
-        displayId: attendee.profile.displayId,
-        fullName: attendee.profile.fullName,
+        displayId: attendee.displayId,
+        fullName: attendee.fullName,
       }
     : null;
 }
@@ -47,10 +121,6 @@ function createOpaqueSessionId(): string {
   return `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/**
- * Simulates server-side access-key verification for the frontend prototype.
- * Identifies participant type automatically and never includes the raw key in the result.
- */
 export async function verifyAccessKey(
   rawAccessKey: string,
   now: Date = new Date()
@@ -65,7 +135,7 @@ export async function verifyAccessKey(
     };
   }
 
-  const record = MOCK_ACCESS_KEYS.find(
+  const record = STATIC_ACCESS_KEYS.find(
     (entry) => entry.accessKey.toUpperCase() === normalized
   );
 
@@ -120,10 +190,28 @@ export async function verifyAccessKey(
   };
 }
 
-/**
- * Encodes a prototype session payload for storage inside an HttpOnly cookie.
- * Stores opaque session metadata only — never the bearer access key.
- */
+export function createSessionForMember(member: {
+  id: string;
+  fullName: string;
+  role: string;
+}): SessionUser {
+  const now = new Date();
+  const participantType: ParticipantType =
+    member.role === "attendee" ? "attendee" : "member";
+
+  return {
+    sessionId: createOpaqueSessionId(),
+    participantId: member.id,
+    displayId: member.id.slice(0, 8),
+    fullName: member.fullName,
+    participantType,
+    membershipRole: member.role as MembershipRole,
+    keyVersion: 1,
+    issuedAt: now.toISOString(),
+    expiresAt: computeExpirationIso(now),
+  };
+}
+
 export function encodeSessionToken(user: SessionUser): string {
   const payload = JSON.stringify({
     sid: user.sessionId,
@@ -131,6 +219,7 @@ export function encodeSessionToken(user: SessionUser): string {
     did: user.displayId,
     name: user.fullName,
     role: user.participantType,
+    mrole: user.membershipRole,
     kv: user.keyVersion,
     iat: user.issuedAt,
     exp: user.expiresAt,
@@ -139,10 +228,6 @@ export function encodeSessionToken(user: SessionUser): string {
   return Buffer.from(payload, "utf8").toString("base64url");
 }
 
-/**
- * Decodes and validates a prototype session token, including expiration
- * and active key-version check so HR revocations invalidate existing sessions.
- */
 export function decodeSessionToken(
   token: string,
   now: Date = new Date()
@@ -182,6 +267,10 @@ export function decodeSessionToken(
       displayId: parsed.did,
       fullName: parsed.name,
       participantType: parsed.role,
+      membershipRole:
+        typeof parsed.mrole === "string"
+          ? (parsed.mrole as MembershipRole)
+          : undefined,
       keyVersion: parsed.kv,
       issuedAt: parsed.iat,
       expiresAt: parsed.exp,

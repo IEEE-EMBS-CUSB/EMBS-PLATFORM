@@ -1,4 +1,5 @@
 import type { ParticipantType } from "./common";
+import type { MembershipRole } from "@/lib/auth-helpers";
 
 export type AccessKeyStatus = "active" | "revoked";
 
@@ -12,6 +13,7 @@ export interface SessionUser {
   displayId: string;
   fullName: string;
   participantType: ParticipantType;
+  membershipRole?: MembershipRole;
   keyVersion: number;
   issuedAt: string;
   expiresAt: string;

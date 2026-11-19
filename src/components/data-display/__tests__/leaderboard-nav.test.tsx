@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { LeaderboardNav } from "@/components/data-display/leaderboard-nav";
-import { MOCK_COMMITTEES } from "@/data/mock/committees";
+import { CHAPTER_COMMITTEES as MOCK_COMMITTEES } from "@/db/seed-data";
 import type { PublishedMonthOption } from "@/types";
 
 const MONTHS: PublishedMonthOption[] = [

@@ -170,6 +170,16 @@ export interface MemberTaskSummary {
   summaryLabel: string;
 }
 
+export interface MemberEngagementMetrics {
+  attendanceStreak: number;
+  livePoints: number;
+  currentRank: number;
+  pointsToNextRank: number | null;
+  targetRank: number | null;
+  activityTier: "Diamond" | "Gold" | "Silver" | "Bronze" | "Member";
+  committeeCompletionRate: number;
+}
+
 export interface MemberDashboardData {
   profile: MemberProfile;
   currentMonthScore: MonthlyScoreRecord | null;
@@ -182,4 +192,5 @@ export interface MemberDashboardData {
   bonusesCount: number;
   recentActivities: MemberActivity[];
   recentFeedback: PublishedFeedback[];
+  engagement?: MemberEngagementMetrics;
 }

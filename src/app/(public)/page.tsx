@@ -5,10 +5,12 @@ import { CommitteeLeadersShowcase } from "@/components/data-display/committee-le
 import { buttonVariants } from "@/components/ui/button";
 import { getServerSession } from "@/lib/session-cookie";
 import { cn } from "@/lib/utils";
+import { getRoleLandingPath, isOperationalRole } from "@/lib/auth-helpers";
 import {
   getCommitteeLeaders,
   getOverallLeaderboard,
 } from "@/services/leaderboard.service";
+import { getOperationalUserProfile } from "@/services/member.service";
 
 function DefaultPrimaryPortalCta() {
   return (
@@ -29,7 +31,16 @@ async function SessionAwarePrimaryPortalCta() {
   const session = await getServerSession();
   if (!session) return <DefaultPrimaryPortalCta />;
 
-  const href = session.participantType === "member" ? "/member" : "/attendee";
+  let href = session.participantType === "member" ? "/member" : "/attendee";
+  try {
+    const opProfile = await getOperationalUserProfile(session.participantId);
+    if (opProfile && isOperationalRole(opProfile.role)) {
+      href = getRoleLandingPath(opProfile.role);
+    }
+  } catch {
+    // Fall back to default
+  }
+
   return (
     <Link
       href={href}
@@ -53,7 +64,17 @@ async function SessionAwareRoleLink({
 }) {
   const session = await getServerSession();
   const isSignedInAsRole = session?.participantType === role;
-  const href = isSignedInAsRole ? `/${role}` : `/${role}/access`;
+  let href = isSignedInAsRole ? `/${role}` : `/${role}/access`;
+  if (isSignedInAsRole && role === "member") {
+    try {
+      const opProfile = await getOperationalUserProfile(session.participantId);
+      if (opProfile && isOperationalRole(opProfile.role)) {
+        href = getRoleLandingPath(opProfile.role);
+      }
+    } catch {
+      // Fall back to default
+    }
+  }
   const label = isSignedInAsRole
     ? `Open ${role} dashboard`
     : role === "member"

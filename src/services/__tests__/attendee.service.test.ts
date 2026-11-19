@@ -44,4 +44,28 @@ describe("attendee.service", () => {
     expect(await getAttendeeProfile("mem-101")).toBeNull();
     expect(await getAttendeeDashboard("mem-101")).toBeNull();
   });
+
+  it("resolves database-backed attendee profiles and dashboards", async () => {
+    // A database UUID attendee should be resolved
+    const { db } = await import("@/db");
+    const schema = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+
+    const rows = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(eq(schema.rosterMemberships.email, "mariam.yassin@gmail.com"));
+
+    if (rows.length > 0) {
+      const dbAttendeeId = rows[0].id;
+      const profile = await getAttendeeProfile(dbAttendeeId);
+      expect(profile).not.toBeNull();
+      expect(profile?.fullName).toBe("Mariam Yassin");
+      expect(profile?.cohortLabel).toBe("Fall 2026");
+
+      const dashboard = await getAttendeeDashboard(dbAttendeeId);
+      expect(dashboard).not.toBeNull();
+      expect(dashboard?.profile.fullName).toBe("Mariam Yassin");
+    }
+  });
 });

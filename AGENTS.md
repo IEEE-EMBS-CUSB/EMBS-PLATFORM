@@ -10,13 +10,15 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Project context
 
-Read [`docs/PROJECT_INTENT.md`](./docs/PROJECT_INTENT.md) before modifying features, connecting a backend, changing session/auth handling, editing brand/UI layouts, or changing scoring/evaluation models.
+Read [`docs/PROJECT_INTENT.md`](./docs/PROJECT_INTENT.md) before modifying features, altering database schemas, changing session/auth handling, editing brand/UI layouts, or adding HR operational workflows.
 
 ### Non-negotiable invariants
 
-- **Read-only frontend boundary**: All page data flows through typed async functions in `src/services/`. Render precomputed scores, ranks, and grades from services; keep formulas, HR admin forms, and sheet logic out of the frontend.
-- **Privacy and isolation**: Filter out unpublished leaderboard months, omit member IDs (`displayId`) from public and portal UI, expose only `visibility === "published"` HR feedback, keep attendee views free of member-only metrics, and enforce member/attendee route separation in `src/proxy.ts`.
-- **Opaque sessions**: Store only opaque session metadata in the `HttpOnly` `embs_portal_session` cookie (never the raw access key) and use `navigateHard` for auth transitions so Next.js 16 client state never stalls.
-- **Next.js 16 + Base UI**: Keep `getServerSession()` and `searchParams` reads inside `<Suspense>` boundaries, keep `usePathname()` out of Suspense fallbacks, use `src/proxy.ts` (`proxy` export), and use `@base-ui/react` `render` props / `buttonVariants` instead of `asChild`.
+- **HR-first, zero direct database editing**: All operations (seasons, committees, rubrics, rosters, sessions, attendance, tasks, grading, point overrides, feedback, and leaderboard publishing) must be controllable through the `/hr` web UI.
+- **Multi-season scoping**: Every operational database record must be foreign-keyed to a `season_id`. Historical seasons are archived permanently and never mutated.
+- **Whitelist-only authentication**: Access is guarded by email presence in `roster_memberships` for the active season. No open signups; members authenticate using credentials stored in `roster_memberships` (zero external email delivery dependencies).
+- **Data-layer privacy**: Internal HR notes and warnings (`is_published === false` or `is_warning === true`) must be filtered at the query layer and never returned to members or attendees.
+- **Deterministic score derivation**: Member scores flow through `score_ledger` and are derived deterministically. Historical monthly rankings are permanently locked via `monthly_snapshots`.
+- **Next.js 16 + Base UI**: Keep `usePathname()` out of Suspense fallbacks, use `src/proxy.ts` (`proxy` export), and use `@base-ui/react` `render` props / `buttonVariants` instead of `asChild`.
 - **Brand discipline**: Use the solid IEEE EMBS CUSB palette (solid `#772583` header bar with flush-left reverse-white `EmbsMark` at `h-9`, no CSS gradients, no ECG waveforms).
 - **Verification**: Write failing tests first (red then green), then pass `pnpm test`, `pnpm lint`, `pnpm typecheck`, and `pnpm build`.
