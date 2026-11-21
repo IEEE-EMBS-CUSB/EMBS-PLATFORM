@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { HrShell } from "@/components/hr/hr-shell";
 
 let mockPathname = "/hr";
@@ -36,12 +36,17 @@ describe("HrShell Component", () => {
       screen.getByRole("button", { name: /log out/i })
     ).toBeInTheDocument();
 
-    // Committee heads can switch to Member View (/member) to inspect assignments given to them
-    const memberViewLinks = screen.getAllByRole("link", {
+    // Committee heads switch to Member View from the sidebar, NOT the top header
+    const header = screen.getByRole("banner");
+    expect(
+      within(header).queryByRole("link", { name: /member view/i })
+    ).not.toBeInTheDocument();
+
+    const sidebar = screen.getByRole("complementary");
+    const memberViewLink = within(sidebar).getByRole("link", {
       name: /member view/i,
     });
-    expect(memberViewLinks.length).toBeGreaterThan(0);
-    expect(memberViewLinks[0]).toHaveAttribute("href", "/member");
+    expect(memberViewLink).toHaveAttribute("href", "/member");
 
     expect(
       screen.getAllByRole("link", { name: /assignments/i }).length

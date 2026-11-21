@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import QRCode from "qrcode";
 import type { MembershipRole } from "@/lib/auth-helpers";
+import { buildCheckinQrUrl } from "@/lib/checkin-url";
 import {
   createSessionAction,
   toggleSessionCheckinAction,
@@ -97,7 +98,14 @@ export function AttendanceManagerView({
   useEffect(() => {
     let cancelled = false;
     if (liveCheckinSession?.checkinCode) {
-      QRCode.toDataURL(liveCheckinSession.checkinCode, {
+      const origin =
+        typeof window !== "undefined" && window.location?.origin
+          ? window.location.origin
+          : "";
+      const qrPayload = origin
+        ? buildCheckinQrUrl(origin, liveCheckinSession.checkinCode)
+        : liveCheckinSession.checkinCode;
+      QRCode.toDataURL(qrPayload, {
         width: 256,
         margin: 1,
       })
@@ -658,7 +666,7 @@ export function AttendanceManagerView({
               </div>
 
               <p className="mt-4 text-xs font-semibold text-foreground/85">
-                Scan QR or enter code on your portal
+                Scan QR or enter code on your portal for instant check-in
               </p>
 
               <div className="mt-2 inline-flex items-center gap-2 rounded-lg bg-[#002855] px-4 py-2 font-mono text-2xl font-extrabold tracking-widest text-white shadow-inner">

@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import { CheckCircle2 } from "lucide-react";
 import { AttendeeSessionTable } from "@/components/data-display/attendee-session-table";
 import { MetricCard } from "@/components/data-display/metric-card";
 import { MemberAttendanceLoadingState } from "@/components/states/loading-state";
@@ -11,8 +12,17 @@ export const metadata: Metadata = {
   description: "Your recorded IEEE EMBS CUSB session attendance history.",
 };
 
-async function AttendeeAttendanceContent() {
-  const session = await requireAttendeeSession();
+interface AttendeeAttendancePageProps {
+  searchParams: Promise<{ checkedIn?: string }>;
+}
+
+async function AttendeeAttendanceContent({
+  searchParams,
+}: AttendeeAttendancePageProps) {
+  const [{ checkedIn }, session] = await Promise.all([
+    searchParams,
+    requireAttendeeSession(),
+  ]);
   const sessions = await getAttendeeAttendance(session.participantId);
 
   const attendedCount = sessions.filter((s) => s.status === "attended").length;
@@ -30,6 +40,16 @@ async function AttendeeAttendanceContent() {
         </h1>
       </div>
 
+      {checkedIn && (
+        <div
+          role="status"
+          className="flex items-center gap-2.5 rounded-lg border border-[#78be20]/40 bg-[#eaf5dd] p-4 text-sm font-semibold text-[#1e6b0a]"
+        >
+          <CheckCircle2 className="h-5 w-5 shrink-0" aria-hidden="true" />
+          <span>Attendance recorded for {checkedIn}.</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         <MetricCard label="Attended" value={attendedCount} accent="teal" />
         <MetricCard label="Late" value={lateCount} />
@@ -42,10 +62,12 @@ async function AttendeeAttendanceContent() {
   );
 }
 
-export default function AttendeeAttendancePage() {
+export default function AttendeeAttendancePage({
+  searchParams,
+}: AttendeeAttendancePageProps) {
   return (
     <Suspense fallback={<MemberAttendanceLoadingState showCheckin={false} />}>
-      <AttendeeAttendanceContent />
+      <AttendeeAttendanceContent searchParams={searchParams} />
     </Suspense>
   );
 }

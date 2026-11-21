@@ -21,6 +21,7 @@ function safeRevalidateTasks() {
     revalidatePath("/hr/ledger");
     revalidatePath("/hr/publishing");
     revalidatePath("/member/tasks");
+    revalidatePath("/member/assignments");
     revalidatePath("/member");
     revalidatePath("/member/performance");
   } catch {

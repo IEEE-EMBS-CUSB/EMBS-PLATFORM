@@ -9,7 +9,7 @@ import {
   CalendarCheck,
   CheckSquare,
   ClipboardCheck,
-  FolderKanban,
+  ClipboardList,
   LayoutDashboard,
   Menu,
   MessageSquare,
@@ -62,16 +62,16 @@ const MEMBER_NAV_ITEMS: readonly NavItem[] = [
     icon: CalendarCheck,
   },
   {
+    href: "/member/assignments",
+    label: "Assignments",
+    mobileLabel: "Assign",
+    icon: ClipboardList,
+  },
+  {
     href: "/member/tasks",
     label: "Tasks",
     mobileLabel: "Tasks",
     icon: CheckSquare,
-  },
-  {
-    href: "/member/activities",
-    label: "Activities",
-    mobileLabel: "Activities",
-    icon: FolderKanban,
   },
   {
     href: "/member/evaluations",
@@ -133,6 +133,11 @@ export function PortalShell({
     portalType === "member" ? MEMBER_NAV_ITEMS.slice(0, 4) : ATTENDEE_NAV_ITEMS;
   const portalLabel =
     portalType === "member" ? "Member portal" : "Attendee portal";
+  const canSwitchToLeaderView = Boolean(
+    currentUserRole &&
+      currentUserRole !== "member" &&
+      currentUserRole !== "attendee"
+  );
 
   function isActive(item: NavItem): boolean {
     if (item.exact) return pathname === item.href;
@@ -155,14 +160,14 @@ export function PortalShell({
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex min-h-11 items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors lg:min-h-9",
+              "flex min-h-11 items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00629b] lg:min-h-9",
               active
-                ? "bg-[#772583] text-white font-semibold"
-                : "text-foreground/85 hover:bg-muted hover:text-foreground"
+                ? "bg-[#772583] font-semibold text-white"
+                : "text-foreground/85 hover:bg-[#f5edf7] hover:text-[#5a1b63]"
             )}
           >
             <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>{item.label}</span>
+            <span className="truncate">{item.label}</span>
             <NavLinkPendingIndicator />
           </Link>
         );
@@ -179,13 +184,13 @@ export function PortalShell({
         Skip to main content
       </a>
 
-      {/* Solid #772583 portal top bar with locked logo position */}
+      {/* Solid #772583 portal top bar — pixel-locked with HrShell (max-w-7xl, h-16) */}
       <header className="sticky top-0 z-30 border-b border-[#5a1b63] bg-[#772583] text-white">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex items-center gap-3">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+          <div className="flex items-center gap-3 min-w-0">
             <Link
               href="/"
-              className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+              className="shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
             >
               <EmbsMark inverted />
             </Link>
@@ -200,22 +205,6 @@ export function PortalShell({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {currentUserRole &&
-              currentUserRole !== "member" &&
-              currentUserRole !== "attendee" && (
-                <Link
-                  href="/hr"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-white/25 bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/25"
-                >
-                  <Shield className="h-3.5 w-3.5 text-[#ffc627]" aria-hidden="true" />
-                  <span>
-                    {currentUserRole === "committee_head"
-                      ? "Leader View"
-                      : "Management Console"}
-                  </span>
-                </Link>
-              )}
-
             <Link
               href="/leaderboards"
               className="hidden items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-white/90 transition-colors hover:bg-white/15 hover:text-white md:inline-flex"
@@ -238,14 +227,14 @@ export function PortalShell({
               >
                 <Menu className="h-5 w-5" aria-hidden="true" />
               </SheetTrigger>
-              <SheetContent side="right" className="w-72 p-4">
+              <SheetContent side="right" className="w-72 overflow-y-auto p-4">
                 <SheetHeader className="p-0 text-left">
                   <SheetTitle>
                     <EmbsMark compact />
                   </SheetTitle>
                 </SheetHeader>
                 <div className="mt-5 border-b border-border pb-4">
-                  <p className="text-sm font-semibold text-[#002855]">
+                  <p className="font-heading text-sm font-bold text-[#002855]">
                     {userName}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
@@ -256,20 +245,18 @@ export function PortalShell({
                   {navList(() => setMobileOpen(false))}
                 </div>
                 <div className="mt-6 space-y-2 border-t border-border pt-4">
-                  {currentUserRole &&
-                    currentUserRole !== "member" &&
-                    currentUserRole !== "attendee" && (
-                      <Link
-                        href="/hr"
-                        onClick={() => setMobileOpen(false)}
-                        className="flex min-h-11 items-center gap-2 rounded-md bg-[#f5edf7] px-3 py-2 text-sm font-semibold text-[#5a1b63] hover:bg-[#ead8ee]"
-                      >
-                        <Shield className="h-4 w-4" aria-hidden="true" />
-                        {currentUserRole === "committee_head"
-                          ? "Leader View"
-                          : "Management Console"}
-                      </Link>
-                    )}
+                  {canSwitchToLeaderView && (
+                    <Link
+                      href="/hr"
+                      onClick={() => setMobileOpen(false)}
+                      className="flex min-h-11 items-center gap-2 rounded-md bg-[#f5edf7] px-3 py-2 text-sm font-semibold text-[#5a1b63] hover:bg-[#ead8ee]"
+                    >
+                      <Shield className="h-4 w-4" aria-hidden="true" />
+                      {currentUserRole === "committee_head"
+                        ? "Leader View"
+                        : "Management Console"}
+                    </Link>
+                  )}
                   <Link
                     href="/leaderboards"
                     onClick={() => setMobileOpen(false)}
@@ -286,9 +273,9 @@ export function PortalShell({
         </div>
       </header>
 
-      {/* Main workspace grid */}
-      <div className="mx-auto grid w-full max-w-6xl flex-1 gap-8 px-4 pt-5 pb-24 sm:px-6 lg:grid-cols-12 lg:py-9">
-        <aside className="hidden lg:col-span-3 lg:block">
+      {/* Main workspace grid — pixel-locked with HrShell (max-w-7xl, 240px sidebar, lg:py-8) */}
+      <div className="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 pt-5 pb-24 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8 lg:py-8">
+        <aside className="hidden lg:block">
           <div className="sticky top-24 space-y-4 rounded-lg border border-border bg-white p-4">
             <div className="border-b border-border px-1 pb-3.5">
               <p className="font-heading text-sm font-bold text-[#002855]">
@@ -299,27 +286,25 @@ export function PortalShell({
               </p>
             </div>
             {navList()}
-            {currentUserRole &&
-              currentUserRole !== "member" &&
-              currentUserRole !== "attendee" && (
-                <div className="border-t border-border pt-3">
-                  <Link
-                    href="/hr"
-                    className="flex min-h-9 items-center gap-2 rounded-md bg-[#f5edf7] px-3 py-2 text-xs font-semibold text-[#5a1b63] transition-colors hover:bg-[#ead8ee]"
-                  >
-                    <Shield className="h-4 w-4 text-[#772583]" aria-hidden="true" />
-                    <span>
-                      {currentUserRole === "committee_head"
-                        ? "Switch to Leader View"
-                        : "Management Console"}
-                    </span>
-                  </Link>
-                </div>
-              )}
+            {canSwitchToLeaderView && (
+              <div className="border-t border-border pt-3">
+                <Link
+                  href="/hr"
+                  className="flex min-h-9 items-center gap-2 rounded-md bg-[#f5edf7] px-3 py-2 text-xs font-semibold text-[#5a1b63] transition-colors hover:bg-[#ead8ee]"
+                >
+                  <Shield className="h-4 w-4 text-[#772583]" aria-hidden="true" />
+                  <span>
+                    {currentUserRole === "committee_head"
+                      ? "Switch to Leader View"
+                      : "Management Console"}
+                  </span>
+                </Link>
+              </div>
+            )}
           </div>
         </aside>
 
-        <main id="main-content" className="min-w-0 lg:col-span-9">
+        <main id="main-content" className="min-w-0">
           {children}
         </main>
       </div>
@@ -327,7 +312,7 @@ export function PortalShell({
       {/* Thumbs-first mobile bottom navigation bar */}
       <nav
         aria-label="Mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-white/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)] lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm lg:hidden"
       >
         <div
           className={cn(
@@ -346,7 +331,7 @@ export function PortalShell({
                 className={cn(
                   "relative flex min-h-14 flex-col items-center justify-center gap-1 px-1 text-[11px] font-medium transition-all duration-150 active:scale-95",
                   active
-                    ? "text-[#772583] font-semibold"
+                    ? "font-semibold text-[#772583]"
                     : "text-muted-foreground active:text-foreground"
                 )}
               >
@@ -370,7 +355,7 @@ export function PortalShell({
               className={cn(
                 "relative flex min-h-14 flex-col items-center justify-center gap-1 px-1 text-[11px] font-medium transition-all duration-150 active:scale-95",
                 isSecondaryMemberRouteActive
-                  ? "text-[#772583] font-semibold"
+                  ? "font-semibold text-[#772583]"
                   : "text-muted-foreground active:text-foreground"
               )}
               aria-label="More sections"

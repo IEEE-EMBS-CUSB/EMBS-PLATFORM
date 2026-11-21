@@ -121,4 +121,34 @@ describe("LoginForm (Pre-assigned Password & First-Login Reset)", () => {
       /unable to complete sign-in/i
     );
   });
+
+  it("shows attendance check-in context and forwards nextPath on login", async () => {
+    const user = userEvent.setup();
+    const handleLogin = vi.fn().mockResolvedValue({
+      ok: true,
+      mustChangePassword: false,
+      redirectTo: "/checkin?code=847291",
+    });
+
+    render(
+      <LoginForm
+        nextPath="/checkin?code=847291"
+        onLogin={handleLogin}
+      />
+    );
+
+    expect(
+      screen.getByText(/sign in to record your attendance/i)
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/email address/i), "salma@cu.edu.eg");
+    await user.type(screen.getByLabelText(/^password/i), "MyPassword123!");
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+
+    expect(handleLogin).toHaveBeenCalledWith(
+      "salma@cu.edu.eg",
+      "MyPassword123!",
+      "/checkin?code=847291"
+    );
+  });
 });

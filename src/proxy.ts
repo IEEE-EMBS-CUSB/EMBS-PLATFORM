@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isOperationalRole } from "@/lib/auth-helpers";
+import { sanitizeNextPath } from "@/lib/checkin-url";
 import {
   buildClearSessionCookieOptions,
   buildSessionCookieOptions,
@@ -83,10 +84,22 @@ export function proxy(request: NextRequest) {
       return rawToken ? clearCookie(response) : response;
     }
     if (sessionUser) {
-      const destination = getLandingDestination(sessionUser);
+      const safeNext = sanitizeNextPath(searchParams.get("next"));
+      const destination = safeNext ?? getLandingDestination(sessionUser);
       return attachSessionCookie(
         NextResponse.redirect(new URL(destination, request.url))
       );
+    }
+    return attachSessionCookie(NextResponse.next());
+  }
+
+  // QR Check-In Deep-Link Guard — preserve scanned code across login
+  if (pathname === "/checkin") {
+    if (!sessionUser) {
+      const fullPath = `${pathname}${request.nextUrl.search}`;
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("next", fullPath);
+      return attachSessionCookie(NextResponse.redirect(loginUrl));
     }
     return attachSessionCookie(NextResponse.next());
   }
@@ -163,6 +176,7 @@ export const config = {
     "/",
     "/login",
     "/access",
+    "/checkin",
     "/leaderboards/:path*",
     "/member/:path*",
     "/attendee/:path*",

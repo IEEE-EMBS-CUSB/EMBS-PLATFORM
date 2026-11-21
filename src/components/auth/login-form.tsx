@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, KeyRound, Lock, Mail, ShieldCheck } from "lucide-react";
+import { AlertCircle, KeyRound, Lock, Mail, QrCode, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,9 +11,11 @@ import {
 } from "@/app/login/actions";
 
 export interface LoginFormProps {
+  nextPath?: string | null;
   onLogin?: (
     email: string,
-    password: string
+    password: string,
+    nextPath?: string | null
   ) => Promise<{
     ok: boolean;
     mustChangePassword?: boolean;
@@ -23,7 +25,8 @@ export interface LoginFormProps {
   onChangePassword?: (
     email: string,
     currentPassword: string,
-    newPassword: string
+    newPassword: string,
+    nextPath?: string | null
   ) => Promise<{
     ok: boolean;
     redirectTo?: string;
@@ -48,7 +51,12 @@ function toFriendlyAuthError(err: unknown, fallback: string): string {
   return fallback;
 }
 
-export function LoginForm({ onLogin, onChangePassword }: LoginFormProps) {
+export function LoginForm({
+  nextPath = null,
+  onLogin,
+  onChangePassword,
+}: LoginFormProps) {
+  const isCheckinFlow = Boolean(nextPath && nextPath.startsWith("/checkin"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -75,8 +83,10 @@ export function LoginForm({ onLogin, onChangePassword }: LoginFormProps) {
 
     try {
       const res = onLogin
-        ? await onLogin(email.trim(), password)
-        : await loginWithPasswordAction(email.trim(), password);
+        ? nextPath
+          ? await onLogin(email.trim(), password, nextPath)
+          : await onLogin(email.trim(), password)
+        : await loginWithPasswordAction(email.trim(), password, nextPath);
 
       if (!res.ok) {
         setErrorMessage(res.error ?? "Invalid email or password.");
@@ -125,11 +135,14 @@ export function LoginForm({ onLogin, onChangePassword }: LoginFormProps) {
 
     try {
       const res = onChangePassword
-        ? await onChangePassword(email.trim(), password, newPassword)
+        ? nextPath
+          ? await onChangePassword(email.trim(), password, newPassword, nextPath)
+          : await onChangePassword(email.trim(), password, newPassword)
         : await changePasswordOnFirstLoginAction(
             email.trim(),
             password,
-            newPassword
+            newPassword,
+            nextPath
           );
 
       if (!res.ok) {
@@ -174,6 +187,15 @@ export function LoginForm({ onLogin, onChangePassword }: LoginFormProps) {
               : "Welcome to IEEE EMBS CUSB! Please choose your permanent password to complete your account activation."}
           </p>
         </div>
+
+        {isCheckinFlow && (
+          <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-[#00629b]/25 bg-[#ebf3f8] p-3 text-xs text-[#002855]">
+            <QrCode className="mt-0.5 h-4 w-4 shrink-0 text-[#00629b]" aria-hidden="true" />
+            <span className="leading-snug font-medium">
+              Sign in to record your attendance for the session you scanned.
+            </span>
+          </div>
+        )}
 
         {errorMessage && (
           <div

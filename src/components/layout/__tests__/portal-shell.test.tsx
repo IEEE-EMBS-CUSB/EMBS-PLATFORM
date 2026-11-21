@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { PortalShell } from "@/components/layout/portal-shell";
 
 vi.mock("next/navigation", () => ({
@@ -44,8 +44,8 @@ describe("PortalShell", () => {
       "Dashboard",
       "Performance",
       "Attendance",
+      "Assignments",
       "Tasks",
-      "Activities",
       "Evaluations",
       "Feedback",
     ]) {
@@ -53,5 +53,33 @@ describe("PortalShell", () => {
         screen.getAllByRole("link", { name: label }).length
       ).toBeGreaterThanOrEqual(1);
     }
+
+    expect(
+      screen.queryByRole("link", { name: /activities/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it("places Leader View switch in sidebar (not header) for committee heads", () => {
+    render(
+      <PortalShell
+        portalType="member"
+        userName="Salma El-Sayed"
+        subtitle="AI and Machine Learning · Head"
+        currentUserRole="committee_head"
+      >
+        <div>Member dashboard content</div>
+      </PortalShell>
+    );
+
+    const header = screen.getByRole("banner");
+    expect(
+      within(header).queryByRole("link", { name: /leader view/i })
+    ).not.toBeInTheDocument();
+
+    const sidebar = screen.getByRole("complementary");
+    const leaderViewLink = within(sidebar).getByRole("link", {
+      name: /leader view/i,
+    });
+    expect(leaderViewLink).toHaveAttribute("href", "/hr");
   });
 });

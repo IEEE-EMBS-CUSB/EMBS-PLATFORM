@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { CalendarCheck } from "lucide-react";
+import { CalendarCheck, CheckCircle2 } from "lucide-react";
 import { MetricCard } from "@/components/data-display/metric-card";
 import { AttendanceStatusBadge } from "@/components/data-display/status-badge";
 import { EmptyState } from "@/components/states/empty-state";
@@ -34,9 +34,23 @@ const SESSION_TYPE_LABELS: Record<SessionType, string> = {
   event: "Event",
 };
 
-async function MemberAttendanceContent() {
-  const session = await requireMemberSession();
+interface MemberAttendancePageProps {
+  searchParams: Promise<{
+    checkedIn?: string;
+    points?: string;
+    punctual?: string;
+  }>;
+}
+
+async function MemberAttendanceContent({
+  searchParams,
+}: MemberAttendancePageProps) {
+  const [{ checkedIn, points, punctual }, session] = await Promise.all([
+    searchParams,
+    requireMemberSession(),
+  ]);
   const records = await getMemberAttendance(session.participantId);
+  const awardedPoints = points ? Number(points) : 0;
 
   const attendedCount = records.filter((r) => r.status === "attended").length;
   const lateCount = records.filter(
@@ -52,6 +66,26 @@ async function MemberAttendanceContent() {
           Attendance
         </h1>
       </div>
+
+      {checkedIn && (
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-lg border border-[#78be20]/40 bg-[#eaf5dd] p-4 text-sm text-[#1e6b0a]"
+        >
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-semibold">
+              Attendance recorded for {checkedIn}.
+            </p>
+            {awardedPoints > 0 && (
+              <p className="mt-0.5 font-mono text-xs font-bold tabular-nums">
+                +{awardedPoints} pts awarded
+                {punctual === "1" ? " (Punctual bonus included)" : ""}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <LiveCheckinCard membershipId={session.participantId} />
 
@@ -166,10 +200,12 @@ async function MemberAttendanceContent() {
   );
 }
 
-export default function MemberAttendancePage() {
+export default function MemberAttendancePage({
+  searchParams,
+}: MemberAttendancePageProps) {
   return (
     <Suspense fallback={<MemberAttendanceLoadingState showCheckin />}>
-      <MemberAttendanceContent />
+      <MemberAttendanceContent searchParams={searchParams} />
     </Suspense>
   );
 }

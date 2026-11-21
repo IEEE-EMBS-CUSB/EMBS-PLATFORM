@@ -161,16 +161,6 @@ export function HrShell({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {canSwitchToMemberView && (
-              <Link
-                href="/member"
-                className="inline-flex items-center gap-1.5 rounded-md border border-white/25 bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/25"
-              >
-                <UserRound className="h-3.5 w-3.5 text-[#ffc627]" aria-hidden="true" />
-                <span>Member View</span>
-              </Link>
-            )}
-
             <Link
               href="/leaderboards"
               className="hidden items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-white/90 transition-colors hover:bg-white/15 hover:text-white md:inline-flex"
@@ -256,15 +246,6 @@ export function HrShell({
               </SheetContent>
             </Sheet>
           </div>
-        </div>
-
-        {/* Compact mobile context strip */}
-        <div className="flex items-center justify-between gap-2 border-t border-white/15 bg-[#5a1b63] px-4 py-1.5 text-[11px] text-white/90 sm:hidden">
-          <span className="truncate font-semibold">
-            {currentRoleInfo.label}
-            {userCommitteeName ? ` · ${userCommitteeName}` : ""}
-          </span>
-          <span className="shrink-0 text-white/80">{activeSeasonName}</span>
         </div>
       </header>
 

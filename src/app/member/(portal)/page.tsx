@@ -1,15 +1,16 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, TrendingUp } from "lucide-react";
-import { ActivityList } from "@/components/data-display/activity-list";
+import { ArrowRight, ClipboardList, TrendingUp } from "lucide-react";
 import { FeedbackList } from "@/components/data-display/feedback-list";
+import { MemberTaskStatusBadge } from "@/components/data-display/status-badge";
 import { ScoreBreakdown } from "@/components/data-display/score-breakdown";
 import { MemberEngagementCard } from "@/components/data-display/member-engagement-card";
 import { EmptyState } from "@/components/states/empty-state";
 import { MemberDashboardLoadingState } from "@/components/states/loading-state";
+import { formatDisplayDate } from "@/lib/format";
 import { requireMemberSession } from "@/lib/portal-guards";
-import { getMemberDashboard } from "@/services/member.service";
+import { getMemberDashboard, getMemberTasks } from "@/services/member.service";
 
 export const metadata: Metadata = {
   title: "Member dashboard",
@@ -19,7 +20,10 @@ export const metadata: Metadata = {
 
 async function MemberDashboardContent() {
   const session = await requireMemberSession();
-  const dashboard = await getMemberDashboard(session.participantId);
+  const [dashboard, allWork] = await Promise.all([
+    getMemberDashboard(session.participantId),
+    getMemberTasks(session.participantId),
+  ]);
 
   if (!dashboard) {
     return (
@@ -29,6 +33,15 @@ async function MemberDashboardContent() {
       />
     );
   }
+
+  const assignments = allWork.filter((item) => item.workType !== "task");
+  const hrTasks = allWork.filter((item) => item.workType === "task");
+  const completedAssignments = assignments.filter(
+    (item) => item.status === "completed"
+  ).length;
+  const completedTasks = hrTasks.filter(
+    (item) => item.status === "completed"
+  ).length;
 
   const { profile, currentMonthScore } = dashboard;
 
@@ -154,22 +167,22 @@ async function MemberDashboardContent() {
           </Link>
 
           <Link
+            href="/member/assignments"
+            className="flex items-center justify-between gap-2 rounded-md px-1 py-0.5 transition-colors hover:text-[#772583]"
+          >
+            <span className="text-muted-foreground">Assignments</span>
+            <span className="font-semibold text-[#002855] tabular-nums">
+              {completedAssignments} / {assignments.length} completed
+            </span>
+          </Link>
+
+          <Link
             href="/member/tasks"
             className="flex items-center justify-between gap-2 rounded-md px-1 py-0.5 transition-colors hover:text-[#772583]"
           >
             <span className="text-muted-foreground">Tasks</span>
             <span className="font-semibold text-[#002855] tabular-nums">
-              {dashboard.taskSummary.summaryLabel}
-            </span>
-          </Link>
-
-          <Link
-            href="/member/activities"
-            className="flex items-center justify-between gap-2 rounded-md px-1 py-0.5 transition-colors hover:text-[#772583]"
-          >
-            <span className="text-muted-foreground">Projects & hackathons</span>
-            <span className="font-semibold text-[#002855] tabular-nums">
-              {dashboard.projectAndHackathonCount}
+              {completedTasks} / {hrTasks.length} completed
             </span>
           </Link>
         </div>
@@ -199,22 +212,52 @@ async function MemberDashboardContent() {
         </section>
       )}
 
-      {/* Activity + Feedback */}
+      {/* Assignments + Feedback */}
       <div className="grid gap-8 xl:grid-cols-12">
         <section className="space-y-3 xl:col-span-7">
           <div className="flex items-center justify-between gap-2">
             <h2 className="font-heading text-base font-bold text-[#002855]">
-              Recent activity
+              Recent assignments
             </h2>
             <Link
-              href="/member/activities"
+              href="/member/assignments"
               className="inline-flex items-center gap-1 text-sm font-semibold text-[#00629b] hover:text-[#002855] hover:underline"
             >
-              All activities
+              All assignments
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
-          <ActivityList activities={dashboard.recentActivities.slice(0, 3)} />
+          {assignments.length === 0 ? (
+            <EmptyState
+              icon={<ClipboardList className="h-5 w-5" aria-hidden="true" />}
+              title="No assignments yet"
+              description="Assignments from your Committee Head or Chapter Directors will appear here."
+            />
+          ) : (
+            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-white">
+              {assignments.slice(0, 4).map((item) => (
+                <li
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {item.title}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                      Due {formatDisplayDate(item.dueDate)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <MemberTaskStatusBadge status={item.status} />
+                    <span className="font-heading text-xs font-bold text-[#002855] tabular-nums">
+                      {item.taskPoints !== null ? `${item.taskPoints} pts` : "—"}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section className="space-y-3 xl:col-span-5">

@@ -29,7 +29,7 @@ const PUBLIC_LINKS = [
 export function PublicHeaderFallback() {
   return (
     <header className="sticky top-0 z-30 border-b border-[#5a1b63] bg-[#772583] text-white">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <Link href="/" className="rounded-md">
           <EmbsMark inverted />
         </Link>
@@ -89,7 +89,7 @@ export function PublicHeader({ session }: PublicHeaderProps) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#5a1b63] bg-[#772583] text-white">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <Link
           href="/"
           className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"

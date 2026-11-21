@@ -15,6 +15,7 @@ import {
   buildSessionCookieOptions,
 } from "@/lib/session-cookie";
 import { getRoleLandingPath, normalizeEmail } from "@/lib/auth-helpers";
+import { sanitizeNextPath } from "@/lib/checkin-url";
 
 export interface LoginActionResult {
   ok: boolean;
@@ -25,7 +26,8 @@ export interface LoginActionResult {
 
 export async function loginWithPasswordAction(
   email: string,
-  password: string
+  password: string,
+  nextPath?: string | null
 ): Promise<LoginActionResult> {
   const result = await authenticateWithPassword({ email, password });
 
@@ -64,17 +66,20 @@ export async function loginWithPasswordAction(
     buildSessionCookieOptions()
   );
 
+  const safeNext = sanitizeNextPath(nextPath);
+
   return {
     ok: true,
     mustChangePassword: false,
-    redirectTo: getRoleLandingPath(result.member.role),
+    redirectTo: safeNext ?? getRoleLandingPath(result.member.role),
   };
 }
 
 export async function changePasswordOnFirstLoginAction(
   email: string,
   currentPassword: string,
-  newPassword: string
+  newPassword: string,
+  nextPath?: string | null
 ): Promise<LoginActionResult> {
   const normalized = normalizeEmail(email);
   if (!normalized || !normalized.includes("@")) {
@@ -126,9 +131,11 @@ export async function changePasswordOnFirstLoginAction(
     buildSessionCookieOptions()
   );
 
+  const safeNext = sanitizeNextPath(nextPath);
+
   return {
     ok: true,
     mustChangePassword: false,
-    redirectTo: getRoleLandingPath(member.role),
+    redirectTo: safeNext ?? getRoleLandingPath(member.role),
   };
 }

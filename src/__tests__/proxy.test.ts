@@ -192,6 +192,49 @@ describe("Next.js session proxy", () => {
     expect(memberRes.headers.get("location")).toBeNull();
   });
 
+  it("preserves QR check-in code across login redirect and blocks open redirects", () => {
+    // Unauthenticated QR scan redirects to /login with encoded next param
+    const unauthCheckin = proxy(
+      new NextRequest("http://localhost:3000/checkin?code=847291")
+    );
+    expect(unauthCheckin.status).toBe(307);
+    expect(unauthCheckin.headers.get("location")).toBe(
+      "http://localhost:3000/login?next=%2Fcheckin%3Fcode%3D847291"
+    );
+
+    // Authenticated QR scan passes through to /checkin
+    const memberToken = makeMemberToken("member", "mem-101");
+    const authCheckin = proxy(
+      new NextRequest("http://localhost:3000/checkin?code=847291", {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${memberToken}` },
+      })
+    );
+    expect(authCheckin.status).toBe(200);
+
+    // Authenticated user hitting /login?next=/checkin?code=847291 goes straight to /checkin
+    const authLoginNext = proxy(
+      new NextRequest(
+        "http://localhost:3000/login?next=%2Fcheckin%3Fcode%3D847291",
+        {
+          headers: { cookie: `${SESSION_COOKIE_NAME}=${memberToken}` },
+        }
+      )
+    );
+    expect(authLoginNext.status).toBe(307);
+    expect(authLoginNext.headers.get("location")).toBe(
+      "http://localhost:3000/checkin?code=847291"
+    );
+
+    // Open redirect attempt is ignored and falls back to member dashboard
+    const evilNext = proxy(
+      new NextRequest("http://localhost:3000/login?next=https%3A%2F%2Fevil.com", {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${memberToken}` },
+      })
+    );
+    expect(evilNext.status).toBe(307);
+    expect(evilNext.headers.get("location")).toBe("http://localhost:3000/member");
+  });
+
   it("fails closed on /hr when membershipRole is member or undefined", () => {
     const memberToken = makeMemberToken("member", "mem-1");
     const hrRes = proxy(
