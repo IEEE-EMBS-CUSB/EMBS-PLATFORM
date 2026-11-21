@@ -44,12 +44,6 @@ export function ScoreTrendChart({ records }: ScoreTrendChartProps) {
             data={chronological}
             margin={{ top: 8, right: 16, left: 0, bottom: 4 }}
           >
-            <defs>
-              <linearGradient id="embsScoreFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#772583" stopOpacity={0.22} />
-                <stop offset="95%" stopColor="#772583" stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
             <CartesianGrid
               strokeDasharray="3 3"
               vertical={false}
@@ -83,7 +77,8 @@ export function ScoreTrendChart({ records }: ScoreTrendChartProps) {
               dataKey="totalScore"
               stroke="#772583"
               strokeWidth={2.5}
-              fill="url(#embsScoreFill)"
+              fill="#f5edf7"
+              fillOpacity={0.65}
               dot={{ r: 4, fill: "#772583", strokeWidth: 2, stroke: "#ffffff" }}
               activeDot={{ r: 6, fill: "#00629b" }}
             />

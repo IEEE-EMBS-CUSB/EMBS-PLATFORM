@@ -159,9 +159,9 @@ export function LoginForm({ onLogin, onChangePassword }: LoginFormProps) {
         {errorMessage && (
           <div
             role="alert"
-            className="mt-5 flex items-start gap-2.5 rounded-lg border border-[#f9c5c5] bg-[#fdf2f2] p-3 text-xs text-[#cc0000]"
+            className="mt-5 flex items-start gap-2.5 rounded-lg border border-[#ba0c2f]/30 bg-[#ba0c2f]/10 p-3 text-xs text-[#ba0c2f]"
           >
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#cc0000]" />
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#ba0c2f]" />
             <span className="leading-snug">{errorMessage}</span>
           </div>
         )}

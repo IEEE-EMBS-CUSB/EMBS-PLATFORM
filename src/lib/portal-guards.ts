@@ -2,6 +2,10 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/session-cookie";
 import { isOperationalRole } from "@/lib/auth-helpers";
 import {
+  canAccessHrModule,
+  type HrModuleName,
+} from "@/lib/permissions";
+import {
   getOperationalUserProfile,
   type OperationalUserProfile,
 } from "@/services/member.service";
@@ -10,7 +14,7 @@ import type { SessionUser } from "@/types";
 export async function requireMemberSession(): Promise<SessionUser> {
   const session = await getServerSession();
   if (!session) {
-    redirect("/login");
+    redirect("/login?session=invalid");
   }
   if (session.participantType !== "member") {
     redirect("/attendee");
@@ -21,7 +25,7 @@ export async function requireMemberSession(): Promise<SessionUser> {
 export async function requireAttendeeSession(): Promise<SessionUser> {
   const session = await getServerSession();
   if (!session) {
-    redirect("/login");
+    redirect("/login?session=invalid");
   }
   if (session.participantType !== "attendee") {
     redirect("/member");
@@ -35,7 +39,7 @@ export async function requireOperationalSession(): Promise<{
 }> {
   const session = await getServerSession();
   if (!session) {
-    redirect("/login");
+    redirect("/login?session=invalid");
   }
   if (session.participantType !== "member") {
     redirect("/attendee");
@@ -43,7 +47,7 @@ export async function requireOperationalSession(): Promise<{
 
   const profile = await getOperationalUserProfile(session.participantId);
   if (!profile) {
-    redirect("/login");
+    redirect("/login?session=invalid");
   }
 
   if (!isOperationalRole(profile.role)) {
@@ -53,3 +57,17 @@ export async function requireOperationalSession(): Promise<{
   return { session, profile };
 }
 
+/**
+ * Enforces module-level RBAC on /hr/* pages.
+ * Operational users without permission for the requested module are redirected to /hr.
+ */
+export async function requireHrModule(moduleName: HrModuleName): Promise<{
+  session: SessionUser;
+  profile: OperationalUserProfile;
+}> {
+  const ctx = await requireOperationalSession();
+  if (!canAccessHrModule(ctx.profile.role, moduleName)) {
+    redirect("/hr");
+  }
+  return ctx;
+}

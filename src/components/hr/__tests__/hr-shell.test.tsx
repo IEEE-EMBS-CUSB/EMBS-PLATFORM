@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { HrShell } from "@/components/hr/hr-shell";
 
 describe("HrShell Component", () => {
-  it("renders unified brand header with sign-out button, user identity, and personal portal link", () => {
+  it("renders unified brand header with sign-out button, user identity, and role-scoped tabs", () => {
     render(
       <HrShell
         activeTab="overview"
@@ -15,27 +15,24 @@ describe("HrShell Component", () => {
       </HrShell>
     );
 
-    // Verify user identity
     expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
-    expect(screen.getByText(/Head Console/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Head Console/i).length).toBeGreaterThan(0);
 
-    // Verify sign out button
     expect(
       screen.getByRole("button", { name: /log out/i })
     ).toBeInTheDocument();
 
-    // Verify personal portal link for dual-responsibility roles
+    // Operational roles operate within /hr and do not render a dead /member redirect button
     expect(
-      screen.getByRole("link", { name: /personal portal/i })
-    ).toHaveAttribute("href", "/member");
+      screen.queryByRole("link", { name: /personal portal/i })
+    ).not.toBeInTheDocument();
 
-    // Verify tabs are present and filtered for committee head
     expect(screen.getByRole("link", { name: /tasks/i })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /seasons/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /roster/i })).not.toBeInTheDocument();
   });
 
-  it("renders Master Authority header for master_admin without personal portal link requirement", () => {
+  it("renders Master Authority header for master_admin with seasons access", () => {
     render(
       <HrShell
         activeTab="overview"
@@ -47,7 +44,7 @@ describe("HrShell Component", () => {
     );
 
     expect(screen.getByText("Master Administrator")).toBeInTheDocument();
-    expect(screen.getByText(/Master Authority/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Master Authority/i).length).toBeGreaterThan(0);
     expect(
       screen.getByRole("button", { name: /log out/i })
     ).toBeInTheDocument();

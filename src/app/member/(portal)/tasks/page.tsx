@@ -16,6 +16,7 @@ import {
 import { formatDisplayDate } from "@/lib/format";
 import { requireMemberSession } from "@/lib/portal-guards";
 import { getMemberTasks } from "@/services/member.service";
+import { TaskSubmitForm } from "@/components/member/task-submit-form";
 
 export const metadata: Metadata = {
   title: "Tasks",
@@ -95,6 +96,9 @@ async function MemberTasksContent() {
                 {task.notes && (
                   <p className="text-xs text-muted-foreground">{task.notes}</p>
                 )}
+                {task.status !== "completed" && (
+                  <TaskSubmitForm taskId={task.id} />
+                )}
               </li>
             ))}
           </ul>
@@ -166,6 +170,18 @@ async function MemberTasksContent() {
             </Table>
           </div>
         </div>
+      )}
+
+      {tasks.some((t) => t.status !== "completed") && (
+        <section className="hidden space-y-3 md:block">
+          <h2 className="font-heading text-lg font-bold text-[#002855]">Submit deliverables</h2>
+          {tasks.filter((t) => t.status !== "completed").map((task) => (
+            <div key={task.id} className="rounded-lg border border-border bg-white p-4">
+              <p className="text-sm font-semibold text-foreground">{task.title}</p>
+              <TaskSubmitForm taskId={task.id} />
+            </div>
+          ))}
+        </section>
       )}
     </div>
   );

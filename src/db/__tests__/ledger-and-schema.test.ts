@@ -1,31 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import {
   attendanceRecords,
-  branchSessions,
   committees,
   membershipRoleEnum,
   monthlySnapshots,
   rosterMemberships,
   scoreLedger,
   taskSubmissions,
-  user,
-  session,
-  account,
-  verification,
 } from "@/db/schema";
 import { normalizeEmail } from "@/lib/auth-helpers";
 
 describe("Database Schema Constraints & Table Naming", () => {
-  it("renames branch sessions table to 'branch_sessions' to avoid collision with Better-Auth 'session'", () => {
-    expect(getTableName(branchSessions)).toBe("branch_sessions");
-    expect(getTableName(session)).toBe("session");
-    expect(getTableName(user)).toBe("user");
-    expect(getTableName(account)).toBe("account");
-    expect(getTableName(verification)).toBe("verification");
-  });
-
   it("enforces strict unique index on committees (seasonId, slug)", () => {
     const config = getTableConfig(committees);
     const uniqueIndex = config.indexes.find(

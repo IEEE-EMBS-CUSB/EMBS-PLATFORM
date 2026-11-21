@@ -78,13 +78,25 @@ export function TaskDelegationView({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [selectedAssignee, setSelectedAssignee] = useState("");
-  const [targetGroup, setTargetGroup] = useState<TaskTargetGroup>(
-    currentUserRole === "committee_head" ? "committee_members" : "everyone"
-  );
+  const defaultTargetGroup: TaskTargetGroup =
+    currentUserRole === "committee_head"
+      ? "committee_members"
+      : currentUserRole === "director"
+        ? "all_heads"
+        : currentUserRole === "hr_admin"
+          ? "all_members"
+          : "everyone";
+
+  const [targetGroup, setTargetGroup] =
+    useState<TaskTargetGroup>(defaultTargetGroup);
   const [targetCommitteeId, setTargetCommitteeId] = useState<string>(
     currentUserCommitteeId ?? ""
   );
-  const [dueAt, setDueAt] = useState("2026-12-15");
+  const [dueAt, setDueAt] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().slice(0, 10);
+  });
   const [maxPoints, setMaxPoints] = useState(100);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successNotice, setSuccessNotice] = useState(false);
@@ -186,11 +198,7 @@ export function TaskDelegationView({
       if (onCreateTask) {
         await onCreateTask(payload);
       } else {
-        const res = await createTaskAction(
-          payload,
-          currentUserRole,
-          currentUserCommitteeId
-        );
+        const res = await createTaskAction(payload);
         if (!res.ok) {
           setErrorMessage(res.error || "Failed to create task");
           return;
@@ -386,8 +394,7 @@ export function TaskDelegationView({
                       }
                       className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                     >
-                      {currentUserRole === "master_admin" ||
-                      currentUserRole === "director" ? (
+                      {currentUserRole === "master_admin" ? (
                         <>
                           <option value="everyone">
                             Everyone (All Chapter Members)
@@ -406,6 +413,13 @@ export function TaskDelegationView({
                             Committee: Members Only
                           </option>
                         </>
+                      ) : currentUserRole === "director" ? (
+                        <>
+                          <option value="all_heads">All Committee Heads</option>
+                          <option value="committee_heads">
+                            Committee: Heads Only
+                          </option>
+                        </>
                       ) : currentUserRole === "hr_admin" ? (
                         <>
                           <option value="all_members">
@@ -422,9 +436,6 @@ export function TaskDelegationView({
                         <>
                           <option value="committee_members">
                             All Members of My Committee
-                          </option>
-                          <option value="committee_all">
-                            Entire Committee (Heads & Members)
                           </option>
                         </>
                       )}

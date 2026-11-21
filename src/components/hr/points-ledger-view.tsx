@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, Search, X, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Plus,
+  Search,
+  X,
+  ArrowUpRight,
+  ArrowDownRight,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -38,12 +44,26 @@ export interface MemberOption {
 interface PointsLedgerViewProps {
   entries: LedgerEntryItem[];
   members: MemberOption[];
+  currentUserName?: string;
+  defaultMonth?: string;
+  onAddEntry?: (input: {
+    membershipId: string;
+    points: number;
+    month: string;
+    reason: string;
+  }) => Promise<{ ok: boolean; id?: string; error?: string } | void>;
 }
 
 export function PointsLedgerView({
   entries: initialEntries,
   members,
+  currentUserName = "HR Team",
+  defaultMonth,
+  onAddEntry,
 }: PointsLedgerViewProps) {
+  const resolvedDefaultMonth =
+    defaultMonth ?? new Date().toISOString().slice(0, 7);
+
   const [entries, setEntries] = useState(initialEntries);
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -54,8 +74,18 @@ export function PointsLedgerView({
     members[0]?.id || ""
   );
   const [pointsDelta, setPointsDelta] = useState("10");
-  const [month, setMonth] = useState("2026-10");
+  const [month, setMonth] = useState(resolvedDefaultMonth);
   const [reason, setReason] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const filteredEntries = entries.filter((entry) => {
     const matchesSearch =
@@ -69,39 +99,74 @@ export function PointsLedgerView({
     return matchesSearch && matchesType;
   });
 
-  const handleSaveAdjustment = (e: React.FormEvent) => {
+  const handleSaveAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reason.trim()) return;
+    if (!reason.trim() || isSubmitting) return;
 
     const targetMember = members.find((m) => m.id === selectedMemberId);
-    if (!targetMember) return;
+    if (!targetMember) {
+      setFormError("Please select a target member.");
+      return;
+    }
 
-    const pts = parseInt(pointsDelta, 10) || 0;
-    const newEntry: LedgerEntryItem = {
-      id: `led-${Date.now()}`,
-      membershipId: targetMember.id,
-      memberName: targetMember.fullName,
-      memberEmail: targetMember.email,
-      committeeName: targetMember.committeeName,
-      month: month || "2026-10",
-      sourceType: "manual_override",
-      points: pts,
-      reason: reason.trim(),
-      createdByName: "HR Admin",
-      createdAt: new Date().toISOString(),
-    };
+    const pts = parseInt(pointsDelta, 10);
+    if (Number.isNaN(pts) || pts === 0) {
+      setFormError("Points adjustment must be a non-zero integer.");
+      return;
+    }
 
-    setEntries([newEntry, ...entries]);
-    setIsModalOpen(false);
-    setReason("");
-    setPointsDelta("10");
+    const targetMonth = month.trim() || resolvedDefaultMonth;
+    setIsSubmitting(true);
+    setFormError(null);
+
+    try {
+      let createdId = `led-${Date.now()}`;
+      if (onAddEntry) {
+        const res = await onAddEntry({
+          membershipId: targetMember.id,
+          points: pts,
+          month: targetMonth,
+          reason: reason.trim(),
+        });
+        if (res && !res.ok) {
+          setFormError(res.error ?? "Failed to save adjustment.");
+          return;
+        }
+        if (res && res.id) createdId = res.id;
+      }
+
+      const newEntry: LedgerEntryItem = {
+        id: createdId,
+        membershipId: targetMember.id,
+        memberName: targetMember.fullName,
+        memberEmail: targetMember.email,
+        committeeName: targetMember.committeeName,
+        month: targetMonth,
+        sourceType: "manual_override",
+        points: pts,
+        reason: reason.trim(),
+        createdByName: currentUserName,
+        createdAt: new Date().toISOString(),
+      };
+
+      setEntries((prev) => [newEntry, ...prev]);
+      setIsModalOpen(false);
+      setReason("");
+      setPointsDelta("10");
+    } catch (err: unknown) {
+      setFormError(
+        err instanceof Error ? err.message : "Failed to save adjustment."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getSourceBadge = (source: LedgerEntryItem["sourceType"]) => {
     switch (source) {
       case "manual_override":
         return (
-          <span className="inline-flex items-center rounded-md bg-[#fff8e6] px-2 py-0.5 text-xs font-semibold text-[#b25e00] border border-[#ffe199]">
+          <span className="inline-flex items-center rounded-md bg-[#fff8e6] px-2 py-0.5 text-xs font-semibold text-[#92400e] border border-[#ffc627]/60">
             Manual Override
           </span>
         );
@@ -115,6 +180,12 @@ export function PointsLedgerView({
         return (
           <span className="inline-flex items-center rounded-md bg-[#ebf3f8] px-2 py-0.5 text-xs font-semibold text-[#00629b] border border-[#b2d5ea]">
             Task
+          </span>
+        );
+      case "event":
+        return (
+          <span className="inline-flex items-center rounded-md bg-[#f5edf7] px-2 py-0.5 text-xs font-semibold text-[#772583] border border-[#772583]/25">
+            Event
           </span>
         );
       default:
@@ -139,11 +210,16 @@ export function PointsLedgerView({
         </div>
 
         <Button
-          onClick={() => setIsModalOpen(true)}
+          type="button"
+          disabled={members.length === 0}
+          onClick={() => {
+            setFormError(null);
+            setIsModalOpen(true);
+          }}
           className="inline-flex items-center gap-2 bg-[#772583] text-white hover:bg-[#5a1b63]"
         >
-          <Plus className="h-4 w-4" />
-          + Adjust Points
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          <span>Adjust Points</span>
         </Button>
       </div>
 
@@ -171,6 +247,7 @@ export function PointsLedgerView({
                 <option value="manual_override">Manual Overrides</option>
                 <option value="attendance">Attendance</option>
                 <option value="task">Tasks</option>
+                <option value="event">Events</option>
               </select>
             </div>
           </div>
@@ -230,12 +307,14 @@ export function PointsLedgerView({
                     </TableCell>
                     <TableCell className="text-right font-mono font-bold">
                       {entry.points >= 0 ? (
-                        <span className="inline-flex items-center gap-0.5 rounded-full bg-[#f0f9eb] px-2.5 py-0.5 text-xs text-[#408c10] border border-[#c4e8aa]">
-                          <ArrowUpRight className="h-3 w-3" />+{entry.points} pts
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-[#78be20]/10 px-2.5 py-0.5 text-xs text-[#1e6b0a] border border-[#78be20]/40">
+                          <ArrowUpRight className="h-3 w-3" aria-hidden="true" />+
+                          {entry.points} pts
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-0.5 rounded-full bg-[#fdf2f2] px-2.5 py-0.5 text-xs text-[#cc0000] border border-[#f9c5c5]">
-                          <ArrowDownRight className="h-3 w-3" />{entry.points} pts
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-[#ba0c2f]/10 px-2.5 py-0.5 text-xs text-[#ba0c2f] border border-[#ba0c2f]/30">
+                          <ArrowDownRight className="h-3 w-3" aria-hidden="true" />
+                          {entry.points} pts
                         </span>
                       )}
                     </TableCell>
@@ -255,24 +334,39 @@ export function PointsLedgerView({
         <div
           role="dialog"
           aria-modal="true"
+          aria-label="Log Point Adjustment"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsModalOpen(false);
+          }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
         >
-          <div className="w-full max-w-lg rounded-xl border border-border bg-white p-6 shadow-xl animate-in zoom-in-95">
+          <div className="w-full max-w-lg rounded-xl border border-border bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between border-b pb-4">
               <h2 className="text-lg font-bold text-[#002855]">
                 Log Point Adjustment
               </h2>
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
+                aria-label="Close modal"
                 onClick={() => setIsModalOpen(false)}
                 className="h-8 w-8 p-0"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </Button>
             </div>
 
             <form onSubmit={handleSaveAdjustment} className="mt-4 space-y-4">
+              {formError && (
+                <div
+                  role="alert"
+                  className="rounded-md bg-[#ba0c2f]/10 p-2.5 text-xs font-semibold text-[#ba0c2f]"
+                >
+                  {formError}
+                </div>
+              )}
+
               <div>
                 <label
                   htmlFor="memberSelect"
@@ -308,7 +402,8 @@ export function PointsLedgerView({
                     value={month}
                     onChange={(e) => setMonth(e.target.value)}
                     className="mt-1"
-                    placeholder="2026-10"
+                    placeholder="2026-11"
+                    pattern="\d{4}-(0[1-9]|1[0-2])"
                     required
                   />
                 </div>
@@ -360,9 +455,10 @@ export function PointsLedgerView({
                 </Button>
                 <Button
                   type="submit"
+                  disabled={isSubmitting}
                   className="bg-[#772583] text-white hover:bg-[#5a1b63]"
                 >
-                  Save Adjustment
+                  {isSubmitting ? "Saving..." : "Save Adjustment"}
                 </Button>
               </div>
             </form>

@@ -1,47 +1,198 @@
 import { requireOperationalSession } from "@/lib/portal-guards";
 import { HrShell } from "@/components/hr/hr-shell";
-import { RoleOperationalDashboard } from "@/components/hr/role-operational-dashboard";
+import {
+  RoleOperationalDashboard,
+  type DashboardKpis,
+} from "@/components/hr/role-operational-dashboard";
 import type { AssignedTaskItem } from "@/components/hr/task-delegation-view";
+import { db } from "@/db";
+import * as schema from "@/db/schema";
+import { and, desc, eq, ne } from "drizzle-orm";
 
 export default async function HrOverviewPage() {
   const { profile } = await requireOperationalSession();
 
   let assignedTasks: AssignedTaskItem[] = [];
+  let activeSeasonName = "Active Season";
+  const kpis: DashboardKpis = {
+    activeMembers: 0,
+    committeeCount: 0,
+    hrOfficers: 0,
+    assignedTasksCount: 0,
+    pendingGradingCount: 0,
+    avgMemberPoints: 0,
+    sessionsCount: 0,
+    publishedMonthsCount: 0,
+  };
 
-  // Dual-role deliverable directives populated based on leadership assignments
-  if (profile.role === "committee_head" || profile.role === "hr_admin") {
-    assignedTasks = [
-      {
-        id: "t-dir-1",
-        title: "Draft Q2 Committee Roadmap & Milestones",
-        assignedByName: "Khaled Mansour",
-        assignerRole: "director",
-        dueAt: new Date("2026-11-30"),
-        maxPoints: 100,
-        status: "in_progress",
-      },
-      {
-        id: "t-dir-2",
-        title: "Finalize Mid-Season Curriculum & Lab Hardware Kit Order",
-        assignedByName: "Khaled Mansour",
-        assignerRole: "director",
-        dueAt: new Date("2026-12-15"),
-        maxPoints: 100,
-        status: "in_progress",
-      },
-    ];
-  } else if (profile.role === "hr_member") {
-    assignedTasks = [
-      {
-        id: "t-hr-1",
-        title: "Audit Committee Attendance Logs for October",
-        assignedByName: "Sara Hassan",
-        assignerRole: "hr_admin",
-        dueAt: new Date("2026-11-28"),
-        maxPoints: 50,
-        status: "in_progress",
-      },
-    ];
+  try {
+    const [activeSeason] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"))
+      .limit(1);
+
+    if (activeSeason) {
+      activeSeasonName = activeSeason.name;
+      const seasonId = activeSeason.id;
+
+      const [
+        dbSubmissions,
+        dbMembers,
+        dbCommittees,
+        dbTasks,
+        dbAllTaskSubmissions,
+        dbSessions,
+        dbLedger,
+        dbSnapshots,
+      ] = await Promise.all([
+        db
+          .select({
+            taskId: schema.tasks.id,
+            title: schema.tasks.title,
+            dueAt: schema.tasks.dueAt,
+            maxPoints: schema.tasks.maxPoints,
+            totalPoints: schema.taskSubmissions.totalPoints,
+            submittedAt: schema.taskSubmissions.submittedAt,
+          })
+          .from(schema.taskSubmissions)
+          .innerJoin(
+            schema.tasks,
+            eq(schema.taskSubmissions.taskId, schema.tasks.id)
+          )
+          .where(
+            and(
+              eq(schema.taskSubmissions.membershipId, profile.id),
+              eq(schema.tasks.seasonId, seasonId)
+            )
+          )
+          .orderBy(desc(schema.tasks.createdAt)),
+        db
+          .select({
+            id: schema.rosterMemberships.id,
+            role: schema.rosterMemberships.role,
+            committeeId: schema.rosterMemberships.committeeId,
+          })
+          .from(schema.rosterMemberships)
+          .where(
+            and(
+              eq(schema.rosterMemberships.seasonId, seasonId),
+              eq(schema.rosterMemberships.isActive, true),
+              ne(schema.rosterMemberships.role, "attendee")
+            )
+          ),
+        db
+          .select({ id: schema.committees.id })
+          .from(schema.committees)
+          .where(
+            and(
+              eq(schema.committees.seasonId, seasonId),
+              eq(schema.committees.isActive, true)
+            )
+          ),
+        db
+          .select({
+            id: schema.tasks.id,
+            committeeId: schema.tasks.committeeId,
+          })
+          .from(schema.tasks)
+          .where(eq(schema.tasks.seasonId, seasonId)),
+        db
+          .select({
+            taskId: schema.taskSubmissions.taskId,
+            gradedAt: schema.taskSubmissions.gradedAt,
+            committeeId: schema.tasks.committeeId,
+          })
+          .from(schema.taskSubmissions)
+          .innerJoin(
+            schema.tasks,
+            eq(schema.taskSubmissions.taskId, schema.tasks.id)
+          )
+          .where(eq(schema.tasks.seasonId, seasonId)),
+        db
+          .select({
+            id: schema.branchSessions.id,
+            committeeId: schema.branchSessions.committeeId,
+          })
+          .from(schema.branchSessions)
+          .where(eq(schema.branchSessions.seasonId, seasonId)),
+        db
+          .select({
+            membershipId: schema.scoreLedger.membershipId,
+            points: schema.scoreLedger.points,
+          })
+          .from(schema.scoreLedger)
+          .where(eq(schema.scoreLedger.seasonId, seasonId)),
+        db
+          .select({ id: schema.monthlySnapshots.id })
+          .from(schema.monthlySnapshots)
+          .where(
+            and(
+              eq(schema.monthlySnapshots.seasonId, seasonId),
+              eq(schema.monthlySnapshots.status, "published")
+            )
+          ),
+      ]);
+
+      const defaultAssignerRole =
+        profile.role === "hr_member" ? "hr_admin" : "director";
+
+      assignedTasks = dbSubmissions.map((s) => ({
+        id: s.taskId,
+        title: s.title,
+        assignedByName: "Leadership",
+        assignerRole: defaultAssignerRole,
+        dueAt: s.dueAt,
+        maxPoints: s.maxPoints,
+        status:
+          s.totalPoints !== null
+            ? "completed"
+            : s.submittedAt
+              ? "in_progress"
+              : "not_started",
+      }));
+
+      const isCommitteeScoped =
+        profile.role === "committee_head" || profile.role === "hr_member";
+      const scopedMembers = isCommitteeScoped
+        ? dbMembers.filter((m) => m.committeeId === profile.committeeId)
+        : dbMembers;
+      const scopedMemberIds = new Set(scopedMembers.map((m) => m.id));
+
+      const scopedTasks = isCommitteeScoped
+        ? dbTasks.filter((t) => t.committeeId === profile.committeeId)
+        : dbTasks;
+      const scopedSubmissions = isCommitteeScoped
+        ? dbAllTaskSubmissions.filter(
+            (s) => s.committeeId === profile.committeeId
+          )
+        : dbAllTaskSubmissions;
+      const scopedSessions = isCommitteeScoped
+        ? dbSessions.filter((s) => s.committeeId === profile.committeeId)
+        : dbSessions;
+
+      const totalScopedPoints = dbLedger
+        .filter((l) => scopedMemberIds.has(l.membershipId))
+        .reduce((sum, l) => sum + l.points, 0);
+
+      kpis.activeMembers = scopedMembers.length;
+      kpis.committeeCount = dbCommittees.length;
+      kpis.hrOfficers = dbMembers.filter(
+        (m) => m.role === "hr_member" || m.role === "hr_admin"
+      ).length;
+      kpis.assignedTasksCount = scopedTasks.length;
+      kpis.pendingGradingCount = scopedSubmissions.filter(
+        (s) => s.gradedAt === null
+      ).length;
+      kpis.avgMemberPoints =
+        scopedMembers.length > 0
+          ? Math.round(totalScopedPoints / scopedMembers.length)
+          : 0;
+      kpis.sessionsCount = scopedSessions.length;
+      kpis.publishedMonthsCount = dbSnapshots.length;
+    }
+  } catch {
+    // Graceful fallback when DB is unreachable during build
   }
 
   return (
@@ -50,12 +201,14 @@ export default async function HrOverviewPage() {
       currentUserRole={profile.role}
       userName={profile.fullName}
       userCommitteeName={profile.committeeName}
+      activeSeasonName={activeSeasonName}
     >
       <RoleOperationalDashboard
         currentUserRole={profile.role}
         userName={profile.fullName}
         committeeName={profile.committeeName}
         assignedTasks={assignedTasks}
+        kpis={kpis}
       />
     </HrShell>
   );

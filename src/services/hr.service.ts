@@ -28,10 +28,30 @@ const VALID_ROLES = new Set<MembershipRole>([
   "attendee",
 ]);
 
-/**
- * Parses raw CSV text containing columns: full_name, email, committee_slug, role.
- * Normalizes emails and collects line-by-line syntax and constraint errors.
- */
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      fields.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  fields.push(current.trim());
+  return fields;
+}
 export function parseRosterCsv(csvContent: string): CsvRosterParseResult {
   const lines = csvContent
     .split(/\r?\n/)
@@ -54,7 +74,7 @@ export function parseRosterCsv(csvContent: string): CsvRosterParseResult {
 
   dataLines.forEach((line, idx) => {
     const lineNum = startLineNum + idx;
-    const parts = line.split(",").map((p) => p.trim());
+    const parts = parseCsvLine(line);
 
     if (parts.length < 4) {
       errors.push({
@@ -104,7 +124,7 @@ export function generateSessionCheckinCode(expiryMinutes = 15): {
   code: string;
   expiresAt: Date;
 } {
-  const code = crypto.randomInt(100000, 999999).toString();
+  const code = crypto.randomInt(100000, 1000000).toString();
   const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
   return { code, expiresAt };
 }

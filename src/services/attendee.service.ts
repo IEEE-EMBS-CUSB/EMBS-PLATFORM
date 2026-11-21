@@ -1,7 +1,6 @@
-import * as store from "@/db/store";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type {
   AttendeeAssignment,
   AttendeeDashboardData,
@@ -19,24 +18,43 @@ export async function getAttendeeProfile(
         id: schema.rosterMemberships.id,
         fullName: schema.rosterMemberships.fullName,
         role: schema.rosterMemberships.role,
+        committeeName: schema.committees.name,
+        seasonName: schema.seasons.name,
       })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.id, attendeeId));
+      .leftJoin(
+        schema.committees,
+        eq(schema.rosterMemberships.committeeId, schema.committees.id)
+      )
+      .leftJoin(
+        schema.seasons,
+        eq(schema.rosterMemberships.seasonId, schema.seasons.id)
+      )
+      .where(
+        and(
+          eq(schema.rosterMemberships.id, attendeeId),
+          eq(schema.rosterMemberships.isActive, true),
+          eq(schema.rosterMemberships.role, "attendee")
+        )
+      )
+      .limit(1);
 
     const attendee = rows[0];
-    if (attendee && attendee.role === "attendee") {
+    if (attendee) {
       return {
         id: attendee.id,
         displayId: `ATT-${attendee.id.slice(0, 6).toUpperCase()}`,
         fullName: attendee.fullName,
-        programTrack: "Biomedical AI Foundations Track",
-        cohortLabel: "Fall 2026",
+        programTrack: attendee.committeeName
+          ? `${attendee.committeeName} Track`
+          : "IEEE EMBS CUSB Workshop Track",
+        cohortLabel: attendee.seasonName ?? "Active Season",
       };
     }
   } catch {
-    // Fall back to store
+    // Graceful fallback
   }
-  return store.getAttendeeProfile(attendeeId);
+  return null;
 }
 
 export async function getAttendeeAttendance(
@@ -58,7 +76,8 @@ export async function getAttendeeAttendance(
         schema.committees,
         eq(schema.branchSessions.committeeId, schema.committees.id)
       )
-      .where(eq(schema.attendanceRecords.membershipId, attendeeId));
+      .where(eq(schema.attendanceRecords.membershipId, attendeeId))
+      .orderBy(desc(schema.branchSessions.startsAt));
 
     if (records.length > 0) {
       return records.map(({ record, session, committee }) => ({
@@ -72,9 +91,9 @@ export async function getAttendeeAttendance(
       }));
     }
   } catch {
-    // Fall back to store
+    // Graceful fallback
   }
-  return store.getAttendeeAttendance(attendeeId);
+  return [];
 }
 
 export async function getAttendeeAssignments(
@@ -85,43 +104,52 @@ export async function getAttendeeAssignments(
       .select({
         submission: schema.taskSubmissions,
         task: schema.tasks,
+        committee: schema.committees,
       })
       .from(schema.taskSubmissions)
       .innerJoin(
         schema.tasks,
         eq(schema.taskSubmissions.taskId, schema.tasks.id)
       )
-      .where(eq(schema.taskSubmissions.membershipId, attendeeId));
+      .leftJoin(
+        schema.committees,
+        eq(schema.tasks.committeeId, schema.committees.id)
+      )
+      .where(eq(schema.taskSubmissions.membershipId, attendeeId))
+      .orderBy(desc(schema.tasks.dueAt));
 
     if (tasks.length > 0) {
-      return tasks.map(({ submission, task }) => ({
+      return tasks.map(({ submission, task, committee }) => ({
         id: task.id,
         title: task.title,
-        sessionTitle: "Foundation Track Milestone",
+        sessionTitle: committee?.name ?? "Workshop Track Deliverable",
         dueDate: task.dueAt ? task.dueAt.toISOString().slice(0, 10) : "",
-        submittedAt: submission.createdAt.toISOString().slice(0, 10),
+        submittedAt: submission.submittedAt
+          ? submission.submittedAt.toISOString().slice(0, 10)
+          : undefined,
         status: submission.gradedAt
           ? ("graded" as const)
-          : ("submitted" as const),
+          : submission.submittedAt
+          ? ("submitted" as const)
+          : ("pending" as const),
         mark: submission.totalPoints,
-        maxMark: 20,
-        instructorNote: submission.qualityScore
+        maxMark: task.maxPoints,
+        instructorNote: submission.notes
+          ? submission.notes
+          : submission.qualityScore
           ? `Quality: ${submission.qualityScore}/5`
           : undefined,
       }));
     }
   } catch {
-    // Fall back to store
+    // Graceful fallback
   }
-  return store.getAttendeeAssignments(attendeeId);
+  return [];
 }
 
 export async function getAttendeeDashboard(
   attendeeId: string
 ): Promise<AttendeeDashboardData | null> {
-  const stored = store.getAttendeeDashboard(attendeeId);
-  if (stored) return stored;
-
   const profile = await getAttendeeProfile(attendeeId);
   if (!profile) return null;
 
@@ -137,14 +165,24 @@ export async function getAttendeeDashboard(
     (a) => a.status === "graded" || a.status === "submitted"
   ).length;
 
+  const totalEarnedMarks = assignments.reduce(
+    (sum, a) => sum + (a.mark ?? 0),
+    0
+  );
+  const totalPossibleMarks = assignments.reduce(
+    (sum, a) => sum + (a.maxMark ?? 0),
+    0
+  );
+
   const participation: AttendeeParticipationSummary = {
     sessionsAttended,
-    totalSessions: Math.max(sessions.length, 1),
+    totalSessions: sessions.length,
     assignmentsCompleted,
-    totalAssignments: Math.max(assignments.length, 1),
-    marksSummaryLabel: `${assignmentsCompleted * 15} / ${
-      Math.max(assignments.length, 1) * 20
-    }`,
+    totalAssignments: assignments.length,
+    marksSummaryLabel:
+      totalPossibleMarks > 0
+        ? `${totalEarnedMarks} / ${totalPossibleMarks}`
+        : "No graded assignments yet",
     participationStanding:
       sessionsAttended >= 2 ? "Active Participant" : "Enrolled Participant",
     nextMilestoneNote:

@@ -1,0 +1,267 @@
+import { db } from "@/db";
+import * as schema from "@/db/schema";
+import { and, desc, eq, ne } from "drizzle-orm";
+import type { MembershipRole } from "@/lib/auth-helpers";
+import { canPublishLeaderboard } from "@/lib/permissions";
+import {
+  calculateDraftMonthlySnapshot,
+  type CalculatedSnapshotEntry,
+  type MemberRef,
+} from "@/services/hr.service";
+import {
+  isValidMonthKey,
+  resolveActiveSeason,
+  sanitizeDbError,
+} from "./helpers";
+
+interface PublishingActor {
+  profile: { id?: string; role: MembershipRole };
+}
+
+function formatMonthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return monthKey;
+  const date = new Date(Date.UTC(y, m - 1, 1));
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+interface StoredSnapshotPayload {
+  monthLabel?: string;
+  entries?: CalculatedSnapshotEntry[];
+  overallEntries?: CalculatedSnapshotEntry[];
+  committeeEntries?: Record<string, CalculatedSnapshotEntry[]>;
+}
+
+async function buildDraft(month: string, seasonId: string) {
+  const dbMembers = await db
+    .select({
+      id: schema.rosterMemberships.id,
+      fullName: schema.rosterMemberships.fullName,
+      committeeId: schema.rosterMemberships.committeeId,
+      role: schema.rosterMemberships.role,
+    })
+    .from(schema.rosterMemberships)
+    .where(
+      and(
+        eq(schema.rosterMemberships.seasonId, seasonId),
+        eq(schema.rosterMemberships.isActive, true),
+        ne(schema.rosterMemberships.role, "attendee")
+      )
+    );
+
+  const committees = await db
+    .select()
+    .from(schema.committees)
+    .where(eq(schema.committees.seasonId, seasonId));
+  const commMap = new Map(committees.map((c) => [c.id, c]));
+
+  const members = dbMembers.map((m) => ({
+    id: m.id,
+    fullName: m.fullName,
+    committeeId: m.committeeId,
+    committeeSlug: m.committeeId ? commMap.get(m.committeeId)?.slug ?? null : null,
+    committeeName: m.committeeId ? commMap.get(m.committeeId)?.name ?? null : null,
+    role: m.role,
+  }));
+
+  const ledger = await db
+    .select()
+    .from(schema.scoreLedger)
+    .where(
+      and(
+        eq(schema.scoreLedger.seasonId, seasonId),
+        eq(schema.scoreLedger.month, month)
+      )
+    );
+  const ledgerEntries = ledger.map((l) => ({
+    membershipId: l.membershipId,
+    points: l.points,
+  }));
+
+  const prevRows = await db
+    .select()
+    .from(schema.monthlySnapshots)
+    .where(
+      and(
+        eq(schema.monthlySnapshots.seasonId, seasonId),
+        eq(schema.monthlySnapshots.status, "published")
+      )
+    )
+    .orderBy(desc(schema.monthlySnapshots.month));
+
+  const previous = prevRows.find((r) => r.month < month);
+  let previousSnapshot:
+    | {
+        overall?: { memberId: string; rank: number }[];
+        committees?: Record<string, { memberId: string; rank: number }[]>;
+      }
+    | undefined;
+
+  if (previous) {
+    const json = previous.snapshotJson as StoredSnapshotPayload;
+    const prevOverall = json.overallEntries ?? json.entries ?? [];
+    previousSnapshot = {
+      overall: prevOverall.map((e) => ({ memberId: e.memberId, rank: e.rank })),
+      committees: Object.fromEntries(
+        Object.entries(json.committeeEntries ?? {}).map(([k, v]) => [
+          k,
+          (v ?? []).map((e) => ({ memberId: e.memberId, rank: e.rank })),
+        ])
+      ),
+    };
+  }
+
+  const draft = calculateDraftMonthlySnapshot({
+    month,
+    members: members as MemberRef[],
+    ledgerEntries,
+    previousSnapshot,
+  });
+  return { draft, members };
+}
+
+export async function publishMonthlySnapshotAsActor(
+  month: string,
+  actor: PublishingActor
+) {
+  if (!canPublishLeaderboard(actor.profile.role)) {
+    return {
+      ok: false,
+      error: "Unauthorized: only Master Admin or HR Admin can publish leaderboards.",
+    };
+  }
+  if (!isValidMonthKey(month)) {
+    return { ok: false, error: "Invalid month format. Expected YYYY-MM." };
+  }
+
+  try {
+    const seasonRes = await resolveActiveSeason();
+    if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
+    const seasonId = seasonRes.season.id;
+
+    const existing = await db
+      .select()
+      .from(schema.monthlySnapshots)
+      .where(
+        and(
+          eq(schema.monthlySnapshots.seasonId, seasonId),
+          eq(schema.monthlySnapshots.month, month)
+        )
+      )
+      .limit(1);
+
+    if (existing.length > 0 && existing[0].status === "published") {
+      return { ok: true };
+    }
+
+    const { draft } = await buildDraft(month, seasonId);
+
+    const snapshotJson: StoredSnapshotPayload = {
+      monthLabel: formatMonthLabel(month),
+      entries: draft.overallEntries,
+      overallEntries: draft.overallEntries,
+      committeeEntries: draft.committeeEntries,
+    };
+
+    if (existing.length > 0) {
+      await db
+        .update(schema.monthlySnapshots)
+        .set({
+          status: "published",
+          publishedAt: new Date(),
+          publishedBy: actor.profile.id ?? null,
+          snapshotJson,
+        })
+        .where(eq(schema.monthlySnapshots.id, existing[0].id));
+    } else {
+      await db.insert(schema.monthlySnapshots).values({
+        seasonId,
+        month,
+        status: "published",
+        publishedAt: new Date(),
+        publishedBy: actor.profile.id ?? null,
+        snapshotJson,
+      });
+    }
+
+    return { ok: true };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to publish monthly leaderboard."),
+    };
+  }
+}
+
+/**
+ * Server-side query for the HR Publishing page.
+ * Returns frozen snapshot entries when already published, or live draft entries otherwise.
+ */
+export async function getSnapshotForPublishingPage(month: string) {
+  if (!isValidMonthKey(month)) return null;
+
+  const seasonRes = await resolveActiveSeason();
+  if (!seasonRes.ok) return null;
+  const seasonId = seasonRes.season.id;
+
+  const [existing] = await db
+    .select()
+    .from(schema.monthlySnapshots)
+    .where(
+      and(
+        eq(schema.monthlySnapshots.seasonId, seasonId),
+        eq(schema.monthlySnapshots.month, month)
+      )
+    )
+    .limit(1);
+
+  if (existing && existing.status === "published") {
+    const json = existing.snapshotJson as StoredSnapshotPayload;
+    const overallEntries = json.overallEntries ?? json.entries ?? [];
+    const committeeEntries = json.committeeEntries ?? {};
+    return {
+      month,
+      status: "published" as const,
+      publishedAt: existing.publishedAt
+        ? existing.publishedAt.toISOString().slice(0, 10)
+        : undefined,
+      overallEntries,
+      committeeEntries,
+    };
+  }
+
+  const { draft } = await buildDraft(month, seasonId);
+  return {
+    month,
+    status: "draft" as const,
+    publishedAt: undefined,
+    overallEntries: draft.overallEntries,
+    committeeEntries: draft.committeeEntries,
+  };
+}
+
+export async function getAvailableMonthsForPublishingPage(): Promise<string[]> {
+  const seasonRes = await resolveActiveSeason();
+  if (!seasonRes.ok) return [];
+  const seasonId = seasonRes.season.id;
+
+  const [ledgerRows, snapshotRows] = await Promise.all([
+    db
+      .select({ month: schema.scoreLedger.month })
+      .from(schema.scoreLedger)
+      .where(eq(schema.scoreLedger.seasonId, seasonId)),
+    db
+      .select({ month: schema.monthlySnapshots.month })
+      .from(schema.monthlySnapshots)
+      .where(eq(schema.monthlySnapshots.seasonId, seasonId)),
+  ]);
+
+  const months = new Set<string>();
+  for (const r of ledgerRows) months.add(r.month);
+  for (const r of snapshotRows) months.add(r.month);
+  return Array.from(months).sort().reverse();
+}

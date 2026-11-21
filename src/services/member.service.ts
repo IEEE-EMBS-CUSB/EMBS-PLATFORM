@@ -1,12 +1,6 @@
-import * as store from "@/db/store";
-import {
-  CHAPTER_COMMITTEES,
-  STORED_MEMBERS,
-  findCommitteeBySlug,
-} from "@/db/seed-data";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import type {
   MemberActivity,
@@ -18,8 +12,34 @@ import type {
   MonthKey,
   MonthlyScoreRecord,
   PublishedFeedback,
+  ScoreComponent,
   SeasonalEvaluation,
 } from "@/types";
+
+function formatMonthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return monthKey;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y, m - 1, 1)));
+}
+
+function formatAuthorRoleLabel(role?: string | null): string {
+  switch (role) {
+    case "master_admin":
+      return "Chapter Administration";
+    case "director":
+      return "Chapter Director";
+    case "hr_admin":
+      return "HR Lead";
+    case "committee_head":
+      return "Committee Head";
+    default:
+      return "HR Team";
+  }
+}
 
 export async function getMemberProfile(
   memberId: string
@@ -34,16 +54,27 @@ export async function getMemberProfile(
         committeeSlug: schema.committees.slug,
         committeeName: schema.committees.name,
         committeeCategory: schema.committees.category,
+        seasonName: schema.seasons.name,
       })
       .from(schema.rosterMemberships)
       .leftJoin(
         schema.committees,
         eq(schema.rosterMemberships.committeeId, schema.committees.id)
       )
-      .where(eq(schema.rosterMemberships.id, memberId));
+      .leftJoin(
+        schema.seasons,
+        eq(schema.rosterMemberships.seasonId, schema.seasons.id)
+      )
+      .where(
+        and(
+          eq(schema.rosterMemberships.id, memberId),
+          eq(schema.rosterMemberships.isActive, true)
+        )
+      )
+      .limit(1);
 
     const member = memberRows[0];
-    if (member) {
+    if (member && member.role !== "attendee") {
       const committee =
         member.committeeId && member.committeeSlug && member.committeeName
           ? {
@@ -68,14 +99,14 @@ export async function getMemberProfile(
         displayId: `EMBS-${member.id.slice(0, 6)}`,
         fullName: member.fullName,
         role: member.role === "committee_head" ? "Head" : "Member",
-        seasonLabel: "Fall 2026",
+        seasonLabel: member.seasonName ?? "Current Season",
         committee,
       };
     }
   } catch {
-    // Fall back to store
+    // Database unreachable or invalid UUID
   }
-  return store.getMemberProfile(memberId);
+  return null;
 }
 
 export interface OperationalUserProfile {
@@ -107,10 +138,16 @@ export async function getOperationalUserProfile(
         schema.committees,
         eq(schema.rosterMemberships.committeeId, schema.committees.id)
       )
-      .where(eq(schema.rosterMemberships.id, memberId));
+      .where(
+        and(
+          eq(schema.rosterMemberships.id, memberId),
+          eq(schema.rosterMemberships.isActive, true)
+        )
+      )
+      .limit(1);
 
     const member = memberRows[0];
-    if (member) {
+    if (member && member.role !== "attendee") {
       return {
         id: member.id,
         fullName: member.fullName,
@@ -122,31 +159,8 @@ export async function getOperationalUserProfile(
       };
     }
   } catch {
-    // Fall back to store
+    // Database unreachable or invalid UUID
   }
-
-  const storedMember = STORED_MEMBERS[memberId];
-  if (storedMember) {
-    const committee =
-      CHAPTER_COMMITTEES.find((c) => c.id === storedMember.committeeId) ??
-      findCommitteeBySlug(storedMember.committeeId);
-    const role: MembershipRole =
-      storedMember.role === "Head"
-        ? "committee_head"
-        : storedMember.role === "Member"
-        ? "member"
-        : "member";
-    return {
-      id: storedMember.id,
-      fullName: storedMember.fullName,
-      email: storedMember.email,
-      role,
-      committeeId: storedMember.committeeId,
-      committeeName: committee?.name ?? undefined,
-      seasonId: "season-2026",
-    };
-  }
-
   return null;
 }
 
@@ -154,58 +168,145 @@ export async function getMemberMonthlyScores(
   memberId: string
 ): Promise<MonthlyScoreRecord[]> {
   try {
-    const ledger = await db
-      .select()
-      .from(schema.scoreLedger)
-      .where(eq(schema.scoreLedger.membershipId, memberId))
-      .orderBy(desc(schema.scoreLedger.createdAt));
+    const [member] = await db
+      .select({
+        seasonId: schema.rosterMemberships.seasonId,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
+      .from(schema.rosterMemberships)
+      .where(
+        and(
+          eq(schema.rosterMemberships.id, memberId),
+          eq(schema.rosterMemberships.isActive, true)
+        )
+      )
+      .limit(1);
 
-    if (ledger.length > 0) {
-      const totalScore = ledger.reduce((sum, item) => sum + item.points, 0);
-      return [
+    if (!member) return [];
+
+    const [allSeasonLedger, publishedSnapshots, committeeMembers] =
+      await Promise.all([
+        db
+          .select()
+          .from(schema.scoreLedger)
+          .where(eq(schema.scoreLedger.seasonId, member.seasonId)),
+        db
+          .select({ month: schema.monthlySnapshots.month })
+          .from(schema.monthlySnapshots)
+          .where(
+            and(
+              eq(schema.monthlySnapshots.seasonId, member.seasonId),
+              eq(schema.monthlySnapshots.status, "published")
+            )
+          ),
+        member.committeeId
+          ? db
+              .select({ id: schema.rosterMemberships.id })
+              .from(schema.rosterMemberships)
+              .where(
+                and(
+                  eq(schema.rosterMemberships.seasonId, member.seasonId),
+                  eq(schema.rosterMemberships.committeeId, member.committeeId),
+                  eq(schema.rosterMemberships.isActive, true)
+                )
+              )
+          : Promise.resolve([]),
+      ]);
+
+    const memberLedger = allSeasonLedger.filter(
+      (l) => l.membershipId === memberId
+    );
+    const months = Array.from(new Set(memberLedger.map((l) => l.month))).sort();
+    if (months.length === 0) return [];
+
+    const publishedMonthSet = new Set(publishedSnapshots.map((s) => s.month));
+    const commIds = new Set(committeeMembers.map((c) => c.id));
+
+    const results: MonthlyScoreRecord[] = [];
+    let prevOverallRank: number | null = null;
+
+    for (const month of months) {
+      const monthEntries = memberLedger.filter((l) => l.month === month);
+      const totalScore = monthEntries.reduce((sum, e) => sum + e.points, 0);
+
+      const pointsMap = new Map<string, number>();
+      for (const e of allSeasonLedger) {
+        if (e.month !== month) continue;
+        pointsMap.set(
+          e.membershipId,
+          (pointsMap.get(e.membershipId) ?? 0) + e.points
+        );
+      }
+
+      const sortedOverall = Array.from(pointsMap.entries()).sort(
+        (a, b) => b[1] - a[1]
+      );
+      const overallIdx = sortedOverall.findIndex(([id]) => id === memberId);
+      const overallRank = overallIdx >= 0 ? overallIdx + 1 : sortedOverall.length + 1;
+      const overallTotal = Math.max(sortedOverall.length, 1);
+
+      let committeeRank = 1;
+      let committeeTotal = 1;
+      if (member.committeeId && commIds.size > 0) {
+        const sortedComm = Array.from(pointsMap.entries())
+          .filter(([id]) => commIds.has(id))
+          .sort((a, b) => b[1] - a[1]);
+        const commIdx = sortedComm.findIndex(([id]) => id === memberId);
+        committeeRank = commIdx >= 0 ? commIdx + 1 : sortedComm.length + 1;
+        committeeTotal = Math.max(sortedComm.length, 1);
+      }
+
+      const components: ScoreComponent[] = [
         {
-          month: "2026-10" as MonthKey,
-          monthLabel: "October 2026",
-          isPublished: true,
-          totalScore,
-          overallRank: 1,
-          overallTotal: 10,
-          committeeRank: 1,
-          committeeTotal: 2,
-          previousOverallRank: null,
-          components: [
-            {
-              key: "attendance",
-              label: "Attendance & Punctuality",
-              points: ledger
-                .filter((l) => l.sourceType === "attendance")
-                .reduce((s, i) => s + i.points, 0),
-              maxPoints: 20,
-            },
-            {
-              key: "tasks",
-              label: "Task Contribution",
-              points: ledger
-                .filter((l) => l.sourceType === "task")
-                .reduce((s, i) => s + i.points, 0),
-              maxPoints: 40,
-            },
-            {
-              key: "bonuses",
-              label: "HR Recognition & Bonuses",
-              points: ledger
-                .filter((l) => l.sourceType === "manual_override")
-                .reduce((s, i) => s + i.points, 0),
-              maxPoints: 10,
-            },
-          ],
+          key: "attendance",
+          label: "Attendance & Punctuality",
+          points: monthEntries
+            .filter((l) => l.sourceType === "attendance")
+            .reduce((s, i) => s + i.points, 0),
+          maxPoints: 20,
+        },
+        {
+          key: "tasks",
+          label: "Task Contribution",
+          points: monthEntries
+            .filter((l) => l.sourceType === "task")
+            .reduce((s, i) => s + i.points, 0),
+          maxPoints: 40,
+        },
+        {
+          key: "bonuses",
+          label: "HR Recognition & Bonuses",
+          points: monthEntries
+            .filter(
+              (l) =>
+                l.sourceType === "manual_override" || l.sourceType === "event"
+            )
+            .reduce((s, i) => s + i.points, 0),
+          maxPoints: 10,
         },
       ];
+
+      results.push({
+        month: month as MonthKey,
+        monthLabel: formatMonthLabel(month),
+        isPublished: publishedMonthSet.has(month),
+        totalScore,
+        overallRank,
+        overallTotal,
+        committeeRank,
+        committeeTotal,
+        previousOverallRank: prevOverallRank,
+        components,
+      });
+
+      prevOverallRank = overallRank;
     }
+
+    return results.sort((a, b) => b.month.localeCompare(a.month));
   } catch {
-    // Fall back to store
+    // Graceful fallback
   }
-  return store.getMemberMonthlyScores(memberId);
+  return [];
 }
 
 export async function getMemberAttendance(
@@ -222,23 +323,25 @@ export async function getMemberAttendance(
         schema.branchSessions,
         eq(schema.attendanceRecords.sessionId, schema.branchSessions.id)
       )
-      .where(eq(schema.attendanceRecords.membershipId, memberId));
+      .where(eq(schema.attendanceRecords.membershipId, memberId))
+      .orderBy(desc(schema.branchSessions.startsAt));
 
     if (records.length > 0) {
       return records.map(({ record, session }) => ({
         id: record.id,
-        month: "2026-10" as MonthKey,
+        month: session.startsAt.toISOString().slice(0, 7) as MonthKey,
         title: session.title,
         date: session.startsAt.toISOString().slice(0, 10),
         sessionType: "workshop" as const,
         status: "attended" as const,
         arrival: record.isPunctual ? ("on_time" as const) : ("late" as const),
+        bonusPoints: record.pointsAwarded,
       }));
     }
   } catch {
-    // Fall back to store
+    // Graceful fallback
   }
-  return store.getMemberAttendance(memberId);
+  return [];
 }
 
 export async function getMemberTasks(memberId: string): Promise<MemberTask[]> {
@@ -249,48 +352,104 @@ export async function getMemberTasks(memberId: string): Promise<MemberTask[]> {
         task: schema.tasks,
       })
       .from(schema.taskSubmissions)
-      .innerJoin(
-        schema.tasks,
-        eq(schema.taskSubmissions.taskId, schema.tasks.id)
-      )
-      .where(eq(schema.taskSubmissions.membershipId, memberId));
+      .innerJoin(schema.tasks, eq(schema.taskSubmissions.taskId, schema.tasks.id))
+      .where(eq(schema.taskSubmissions.membershipId, memberId))
+      .orderBy(desc(schema.tasks.dueAt));
 
     if (tasks.length > 0) {
       return tasks.map(({ submission, task }) => ({
         id: task.id,
-        month: "2026-10" as MonthKey,
+        submissionId: submission.id,
+        month: (task.dueAt
+          ? task.dueAt.toISOString().slice(0, 7)
+          : new Date().toISOString().slice(0, 7)) as MonthKey,
         title: task.title,
-        status: "completed" as const,
-        assignedDate: "2026-10-15",
+        status: submission.gradedAt
+          ? ("completed" as const)
+          : submission.submittedAt
+          ? ("in_progress" as const)
+          : ("not_started" as const),
+        assignedDate: task.createdAt
+          ? task.createdAt.toISOString().slice(0, 10)
+          : "",
         dueDate: task.dueAt ? task.dueAt.toISOString().slice(0, 10) : "",
         completedDate: submission.gradedAt
           ? submission.gradedAt.toISOString().slice(0, 10)
+          : submission.submittedAt
+          ? submission.submittedAt.toISOString().slice(0, 10)
           : undefined,
         effort: submission.effortScore ?? 1,
         quality: submission.qualityScore,
         onTime:
           submission.timelinessScore !== null
-            ? submission.timelinessScore > 0
+            ? submission.timelinessScore >= 3
             : null,
         taskPoints: submission.totalPoints,
+        notes: submission.notes ?? undefined,
       }));
     }
   } catch {
-    // Fall back to store
+    // Graceful fallback
   }
-  return store.getMemberTasks(memberId);
+  return [];
 }
 
 export async function getMemberActivities(
   memberId: string
 ): Promise<MemberActivity[]> {
-  return store.getMemberActivities(memberId);
+  try {
+    const rows = await db
+      .select()
+      .from(schema.memberActivities)
+      .where(eq(schema.memberActivities.membershipId, memberId))
+      .orderBy(desc(schema.memberActivities.date));
+
+    if (rows.length > 0) {
+      return rows.map((r) => ({
+        id: r.id,
+        month: r.month as MonthKey,
+        date: r.date,
+        category: r.category as MemberActivity["category"],
+        title: r.title,
+        role: r.role,
+        summary: r.summary,
+        pointsAwarded: r.pointsAwarded,
+      }));
+    }
+  } catch {
+    // Fall through
+  }
+  return [];
 }
 
 export async function getMemberEvaluations(
   memberId: string
 ): Promise<SeasonalEvaluation[]> {
-  return store.getMemberEvaluations(memberId);
+  try {
+    const rows = await db
+      .select()
+      .from(schema.seasonalEvaluations)
+      .where(eq(schema.seasonalEvaluations.membershipId, memberId))
+      .orderBy(desc(schema.seasonalEvaluations.publishedAt));
+
+    if (rows.length > 0) {
+      return rows.map((r) => ({
+        id: r.id,
+        seasonLabel: r.seasonLabel,
+        publishedAt: r.publishedAt.toISOString(),
+        status: r.status as "complete" | "pending",
+        evaluatorRole: r.evaluatorRole,
+        finalScore: r.finalScore,
+        outOf: r.outOf,
+        bonusPoints: r.bonusPoints,
+        grade: r.grade as SeasonalEvaluation["grade"],
+        criteria: (r.criteria as SeasonalEvaluation["criteria"]) ?? [],
+      }));
+    }
+  } catch {
+    // Fall through
+  }
+  return [];
 }
 
 export async function getMemberFeedback(
@@ -309,21 +468,44 @@ export async function getMemberFeedback(
       )
       .orderBy(desc(schema.hrFeedback.createdAt));
 
-    if (feedbackRows.length > 0) {
-      return feedbackRows.map((f) => ({
-        id: f.id,
-        month: "2026-10" as MonthKey,
-        publishedAt: f.createdAt.toISOString().slice(0, 10),
-        authorRole: "HR Team",
-        reviewType: "recognition" as const,
-        message: f.content,
-        visibility: "published" as const,
-      }));
+    if (feedbackRows.length === 0) return [];
+
+    const authorIds = Array.from(
+      new Set(
+        feedbackRows
+          .map((f) => f.createdBy)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+    const authorRoleMap = new Map<string, string>();
+    if (authorIds.length > 0) {
+      const authors = await db
+        .select({
+          id: schema.rosterMemberships.id,
+          role: schema.rosterMemberships.role,
+        })
+        .from(schema.rosterMemberships)
+        .where(inArray(schema.rosterMemberships.id, authorIds));
+      for (const a of authors) {
+        authorRoleMap.set(a.id, a.role);
+      }
     }
+
+    return feedbackRows.map((f) => ({
+      id: f.id,
+      month: f.createdAt.toISOString().slice(0, 7) as MonthKey,
+      publishedAt: f.createdAt.toISOString().slice(0, 10),
+      authorRole: formatAuthorRoleLabel(
+        f.createdBy ? authorRoleMap.get(f.createdBy) : null
+      ),
+      reviewType: "recognition" as const,
+      message: f.content,
+      visibility: "published" as const,
+    }));
   } catch {
-    // Fall back to store
+    // Graceful fallback
   }
-  return store.getMemberFeedback(memberId);
+  return [];
 }
 
 export async function getMemberDashboard(
@@ -351,9 +533,41 @@ export async function getMemberDashboard(
 
   let pointsToNextRank: number | null = null;
   let targetRank: number | null = null;
-  if (currentRank > 1) {
+  if (currentRank > 1 && currentMonthScore) {
     targetRank = currentRank - 1;
-    pointsToNextRank = 5;
+    // Compute exact gap to the rank immediately above from DB ledger if available
+    try {
+      const [memberRow] = await db
+        .select({ seasonId: schema.rosterMemberships.seasonId })
+        .from(schema.rosterMemberships)
+        .where(eq(schema.rosterMemberships.id, memberId))
+        .limit(1);
+      if (memberRow) {
+        const monthLedger = await db
+          .select({
+            membershipId: schema.scoreLedger.membershipId,
+            points: schema.scoreLedger.points,
+          })
+          .from(schema.scoreLedger)
+          .where(
+            and(
+              eq(schema.scoreLedger.seasonId, memberRow.seasonId),
+              eq(schema.scoreLedger.month, currentMonthScore.month)
+            )
+          );
+        const totals = new Map<string, number>();
+        for (const e of monthLedger) {
+          totals.set(e.membershipId, (totals.get(e.membershipId) ?? 0) + e.points);
+        }
+        const sortedScores = Array.from(totals.values()).sort((a, b) => b - a);
+        const aboveScore = sortedScores[currentRank - 2];
+        if (aboveScore !== undefined) {
+          pointsToNextRank = Math.max(1, aboveScore - livePoints + 1);
+        }
+      }
+    } catch {
+      pointsToNextRank = null;
+    }
   }
 
   let activityTier: MemberEngagementMetrics["activityTier"] = "Member";
@@ -365,10 +579,10 @@ export async function getMemberDashboard(
   const streak = attendance.filter((a) => a.status === "attended").length;
   const completedTasks = tasks.filter((t) => t.status === "completed").length;
   const taskCompletionRate =
-    tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 100;
+    tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
 
   const engagement: MemberEngagementMetrics = {
-    attendanceStreak: Math.max(1, streak),
+    attendanceStreak: streak,
     livePoints,
     currentRank,
     pointsToNextRank,
@@ -391,24 +605,25 @@ export async function getMemberDashboard(
     excusedCount,
     absentCount,
     punctualityRatePct:
-      attendedCount > 0 ? Math.round((onTimeCount / attendedCount) * 100) : 100,
-    summaryLabel: `${attendedCount}/${totalSessionsCount || 1} sessions attended`,
+      attendedCount > 0 ? Math.round((onTimeCount / attendedCount) * 100) : 0,
+    summaryLabel: `${attendedCount}/${totalSessionsCount} sessions attended`,
   };
 
   const totalTasksCount = tasks.length;
+  const gradedTasks = tasks.filter((t) => t.quality !== null);
   const taskSummary = {
     completedCount: completedTasks,
     totalCount: totalTasksCount,
     onTimeCount: tasks.filter((t) => t.onTime === true).length,
     averageQualityScore:
-      completedTasks > 0
+      gradedTasks.length > 0
         ? Math.round(
-            (tasks.reduce((sum, t) => sum + (t.quality ?? 0), 0) /
-              completedTasks) *
+            (gradedTasks.reduce((sum, t) => sum + (t.quality ?? 0), 0) /
+              gradedTasks.length) *
               10
           ) / 10
-        : 5,
-    summaryLabel: `${completedTasks}/${totalTasksCount || 1} tasks completed`,
+        : 0,
+    summaryLabel: `${completedTasks}/${totalTasksCount} tasks completed`,
   };
 
   const bonusComponent = currentMonthScore?.components.find(
@@ -438,4 +653,3 @@ export async function getMemberDashboard(
     engagement,
   };
 }
-

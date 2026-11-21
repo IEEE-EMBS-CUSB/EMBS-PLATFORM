@@ -15,14 +15,14 @@ import { getOperationalUserProfile } from "@/services/member.service";
 function DefaultPrimaryPortalCta() {
   return (
     <Link
-      href="/access"
+      href="/login"
       className={cn(
         buttonVariants({ size: "lg" }),
         "h-11 gap-2 bg-[#772583] px-5 text-sm font-semibold text-white hover:bg-[#5a1b63]"
       )}
     >
       <KeyRound className="h-4 w-4" aria-hidden="true" />
-      <span>Enter access key</span>
+      <span>Portal sign in</span>
     </Link>
   );
 }
@@ -64,7 +64,7 @@ async function SessionAwareRoleLink({
 }) {
   const session = await getServerSession();
   const isSignedInAsRole = session?.participantType === role;
-  let href = isSignedInAsRole ? `/${role}` : `/${role}/access`;
+  let href = isSignedInAsRole ? `/${role}` : "/login";
   if (isSignedInAsRole && role === "member") {
     try {
       const opProfile = await getOperationalUserProfile(session.participantId);
@@ -238,7 +238,7 @@ export default async function HomePage() {
                 <Suspense
                   fallback={
                     <Link
-                      href="/member/access"
+                      href="/login"
                       className="inline-flex min-h-10 items-center gap-1.5 text-sm font-semibold text-[#772583] hover:text-[#5a1b63] hover:underline"
                     >
                       Member access
@@ -275,7 +275,7 @@ export default async function HomePage() {
                 <Suspense
                   fallback={
                     <Link
-                      href="/attendee/access"
+                      href="/login"
                       className="inline-flex min-h-10 items-center gap-1.5 text-sm font-semibold text-[#00629b] hover:text-[#002855] hover:underline"
                     >
                       Attendee access

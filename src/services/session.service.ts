@@ -1,193 +1,55 @@
-import * as store from "@/db/store";
+import crypto from "node:crypto";
 import type { MembershipRole } from "@/lib/auth-helpers";
-import type {
-  AccessKeyStatus,
-  AccessKeyVerificationResult,
-  ParticipantType,
-  SessionUser,
-} from "@/types";
+import type { ParticipantType, SessionUser } from "@/types";
 
 export const SESSION_DURATION_DAYS = 30;
 export const SESSION_DURATION_SECONDS = SESSION_DURATION_DAYS * 24 * 60 * 60;
 
-interface AccessKeyRecord {
-  accessKey: string;
-  participantId: string;
-  participantType: ParticipantType;
-  status: AccessKeyStatus;
-  keyVersion: number;
+const DEV_FALLBACK_SESSION_SECRET = "embs-cusb-local-dev-session-secret-do-not-use-in-prod";
+
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET || process.env.BETTER_AUTH_SECRET;
+  if (secret && secret.length >= 16) {
+    return secret;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "SESSION_SECRET (at least 16 characters) must be configured in production."
+    );
+  }
+  return DEV_FALLBACK_SESSION_SECRET;
 }
 
-const STATIC_ACCESS_KEYS: readonly AccessKeyRecord[] = [
-  {
-    accessKey: "EMBS-MEM-2026-SALMA",
-    participantId: "mem-101",
-    participantType: "member",
-    status: "active",
-    keyVersion: 2,
-  },
-  {
-    accessKey: "EMBS-MEM-2026-OMAR",
-    participantId: "mem-102",
-    participantType: "member",
-    status: "active",
-    keyVersion: 1,
-  },
-  {
-    accessKey: "EMBS-MEM-2026-NOUR",
-    participantId: "mem-103",
-    participantType: "member",
-    status: "active",
-    keyVersion: 1,
-  },
-  {
-    accessKey: "EMBS-ATT-2026-MARIAM",
-    participantId: "att-201",
-    participantType: "attendee",
-    status: "active",
-    keyVersion: 1,
-  },
-  {
-    accessKey: "EMBS-ATT-2026-YOUSSEF",
-    participantId: "att-202",
-    participantType: "attendee",
-    status: "active",
-    keyVersion: 1,
-  },
-  {
-    accessKey: "EMBS-MEM-2026-REVOKED",
-    participantId: "mem-101",
-    participantType: "member",
-    status: "revoked",
-    keyVersion: 1,
-  },
-];
+function signPayload(payloadB64: string): string {
+  return crypto
+    .createHmac("sha256", getSessionSecret())
+    .update(payloadB64)
+    .digest("base64url");
+}
 
-function findActiveAccessKeyVersion(
-  participantId: string,
-  participantType: ParticipantType
-): number | null {
-  const hasLegacyRecord = STATIC_ACCESS_KEYS.some(
-    (entry) =>
-      entry.participantId === participantId &&
-      entry.participantType === participantType
-  );
-
-  if (!hasLegacyRecord) {
-    // Database-backed membership sessions default to active key version 1
-    return 1;
+function verifySignature(payloadB64: string, signatureB64: string): boolean {
+  const expected = crypto
+    .createHmac("sha256", getSessionSecret())
+    .update(payloadB64)
+    .digest();
+  let actual: Buffer;
+  try {
+    actual = Buffer.from(signatureB64, "base64url");
+  } catch {
+    return false;
   }
-
-  const match = STATIC_ACCESS_KEYS.find(
-    (entry) =>
-      entry.participantId === participantId &&
-      entry.participantType === participantType &&
-      entry.status === "active"
-  );
-  return match ? match.keyVersion : null;
+  if (actual.length !== expected.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(actual, expected);
 }
 
 function computeExpirationIso(from: Date): string {
   return new Date(from.getTime() + SESSION_DURATION_SECONDS * 1000).toISOString();
 }
 
-function resolveParticipantIdentity(
-  participantId: string,
-  participantType: ParticipantType
-): { displayId: string; fullName: string } | null {
-  if (participantType === "member") {
-    const member = store.getMemberProfile(participantId);
-    return member
-      ? {
-          displayId: member.displayId,
-          fullName: member.fullName,
-        }
-      : null;
-  }
-
-  const attendee = store.getAttendeeProfile(participantId);
-  return attendee
-    ? {
-        displayId: attendee.displayId,
-        fullName: attendee.fullName,
-      }
-    : null;
-}
-
 function createOpaqueSessionId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-export async function verifyAccessKey(
-  rawAccessKey: string,
-  now: Date = new Date()
-): Promise<AccessKeyVerificationResult> {
-  const normalized = rawAccessKey.trim().toUpperCase();
-
-  if (!normalized) {
-    return {
-      ok: false,
-      code: "EMPTY_KEY",
-      message: "Enter the access key provided by HR to continue.",
-    };
-  }
-
-  const record = STATIC_ACCESS_KEYS.find(
-    (entry) => entry.accessKey.toUpperCase() === normalized
-  );
-
-  if (!record) {
-    return {
-      ok: false,
-      code: "INVALID_KEY",
-      message:
-        "We could not recognize that access key. Check for typos or contact HR.",
-    };
-  }
-
-  if (record.status === "revoked") {
-    return {
-      ok: false,
-      code: "REVOKED_KEY",
-      message:
-        "This access key has been revoked. Request your regenerated key from HR.",
-    };
-  }
-
-  const identity = resolveParticipantIdentity(
-    record.participantId,
-    record.participantType
-  );
-
-  if (!identity) {
-    return {
-      ok: false,
-      code: "INVALID_KEY",
-      message:
-        "No portal profile is linked to this access key yet. Please contact HR.",
-    };
-  }
-
-  const user: SessionUser = {
-    sessionId: createOpaqueSessionId(),
-    participantId: record.participantId,
-    displayId: identity.displayId,
-    fullName: identity.fullName,
-    participantType: record.participantType,
-    keyVersion: record.keyVersion,
-    issuedAt: now.toISOString(),
-    expiresAt: computeExpirationIso(now),
-  };
-
-  return {
-    ok: true,
-    user,
-    redirectTo:
-      record.participantType === "member" ? "/member" : "/attendee",
-  };
+  return crypto.randomUUID();
 }
 
 export function createSessionForMember(member: {
@@ -225,7 +87,9 @@ export function encodeSessionToken(user: SessionUser): string {
     exp: user.expiresAt,
   });
 
-  return Buffer.from(payload, "utf8").toString("base64url");
+  const payloadB64 = Buffer.from(payload, "utf8").toString("base64url");
+  const signatureB64 = signPayload(payloadB64);
+  return `${payloadB64}.${signatureB64}`;
 }
 
 export function decodeSessionToken(
@@ -234,8 +98,17 @@ export function decodeSessionToken(
 ): SessionUser | null {
   if (!token || typeof token !== "string") return null;
 
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [payloadB64, signatureB64] = parts;
+  if (!payloadB64 || !signatureB64) return null;
+
+  if (!verifySignature(payloadB64, signatureB64)) {
+    return null;
+  }
+
   try {
-    const raw = Buffer.from(token, "base64url").toString("utf8");
+    const raw = Buffer.from(payloadB64, "base64url").toString("utf8");
     const parsed = JSON.parse(raw) as Record<string, unknown>;
 
     if (
@@ -253,11 +126,6 @@ export function decodeSessionToken(
 
     const expiresAtMs = Date.parse(parsed.exp);
     if (Number.isNaN(expiresAtMs) || expiresAtMs <= now.getTime()) {
-      return null;
-    }
-
-    const activeVersion = findActiveAccessKeyVersion(parsed.pid, parsed.role);
-    if (activeVersion === null || activeVersion !== parsed.kv) {
       return null;
     }
 

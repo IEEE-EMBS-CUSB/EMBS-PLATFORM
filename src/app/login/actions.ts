@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import {
   authenticateWithPassword,
   changeFirstLoginPassword,
+  resolveLoginMembershipByEmail,
 } from "@/services/auth-password.service";
 import {
   createSessionForMember,
@@ -13,11 +14,7 @@ import {
   SESSION_COOKIE_NAME,
   buildSessionCookieOptions,
 } from "@/lib/session-cookie";
-import { getRoleLandingPath } from "@/lib/auth-helpers";
-import { db } from "@/db";
-import * as schema from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { normalizeEmail } from "@/lib/auth-helpers";
+import { getRoleLandingPath, normalizeEmail } from "@/lib/auth-helpers";
 
 export interface LoginActionResult {
   ok: boolean;
@@ -43,7 +40,6 @@ export async function loginWithPasswordAction(
     };
   }
 
-  // Set session cookie
   const sessionUser = createSessionForMember({
     id: result.member.id,
     fullName: result.member.fullName,
@@ -70,15 +66,13 @@ export async function changePasswordOnFirstLoginAction(
   newPassword: string
 ): Promise<LoginActionResult> {
   const normalized = normalizeEmail(email);
+  if (!normalized || !normalized.includes("@")) {
+    return { ok: false, error: "Please provide a valid email address." };
+  }
 
-  const rows = await db
-    .select()
-    .from(schema.rosterMemberships)
-    .where(eq(schema.rosterMemberships.email, normalized));
-
-  const member = rows[0];
-  if (!member || !member.passwordHash) {
-    return { ok: false, error: "Member profile not found." };
+  const member = await resolveLoginMembershipByEmail(normalized);
+  if (!member || !member.isActive || !member.passwordHash) {
+    return { ok: false, error: "Invalid email or password." };
   }
 
   const changeRes = await changeFirstLoginPassword({
@@ -96,7 +90,6 @@ export async function changePasswordOnFirstLoginAction(
     return { ok: false, error: changeRes.reason };
   }
 
-  // Set session cookie now that password has been established
   const sessionUser = createSessionForMember({
     id: member.id,
     fullName: member.fullName,

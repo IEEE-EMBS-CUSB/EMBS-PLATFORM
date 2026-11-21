@@ -1,12 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { createTaskAction } from "@/app/hr/tasks/actions";
+import { and, eq, ne } from "drizzle-orm";
+import { createTaskAsActor } from "@/services/hr-ops/tasks.service";
 
 describe("Task Assignment Actions (Database-backed Groups & Individuals)", () => {
+  const createdTaskIds: string[] = [];
+
+  afterEach(async () => {
+    for (const taskId of createdTaskIds.splice(0)) {
+      await db
+        .delete(schema.taskSubmissions)
+        .where(eq(schema.taskSubmissions.taskId, taskId));
+      await db.delete(schema.tasks).where(eq(schema.tasks.id, taskId));
+    }
+  });
+
   it("assigns task to a specific person and verifies task_submission in DB", async () => {
-    // Pick an existing member from DB
     const [omar] = await db
       .select()
       .from(schema.rosterMemberships)
@@ -14,7 +24,7 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
     expect(omar).toBeDefined();
 
     const title = `Individual Task ${Date.now()}`;
-    const result = await createTaskAction(
+    const result = await createTaskAsActor(
       {
         title,
         description: "Assigned specifically to Omar",
@@ -23,14 +33,13 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
         targetType: "specific_person",
         assignedToMembershipId: omar.id,
       },
-      "committee_head",
-      omar.committeeId
+      { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
     );
 
     expect(result.ok).toBe(true);
     expect(result.assignedCount).toBe(1);
+    createdTaskIds.push(result.taskId!);
 
-    // Verify task exists in DB
     const [task] = await db
       .select()
       .from(schema.tasks)
@@ -38,7 +47,6 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
     expect(task).toBeDefined();
     expect(task.title).toBe(title);
 
-    // Verify submission row was created for Omar
     const [sub] = await db
       .select()
       .from(schema.taskSubmissions)
@@ -48,8 +56,13 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
   });
 
   it("assigns task to a group: all heads across the chapter", async () => {
+    const [activeSeason] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"));
+
     const title = `Leadership All Heads Task ${Date.now()}`;
-    const result = await createTaskAction(
+    const result = await createTaskAsActor(
       {
         title,
         description: "Assigned to all committee heads",
@@ -58,17 +71,23 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
         targetType: "group",
         targetGroup: "all_heads",
       },
-      "director"
+      { profile: { role: "director", committeeId: null, id: "test" } }
     );
 
     expect(result.ok).toBe(true);
     expect(result.assignedCount).toBeGreaterThanOrEqual(1);
+    createdTaskIds.push(result.taskId!);
 
-    // Verify submissions were created for each committee head
     const heads = await db
       .select()
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.role, "committee_head"));
+      .where(
+        and(
+          eq(schema.rosterMemberships.seasonId, activeSeason.id),
+          eq(schema.rosterMemberships.role, "committee_head"),
+          eq(schema.rosterMemberships.isActive, true)
+        )
+      );
 
     const headIds = heads.map((h) => h.id);
     const submissions = await db
@@ -83,14 +102,23 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
   });
 
   it("assigns task to a committee group: committee_members for a specific committee", async () => {
+    const [activeSeason] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"));
     const [robotics] = await db
       .select()
       .from(schema.committees)
-      .where(eq(schema.committees.slug, "robotics-and-automation"));
+      .where(
+        and(
+          eq(schema.committees.slug, "robotics-and-automation"),
+          eq(schema.committees.seasonId, activeSeason.id)
+        )
+      );
     expect(robotics).toBeDefined();
 
     const title = `Robotics Members Sprint Task ${Date.now()}`;
-    const result = await createTaskAction(
+    const result = await createTaskAsActor(
       {
         title,
         description: "Assigned to Robotics committee members",
@@ -100,30 +128,31 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
         targetGroup: "committee_members",
         targetCommitteeId: robotics.id,
       },
-      "committee_head",
-      robotics.id
+      { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
     );
 
     expect(result.ok).toBe(true);
     expect(result.assignedCount).toBeGreaterThanOrEqual(1);
+    createdTaskIds.push(result.taskId!);
 
-    // Verify task is scoped to robotics committee
     const [task] = await db
       .select()
       .from(schema.tasks)
       .where(eq(schema.tasks.id, result.taskId!));
     expect(task.committeeId).toBe(robotics.id);
 
-    // Verify only robotics members received submissions
     const roboticsMembers = await db
       .select()
       .from(schema.rosterMemberships)
       .where(
-        eq(schema.rosterMemberships.committeeId, robotics.id)
+        and(
+          eq(schema.rosterMemberships.seasonId, activeSeason.id),
+          eq(schema.rosterMemberships.committeeId, robotics.id),
+          eq(schema.rosterMemberships.role, "member"),
+          eq(schema.rosterMemberships.isActive, true)
+        )
       );
-    const roboticsMemberIds = roboticsMembers
-      .filter((m) => m.role === "member")
-      .map((m) => m.id);
+    const roboticsMemberIds = roboticsMembers.map((m) => m.id);
 
     const submissions = await db
       .select()
@@ -136,9 +165,14 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
     }
   });
 
-  it("assigns task to 'everyone' by master_admin", async () => {
+  it("assigns task to 'everyone' by master_admin while excluding attendees", async () => {
+    const [activeSeason] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"));
+
     const title = `All-Chapter Mandatory Survey ${Date.now()}`;
-    const result = await createTaskAction(
+    const result = await createTaskAsActor(
       {
         title,
         description: "Assigned to everyone in the season",
@@ -147,29 +181,36 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
         targetType: "group",
         targetGroup: "everyone",
       },
-      "master_admin"
+      { profile: { role: "master_admin", committeeId: null, id: "test" } }
     );
 
     expect(result.ok).toBe(true);
     expect(result.assignedCount).toBeGreaterThanOrEqual(1);
+    createdTaskIds.push(result.taskId!);
 
     const activeMembers = await db
       .select()
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.isActive, true));
+      .where(
+        and(
+          eq(schema.rosterMemberships.seasonId, activeSeason.id),
+          eq(schema.rosterMemberships.isActive, true),
+          ne(schema.rosterMemberships.role, "attendee")
+        )
+      );
 
     expect(result.assignedCount).toBe(activeMembers.length);
   });
 
   it("rejects unauthorized task creation by regular member", async () => {
-    const result = await createTaskAction(
+    const result = await createTaskAsActor(
       {
         title: "Malicious Member Task",
         dueAt: "2026-12-31",
         targetType: "group",
         targetGroup: "everyone",
       },
-      "member"
+      { profile: { role: "member", committeeId: null, id: "test" } }
     );
 
     expect(result.ok).toBe(false);
@@ -177,15 +218,14 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
   });
 
   it("rejects committee head attempting to assign cross-chapter group", async () => {
-    const result = await createTaskAction(
+    const result = await createTaskAsActor(
       {
         title: "Illegal Head Broadcast",
         dueAt: "2026-12-31",
         targetType: "group",
         targetGroup: "everyone",
       },
-      "committee_head",
-      "some-comm-id"
+      { profile: { role: "committee_head", committeeId: "some-comm-id", id: "test" } }
     );
 
     expect(result.ok).toBe(false);

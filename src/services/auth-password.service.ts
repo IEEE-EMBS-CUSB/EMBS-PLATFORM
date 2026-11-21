@@ -42,6 +42,36 @@ export interface RosterMemberLookupRecord {
   isActive: boolean;
 }
 
+const GENERIC_AUTH_FAILURE = "Invalid email or password.";
+
+/**
+ * Resolves a roster membership for authentication by normalized email.
+ * Precedence: active season membership -> active membership in an archived season.
+ * Draft-season memberships are never permitted to authenticate.
+ */
+export async function resolveLoginMembershipByEmail(
+  normalizedEmail: string
+): Promise<RosterMemberLookupRecord | null> {
+  const memberships = await db
+    .select()
+    .from(schema.rosterMemberships)
+    .where(eq(schema.rosterMemberships.email, normalizedEmail));
+
+  if (memberships.length === 0) return null;
+
+  const seasons = await db.select().from(schema.seasons);
+  const seasonMap = new Map(seasons.map((s) => [s.id, s]));
+
+  const active = memberships.find(
+    (m) => seasonMap.get(m.seasonId)?.status === "active"
+  );
+  const archived = memberships.find(
+    (m) => seasonMap.get(m.seasonId)?.status === "archived" && m.isActive
+  );
+
+  return (active ?? archived) ?? null;
+}
+
 /**
  * Authenticates a user using their whitelisted email and password.
  * Checks active roster whitelist, verifies scrypt hash, and reports if first-login reset is required.
@@ -68,40 +98,22 @@ export async function authenticateWithPassword(params: {
     member = await rosterLookup(normalized);
   } else {
     try {
-      const rows = await db
-        .select()
-        .from(schema.rosterMemberships)
-        .where(eq(schema.rosterMemberships.email, normalized));
-      member = rows[0] ?? null;
+      member = await resolveLoginMembershipByEmail(normalized);
     } catch {
-      // In case database is temporarily unreachable
+      return {
+        ok: false,
+        reason: "Authentication service is temporarily unavailable. Please try again.",
+      };
     }
   }
 
-  if (!member) {
-    return {
-      ok: false,
-      reason: `Email ${normalized} is not registered on the roster. Please contact HR.`,
-    };
-  }
-
-  if (!member.isActive) {
-    return {
-      ok: false,
-      reason: "Your chapter membership is currently deactivated. Please contact HR.",
-    };
-  }
-
-  if (!member.passwordHash) {
-    return {
-      ok: false,
-      reason: "No initial password is set for this account. Please request a temporary password from HR.",
-    };
+  if (!member || !member.isActive || !member.passwordHash) {
+    return { ok: false, reason: GENERIC_AUTH_FAILURE };
   }
 
   const valid = verifyPassword(password, member.passwordHash);
   if (!valid) {
-    return { ok: false, reason: "Invalid email or password." };
+    return { ok: false, reason: GENERIC_AUTH_FAILURE };
   }
 
   return {
@@ -137,6 +149,13 @@ export async function changeFirstLoginPassword(params: {
   ) => Promise<void>;
 }): Promise<{ ok: boolean; reason?: string }> {
   const { currentPassword, newPassword, member, updateMember } = params;
+
+  if (!member.mustChangePassword) {
+    return {
+      ok: false,
+      reason: "Password change is not required for this account. Please sign in normally.",
+    };
+  }
 
   if (!verifyPassword(currentPassword, member.passwordHash)) {
     return { ok: false, reason: "Current temporary password is incorrect." };

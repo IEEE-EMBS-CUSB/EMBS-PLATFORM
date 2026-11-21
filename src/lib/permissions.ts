@@ -15,7 +15,8 @@ export type HrModuleName =
   | "tasks"
   | "ledger"
   | "feedback"
-  | "publishing";
+  | "publishing"
+  | "events";
 
 /**
  * Exclusive power to manage the global email whitelist.
@@ -254,6 +255,13 @@ export function canAccessHrModule(
         role === "committee_head"
       );
 
+    case "events":
+      return (
+        role === "master_admin" ||
+        role === "hr_admin" ||
+        role === "hr_member" ||
+        role === "committee_head"
+      );
     default:
       return false;
   }

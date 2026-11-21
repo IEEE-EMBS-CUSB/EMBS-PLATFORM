@@ -95,7 +95,7 @@ describe("HrFeedbackView", () => {
       <HrFeedbackView feedbackList={mockFeedback} members={mockMembers} />
     );
 
-    const addBtn = screen.getByRole("button", { name: /\+ add note \/ warning/i });
+    const addBtn = screen.getByRole("button", { name: /add note \/ warning/i });
     await user.click(addBtn);
 
     expect(

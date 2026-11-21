@@ -12,7 +12,7 @@ export default async function AttendeePortalLayout({
   const profile = await getAttendeeProfile(session.participantId);
 
   if (!profile) {
-    redirect("/login");
+    redirect("/login?session=invalid");
   }
 
   return (

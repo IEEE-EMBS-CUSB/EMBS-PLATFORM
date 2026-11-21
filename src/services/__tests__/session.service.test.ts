@@ -1,87 +1,77 @@
 import { describe, expect, it } from "vitest";
 import {
+  createSessionForMember,
   decodeSessionToken,
   encodeSessionToken,
   renewSessionUser,
-  verifyAccessKey,
 } from "@/services/session.service";
 
-describe("session.service", () => {
-  it("resolves a valid member access key automatically and never leaks the key in SessionUser", async () => {
-    const rawKey = "EMBS-MEM-2026-SALMA";
-    const result = await verifyAccessKey(rawKey);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    expect(result.redirectTo).toBe("/member");
-    expect(result.user.participantType).toBe("member");
-    expect(result.user.participantId).toBe("mem-101");
-    expect(result.user.displayId).toBe("M001");
-    expect(JSON.stringify(result)).not.toContain(rawKey);
+describe("session.service (HMAC-SHA256 signed cookies)", () => {
+  const sampleMember = createSessionForMember({
+    id: "11111111-1111-4111-8111-111111111111",
+    fullName: "Salma El-Sayed",
+    role: "committee_head",
   });
 
-  it("resolves a valid attendee access key automatically without manual role selection", async () => {
-    const rawKey = "  embs-att-2026-mariam  ";
-    const result = await verifyAccessKey(rawKey);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    expect(result.redirectTo).toBe("/attendee");
-    expect(result.user.participantType).toBe("attendee");
-    expect(result.user.participantId).toBe("att-201");
-    expect(result.user.displayId).toBe("A001");
-    expect(JSON.stringify(result)).not.toContain("EMBS-ATT-2026-MARIAM");
-  });
-
-  it("refuses a revoked access key distinctly from an unknown key", async () => {
-    const revoked = await verifyAccessKey("EMBS-MEM-2026-REVOKED");
-    expect(revoked.ok).toBe(false);
-    if (!revoked.ok) {
-      expect(revoked.code).toBe("REVOKED_KEY");
-    }
-
-    const unknown = await verifyAccessKey("EMBS-DOES-NOT-EXIST");
-    expect(unknown.ok).toBe(false);
-    if (!unknown.ok) {
-      expect(unknown.code).toBe("INVALID_KEY");
-    }
-
-    const empty = await verifyAccessKey("   ");
-    expect(empty.ok).toBe(false);
-    if (!empty.ok) {
-      expect(empty.code).toBe("EMPTY_KEY");
-    }
-  });
-
-  it("encodes and decodes opaque session tokens and invalidates stale key versions", async () => {
-    const verified = await verifyAccessKey("EMBS-MEM-2026-SALMA");
-    expect(verified.ok).toBe(true);
-    if (!verified.ok) return;
-
-    const token = encodeSessionToken(verified.user);
-    expect(token).not.toContain("EMBS-MEM-2026-SALMA");
+  it("encodes a signed payload.signature token and round-trips cleanly", () => {
+    const token = encodeSessionToken(sampleMember);
+    expect(token.split(".")).toHaveLength(2);
 
     const decoded = decodeSessionToken(token);
-    expect(decoded?.participantId).toBe("mem-101");
-    expect(decoded?.displayId).toBe("M001");
+    expect(decoded).not.toBeNull();
+    expect(decoded?.participantId).toBe(sampleMember.participantId);
+    expect(decoded?.membershipRole).toBe("committee_head");
+    expect(decoded?.participantType).toBe("member");
+  });
 
-    // Simulate a session issued against an older, revoked keyVersion (v1 vs active v2)
-    const staleToken = encodeSessionToken({
-      ...verified.user,
-      keyVersion: 1,
+  it("rejects unsigned base64url JSON tokens (forged master_admin cookie)", () => {
+    const forgedPayload = JSON.stringify({
+      sid: "forged-sid",
+      pid: "11111111-1111-4111-8111-111111111111",
+      did: "11111111",
+      name: "Attacker",
+      role: "member",
+      mrole: "master_admin",
+      kv: 1,
+      iat: new Date().toISOString(),
+      exp: new Date(Date.now() + 86_400_000).toISOString(),
     });
-    expect(decodeSessionToken(staleToken)).toBeNull();
+    const forgedToken = Buffer.from(forgedPayload, "utf8").toString("base64url");
 
-    // Malformed token is rejected
+    expect(decodeSessionToken(forgedToken)).toBeNull();
+  });
+
+  it("rejects tokens with tampered payload or tampered signature", () => {
+    const token = encodeSessionToken(sampleMember);
+    const [payloadB64, sigB64] = token.split(".");
+
+    // Escalate role inside payload while reusing the original signature
+    const raw = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+    raw.mrole = "master_admin";
+    const tamperedPayload = Buffer.from(JSON.stringify(raw), "utf8").toString("base64url");
+    expect(decodeSessionToken(`${tamperedPayload}.${sigB64}`)).toBeNull();
+
+    // Flip a character in the signature
+    const flippedSig =
+      (sigB64[0] === "A" ? "B" : "A") + sigB64.slice(1);
+    expect(decodeSessionToken(`${payloadB64}.${flippedSig}`)).toBeNull();
     expect(decodeSessionToken("not-a-valid-token")).toBeNull();
+  });
 
-    // Sliding renewal extends expiration forward
+  it("rejects expired tokens and renews valid tokens forward", () => {
+    const expired = {
+      ...sampleMember,
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    };
+    const expiredToken = encodeSessionToken(expired);
+    expect(decodeSessionToken(expiredToken)).toBeNull();
+
     const futureNow = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
-    const renewed = renewSessionUser(verified.user, futureNow);
+    const renewed = renewSessionUser(sampleMember, futureNow);
     expect(new Date(renewed.expiresAt).getTime()).toBeGreaterThan(
-      new Date(verified.user.expiresAt).getTime()
+      new Date(sampleMember.expiresAt).getTime()
     );
+    const renewedDecoded = decodeSessionToken(encodeSessionToken(renewed), futureNow);
+    expect(renewedDecoded?.participantId).toBe(sampleMember.participantId);
   });
 });

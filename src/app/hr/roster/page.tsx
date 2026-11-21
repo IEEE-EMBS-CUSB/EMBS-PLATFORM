@@ -1,5 +1,5 @@
 import { HrShell } from "@/components/hr/hr-shell";
-import { requireOperationalSession } from "@/lib/portal-guards";
+import { requireHrModule } from "@/lib/portal-guards";
 import {
   RosterManagerView,
   type RosterMemberItem,
@@ -7,29 +7,55 @@ import {
 } from "@/components/hr/roster-manager-view";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import {
   resetMemberPasswordAction,
   assignMemberRoleAction,
   assignMemberCommitteeAction,
   addRosterMemberAction,
+  bulkImportRosterAction,
   removeRosterMemberAction,
 } from "./actions";
 
 export default async function HrRosterPage() {
-  const { profile } = await requireOperationalSession();
+  const { profile } = await requireHrModule("roster");
   let members: RosterMemberItem[] = [];
   let availableCommittees: CommitteeOption[] = [];
+  let activeSeasonName = "Active Season";
 
   try {
-    const [dbMembers, dbCommittees] = await Promise.all([
-      db.select().from(schema.rosterMemberships),
-      db.select().from(schema.committees),
-    ]);
+    const [activeSeason] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"))
+      .limit(1);
 
-    const committeeMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
-    availableCommittees = dbCommittees.map((c) => ({ id: c.id, name: c.name }));
+    if (activeSeason) {
+      activeSeasonName = activeSeason.name;
+      const seasonId = activeSeason.id;
 
-    if (dbMembers.length > 0) {
+      const [dbMembers, dbCommittees] = await Promise.all([
+        db
+          .select()
+          .from(schema.rosterMemberships)
+          .where(eq(schema.rosterMemberships.seasonId, seasonId)),
+        db
+          .select()
+          .from(schema.committees)
+          .where(
+            and(
+              eq(schema.committees.seasonId, seasonId),
+              eq(schema.committees.isActive, true)
+            )
+          ),
+      ]);
+
+      const committeeMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
+      availableCommittees = dbCommittees.map((c) => ({
+        id: c.id,
+        name: c.name,
+      }));
+
       members = dbMembers.map((m) => ({
         id: m.id,
         fullName: m.fullName,
@@ -43,92 +69,7 @@ export default async function HrRosterPage() {
       }));
     }
   } catch {
-    // If database is temporarily offline during build or prerender
-  }
-
-  if (members.length === 0) {
-    members = [
-      {
-        id: "m-0",
-        fullName: "Master Administrator",
-        email: "master@cu.edu.eg",
-        committeeName: "All Committees",
-        role: "master_admin",
-        isActive: true,
-      },
-      {
-        id: "m-1",
-        fullName: "Sara Hassan",
-        email: "hr.lead@cu.edu.eg",
-        committeeName: "Human Resources",
-        role: "hr_admin",
-        isActive: true,
-      },
-      {
-        id: "m-1b",
-        fullName: "Laila Amr",
-        email: "laila.amr@cu.edu.eg",
-        committeeName: "AI and Machine Learning",
-        role: "hr_member",
-        isActive: true,
-      },
-      {
-        id: "m-2",
-        fullName: "Salma El-Sayed",
-        email: "salma.elsayed@cu.edu.eg",
-        committeeName: "AI and Machine Learning",
-        role: "committee_head",
-        isActive: true,
-      },
-      {
-        id: "m-3",
-        fullName: "Ziad Hany",
-        email: "ziad.hany@cu.edu.eg",
-        committeeName: "Web Development",
-        role: "committee_head",
-        isActive: true,
-      },
-      {
-        id: "m-4",
-        fullName: "Omar Tarek",
-        email: "omar.tarek@cu.edu.eg",
-        committeeName: "Robotics and Automation",
-        role: "member",
-        isActive: true,
-      },
-      {
-        id: "m-5",
-        fullName: "Nourhan Khaled",
-        email: "nourhan.khaled@cu.edu.eg",
-        committeeName: "Graphic Design",
-        role: "committee_head",
-        isActive: true,
-      },
-      {
-        id: "m-6",
-        fullName: "Hana Wael",
-        email: "hana.wael@cu.edu.eg",
-        committeeName: "Medical Equipment and Planning",
-        role: "member",
-        isActive: true,
-      },
-      {
-        id: "m-7",
-        fullName: "Mariam Yassin",
-        email: "mariam.yassin@gmail.com",
-        committeeName: "General Track",
-        role: "attendee",
-        isActive: true,
-      },
-      {
-        id: "m-8",
-        fullName: "Youssef Ibrahim",
-        email: "youssef.ibrahim@gmail.com",
-        committeeName: "General Track",
-        role: "attendee",
-        isActive: true,
-      },
-    ];
+    // If database is temporarily offline during build
   }
 
   return (
@@ -137,6 +78,7 @@ export default async function HrRosterPage() {
       currentUserRole={profile.role}
       userName={profile.fullName}
       userCommitteeName={profile.committeeName}
+      activeSeasonName={activeSeasonName}
     >
       <RosterManagerView
         members={members}
@@ -148,6 +90,7 @@ export default async function HrRosterPage() {
         onAssignRole={assignMemberRoleAction}
         onAssignCommittee={assignMemberCommitteeAction}
         onAddMember={addRosterMemberAction}
+        onBulkImport={bulkImportRosterAction}
         onRemoveMember={removeRosterMemberAction}
       />
     </HrShell>

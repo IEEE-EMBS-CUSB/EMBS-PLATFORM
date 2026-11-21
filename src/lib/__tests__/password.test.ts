@@ -28,7 +28,7 @@ describe("Password Hashing & Strength Utility", () => {
 
   it("generates structured pre-assigned passwords for new roster members", () => {
     const preassigned = generatePreassignedPassword();
-    expect(preassigned).toMatch(/^EMBS-\d{4}-[A-Z0-9]{4}$/);
+    expect(preassigned).toMatch(/^EMBS-\d{4}-[A-Z0-9]{8}$/);
   });
 
   it("validates password strength rules (at least 8 chars)", () => {

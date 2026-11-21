@@ -14,6 +14,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { isOperationalRole } from "@/lib/auth-helpers";
 import type { SessionUser } from "@/types";
 
 interface PublicHeaderProps {
@@ -72,8 +73,8 @@ export function PublicHeader({ session }: PublicHeaderProps) {
     if (session.participantType === "attendee") {
       portalHref = "/attendee";
     } else if (
-      session.membershipRole === "director" ||
-      session.membershipRole === "master_admin"
+      session.membershipRole &&
+      isOperationalRole(session.membershipRole)
     ) {
       portalHref = "/hr";
     } else {
@@ -189,7 +190,7 @@ export function PublicHeader({ session }: PublicHeaderProps) {
                     "h-11 w-full gap-2 bg-[#772583] font-semibold text-white hover:bg-[#5a1b63]"
                   )}
                 >
-                  {session ? "Open my dashboard" : "Enter access key"}
+                  {session ? "Open my dashboard" : "Portal access"}
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Link>
               </div>

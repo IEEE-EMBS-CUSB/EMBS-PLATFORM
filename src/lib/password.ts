@@ -27,13 +27,13 @@ export function verifyPassword(password: string, combinedHash?: string | null): 
 }
 
 /**
- * Generates an easy-to-read pre-assigned password for newly added roster members.
- * Format: EMBS-2026-XXXX (e.g. EMBS-2026-A8F2)
+ * Generates a high-entropy, easy-to-read pre-assigned password for newly added roster members.
+ * Format: EMBS-2026-XXXXXXXX (8 chars from unambiguous 32-char alphabet, ~40 bits entropy)
  */
 export function generatePreassignedPassword(seasonYear = "2026"): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let suffix = "";
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 8; i++) {
     suffix += chars[crypto.randomInt(0, chars.length)];
   }
   return `EMBS-${seasonYear}-${suffix}`;

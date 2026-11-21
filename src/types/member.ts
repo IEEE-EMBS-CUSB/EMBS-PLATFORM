@@ -75,6 +75,7 @@ export interface MemberAttendanceRecord {
 
 export interface MemberTask {
   id: string;
+  submissionId?: string;
   month: MonthKey;
   title: string;
   assignedDate: string;

@@ -1,76 +1,126 @@
 import { HrShell } from "@/components/hr/hr-shell";
-import { HrFeedbackView } from "@/components/hr/hr-feedback-view";
-import { requireOperationalSession } from "@/lib/portal-guards";
-
-const INITIAL_MEMBERS = [
-  {
-    id: "mem-1",
-    fullName: "Salma El-Sayed",
-    committeeName: "AI & Machine Learning",
-    email: "salma@cusb.org",
-  },
-  {
-    id: "mem-2",
-    fullName: "Ziad Hany",
-    committeeName: "Web Development",
-    email: "ziad@cusb.org",
-  },
-  {
-    id: "mem-3",
-    fullName: "Omar Tarek",
-    committeeName: "Robotics & Automation",
-    email: "omar@cusb.org",
-  },
-  {
-    id: "mem-4",
-    fullName: "Nourhan Khaled",
-    committeeName: "Graphic Design",
-    email: "nourhan@cusb.org",
-  },
-];
-
-const INITIAL_FEEDBACK = [
-  {
-    id: "fb-1",
-    membershipId: "mem-1",
-    memberName: "Salma El-Sayed",
-    memberEmail: "salma@cusb.org",
-    committeeName: "AI & Machine Learning",
-    content:
-      "Consistently delivering high quality machine learning slides and actively mentoring juniors during technical tracks.",
-    isPublished: true,
-    isWarning: false,
-    createdByName: "HR Lead",
-    createdAt: "2026-10-14T10:00:00Z",
-  },
-  {
-    id: "fb-2",
-    membershipId: "mem-2",
-    memberName: "Ziad Hany",
-    memberEmail: "ziad@cusb.org",
-    committeeName: "Web Development",
-    content: "Missed two consecutive committee syncs without prior notification.",
-    isPublished: false,
-    isWarning: true,
-    createdByName: "HR Admin",
-    createdAt: "2026-10-18T16:00:00Z",
-  },
-  {
-    id: "fb-3",
-    membershipId: "mem-3",
-    memberName: "Omar Tarek",
-    memberEmail: "omar@cusb.org",
-    committeeName: "Robotics & Automation",
-    content: "Led the robotics hardware lab workshop with exceptional student satisfaction scores.",
-    isPublished: true,
-    isWarning: false,
-    createdByName: "Technical VP",
-    createdAt: "2026-10-22T11:15:00Z",
-  },
-];
+import {
+  HrFeedbackView,
+  type FeedbackItem,
+} from "@/components/hr/hr-feedback-view";
+import { requireHrModule } from "@/lib/portal-guards";
+import { addHrFeedbackAction } from "./actions";
+import { db } from "@/db";
+import * as schema from "@/db/schema";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 
 export default async function HrFeedbackPage() {
-  const { profile } = await requireOperationalSession();
+  const { profile } = await requireHrModule("feedback");
+
+  let members: Array<{
+    id: string;
+    fullName: string;
+    committeeName: string;
+    email: string;
+  }> = [];
+  let feedbackList: FeedbackItem[] = [];
+  let activeSeasonName = "Active Season";
+
+  const canViewAndCreateWarnings =
+    profile.role === "master_admin" ||
+    profile.role === "director" ||
+    profile.role === "hr_admin";
+  const isCommitteeHead = profile.role === "committee_head";
+
+  try {
+    const [activeSeason] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"))
+      .limit(1);
+
+    if (activeSeason) {
+      activeSeasonName = activeSeason.name;
+      const seasonId = activeSeason.id;
+
+      const [allSeasonMembers, dbCommittees] = await Promise.all([
+        db
+          .select()
+          .from(schema.rosterMemberships)
+          .where(eq(schema.rosterMemberships.seasonId, seasonId)),
+        db
+          .select()
+          .from(schema.committees)
+          .where(eq(schema.committees.seasonId, seasonId)),
+      ]);
+
+      const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
+      const memberMap = new Map(allSeasonMembers.map((m) => [m.id, m]));
+      const authorMap = new Map(allSeasonMembers.map((m) => [m.id, m.fullName]));
+
+      const targetableMembers = allSeasonMembers.filter((m) => {
+        if (!m.isActive) return false;
+        if (isCommitteeHead) {
+          return (
+            profile.committeeId !== null &&
+            m.committeeId === profile.committeeId &&
+            m.id !== profile.id
+          );
+        }
+        return true;
+      });
+
+      members = targetableMembers.map((m) => ({
+        id: m.id,
+        fullName: m.fullName,
+        email: m.email,
+        committeeName: m.committeeId
+          ? commMap.get(m.committeeId) ?? "Unassigned"
+          : "Unassigned",
+      }));
+
+      // Data-layer privacy: committee heads NEVER receive private HR warnings or notes about themselves
+      let dbFeedback: (typeof schema.hrFeedback.$inferSelect)[] = [];
+      if (canViewAndCreateWarnings) {
+        dbFeedback = await db
+          .select()
+          .from(schema.hrFeedback)
+          .where(
+            and(
+              eq(schema.hrFeedback.seasonId, seasonId),
+              ne(schema.hrFeedback.membershipId, profile.id)
+            )
+          )
+          .orderBy(desc(schema.hrFeedback.createdAt));
+      } else if (isCommitteeHead && targetableMembers.length > 0) {
+        const commMemberIds = targetableMembers.map((m) => m.id);
+        dbFeedback = await db
+          .select()
+          .from(schema.hrFeedback)
+          .where(
+            and(
+              eq(schema.hrFeedback.seasonId, seasonId),
+              eq(schema.hrFeedback.isPublished, true),
+              eq(schema.hrFeedback.isWarning, false),
+              inArray(schema.hrFeedback.membershipId, commMemberIds)
+            )
+          )
+          .orderBy(desc(schema.hrFeedback.createdAt));
+      }
+
+      feedbackList = dbFeedback.map((f) => ({
+        id: f.id,
+        membershipId: f.membershipId,
+        memberName: memberMap.get(f.membershipId)?.fullName ?? "Unknown",
+        memberEmail: memberMap.get(f.membershipId)?.email ?? "",
+        committeeName:
+          commMap.get(memberMap.get(f.membershipId)?.committeeId ?? "") ??
+          "Unassigned",
+        content: f.content,
+        isPublished: f.isPublished,
+        isWarning: f.isWarning,
+        createdByName: authorMap.get(f.createdBy) ?? "HR Team",
+        createdAt: f.createdAt.toISOString(),
+      }));
+    }
+  } catch {
+    // DB offline
+  }
 
   return (
     <HrShell
@@ -78,10 +128,14 @@ export default async function HrFeedbackPage() {
       currentUserRole={profile.role}
       userName={profile.fullName}
       userCommitteeName={profile.committeeName}
+      activeSeasonName={activeSeasonName}
     >
       <HrFeedbackView
-        feedbackList={INITIAL_FEEDBACK}
-        members={INITIAL_MEMBERS}
+        feedbackList={feedbackList}
+        members={members}
+        canCreateWarning={canViewAndCreateWarnings}
+        currentUserName={profile.fullName}
+        onAddFeedback={addHrFeedbackAction}
       />
     </HrShell>
   );

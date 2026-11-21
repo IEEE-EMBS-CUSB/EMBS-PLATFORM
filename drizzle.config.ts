@@ -9,6 +9,7 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL || "",
+    // Prefer direct (unpooled) connection for schema migrations per Neon best practices
+    url: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL || "",
   },
 });

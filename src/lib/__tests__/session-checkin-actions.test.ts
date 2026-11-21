@@ -1,24 +1,54 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import {
-  createSessionAction,
-  toggleSessionCheckinAction,
-  memberCheckinAction,
-} from "@/app/hr/attendance/actions";
+  createSessionAsActor,
+  toggleSessionCheckinAsActor,
+  recordMemberCheckin,
+} from "@/services/hr-ops/attendance.service";
 
 describe("Session & Live Check-in Actions (Database-backed)", () => {
+  const createdSessionIds: string[] = [];
+
+  afterEach(async () => {
+    for (const sessionId of createdSessionIds.splice(0)) {
+      const records = await db
+        .select({ id: schema.attendanceRecords.id })
+        .from(schema.attendanceRecords)
+        .where(eq(schema.attendanceRecords.sessionId, sessionId));
+      for (const rec of records) {
+        await db
+          .delete(schema.scoreLedger)
+          .where(eq(schema.scoreLedger.sourceId, rec.id));
+      }
+      await db
+        .delete(schema.attendanceRecords)
+        .where(eq(schema.attendanceRecords.sessionId, sessionId));
+      await db
+        .delete(schema.branchSessions)
+        .where(eq(schema.branchSessions.id, sessionId));
+    }
+  });
+
   it("allows a committee head to create a session with a valid check-in window for their committee", async () => {
-    // 1. Get an existing committee
+    const [activeSeason] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"));
     const [robotics] = await db
       .select()
       .from(schema.committees)
-      .where(eq(schema.committees.slug, "robotics-and-automation"));
+      .where(
+        and(
+          eq(schema.committees.slug, "robotics-and-automation"),
+          eq(schema.committees.seasonId, activeSeason.id)
+        )
+      );
     expect(robotics).toBeDefined();
 
     const title = `Robotics Workshop ${Date.now()}`;
-    const result = await createSessionAction(
+    const result = await createSessionAsActor(
       {
         title,
         startsAt: new Date(Date.now() + 3600000).toISOString(),
@@ -29,16 +59,15 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         punctualityBonus: 5,
         openCheckinImmediately: true,
       },
-      "committee_head",
-      robotics.id
+      { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
     );
 
     expect(result.ok).toBe(true);
     expect(result.sessionId).toBeDefined();
+    createdSessionIds.push(result.sessionId!);
     expect(result.checkinCode).toHaveLength(6);
     expect(result.checkinExpiresAt).toBeDefined();
 
-    // Verify session in DB
     const [session] = await db
       .select()
       .from(schema.branchSessions)
@@ -53,27 +82,40 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
   });
 
   it("rejects a committee head attempting to create a session for another committee", async () => {
+    const [activeSeason] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"));
     const [robotics] = await db
       .select()
       .from(schema.committees)
-      .where(eq(schema.committees.slug, "robotics-and-automation"));
+      .where(
+        and(
+          eq(schema.committees.slug, "robotics-and-automation"),
+          eq(schema.committees.seasonId, activeSeason.id)
+        )
+      );
     const [ai] = await db
       .select()
       .from(schema.committees)
-      .where(eq(schema.committees.slug, "ai-and-machine-learning"));
+      .where(
+        and(
+          eq(schema.committees.slug, "ai-and-machine-learning"),
+          eq(schema.committees.seasonId, activeSeason.id)
+        )
+      );
 
     expect(robotics).toBeDefined();
     expect(ai).toBeDefined();
 
-    const result = await createSessionAction(
+    const result = await createSessionAsActor(
       {
         title: "Malicious Cross-Committee Session",
         startsAt: new Date().toISOString(),
         committeeId: ai.id,
         checkinWindowMinutes: 30,
       },
-      "committee_head",
-      robotics.id // Head belongs to robotics, but trying to create for AI
+      { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
     );
 
     expect(result.ok).toBe(false);
@@ -81,12 +123,12 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
   });
 
   it("rejects unauthorized session creation by regular member", async () => {
-    const result = await createSessionAction(
+    const result = await createSessionAsActor(
       {
         title: "Member Rogue Session",
         startsAt: new Date().toISOString(),
       },
-      "member"
+      { profile: { role: "member", committeeId: null, id: "test" } }
     );
 
     expect(result.ok).toBe(false);
@@ -94,18 +136,16 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
   });
 
   it("handles member live check-in and records attendance and score_ledger entry", async () => {
-    // Pick an existing member
     const [omar] = await db
       .select()
       .from(schema.rosterMemberships)
       .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"));
     expect(omar).toBeDefined();
 
-    // Create a live session for Omar's committee
-    const createResult = await createSessionAction(
+    const createResult = await createSessionAsActor(
       {
         title: `Live Testing Session ${Date.now()}`,
-        startsAt: new Date(Date.now() - 300000).toISOString(), // Started 5 mins ago (punctual)
+        startsAt: new Date(Date.now() - 300000).toISOString(),
         committeeId: omar.committeeId,
         checkinWindowMinutes: 30,
         punctualityCutoffMinutes: 15,
@@ -113,20 +153,18 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         punctualityBonus: 5,
         openCheckinImmediately: true,
       },
-      "committee_head",
-      omar.committeeId
+      { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
     );
     expect(createResult.ok).toBe(true);
+    createdSessionIds.push(createResult.sessionId!);
 
     const checkinCode = createResult.checkinCode!;
 
-    // Perform check-in as Omar
-    const checkinResult = await memberCheckinAction(checkinCode, omar.id);
+    const checkinResult = await recordMemberCheckin(checkinCode, omar.id);
     expect(checkinResult.ok).toBe(true);
-    expect(checkinResult.pointsAwarded).toBe(15); // 10 base + 5 punctuality
+    expect(checkinResult.pointsAwarded).toBe(15);
     expect(checkinResult.isPunctual).toBe(true);
 
-    // Verify attendance record in DB
     const [record] = await db
       .select()
       .from(schema.attendanceRecords)
@@ -140,7 +178,6 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
     expect(record.pointsAwarded).toBe(15);
     expect(record.isPunctual).toBe(true);
 
-    // Verify score_ledger entry in DB
     const [ledger] = await db
       .select()
       .from(schema.scoreLedger)
@@ -154,8 +191,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
     expect(ledger).toBeDefined();
     expect(ledger.points).toBe(15);
 
-    // Verify duplicate check-in is rejected
-    const dupResult = await memberCheckinAction(checkinCode, omar.id);
+    const dupResult = await recordMemberCheckin(checkinCode, omar.id);
     expect(dupResult.ok).toBe(false);
     expect(dupResult.error).toMatch(/already checked in/i);
   });
@@ -166,7 +202,6 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
       .from(schema.rosterMemberships)
       .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"));
 
-    // Create session with already expired window
     const [activeSeason] = await db
       .select()
       .from(schema.seasons)
@@ -178,55 +213,61 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         seasonId: activeSeason.id,
         committeeId: omar.committeeId,
         title: "Expired Checkin Window Session",
-        startsAt: new Date(Date.now() - 7200000), // 2 hours ago
+        startsAt: new Date(Date.now() - 7200000),
         checkinOpen: true,
         checkinCode: "112233",
-        checkinExpiresAt: new Date(Date.now() - 3600000), // Expired 1 hour ago
+        checkinExpiresAt: new Date(Date.now() - 3600000),
       })
       .returning();
+    createdSessionIds.push(expiredSession.id);
 
-    const result = await memberCheckinAction(expiredSession.checkinCode!, omar.id);
+    const result = await recordMemberCheckin(expiredSession.checkinCode!, omar.id);
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/expired/i);
   });
 
   it("allows committee head to toggle check-in window on and off", async () => {
+    const [activeSeason] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"));
     const [robotics] = await db
       .select()
       .from(schema.committees)
-      .where(eq(schema.committees.slug, "robotics-and-automation"));
+      .where(
+        and(
+          eq(schema.committees.slug, "robotics-and-automation"),
+          eq(schema.committees.seasonId, activeSeason.id)
+        )
+      );
 
-    const createResult = await createSessionAction(
+    const createResult = await createSessionAsActor(
       {
         title: "Toggle Checkin Test Session",
         startsAt: new Date().toISOString(),
         committeeId: robotics.id,
         openCheckinImmediately: false,
       },
-      "committee_head",
-      robotics.id
+      { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
     );
     expect(createResult.ok).toBe(true);
+    createdSessionIds.push(createResult.sessionId!);
 
-    // Open check-in for 45 minutes
-    const openRes = await toggleSessionCheckinAction(
+    const openRes = await toggleSessionCheckinAsActor(
       createResult.sessionId!,
       true,
       45,
-      "committee_head",
-      robotics.id
+      { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
     );
     expect(openRes.ok).toBe(true);
     expect(openRes.checkinOpen).toBe(true);
     expect(openRes.checkinCode).toHaveLength(6);
 
-    // Close check-in
-    const closeRes = await toggleSessionCheckinAction(
+    const closeRes = await toggleSessionCheckinAsActor(
       createResult.sessionId!,
       false,
       0,
-      "committee_head",
-      robotics.id
+      { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
     );
     expect(closeRes.ok).toBe(true);
     expect(closeRes.checkinOpen).toBe(false);

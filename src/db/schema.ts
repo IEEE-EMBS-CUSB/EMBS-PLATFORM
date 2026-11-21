@@ -181,6 +181,14 @@ export const branchSessions = pgTable(
     }), // Nullable = branch-wide session (All-Community, Opening, Closing)
     title: text("title").notNull(),
     startsAt: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
+    checkinStartsAt: timestamp("checkin_starts_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    checkinEndsAt: timestamp("checkin_ends_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     checkinCode: text("checkin_code"), // Rotating 6-digit or crypto nonce for QR
     checkinExpiresAt: timestamp("checkin_expires_at", {
       withTimezone: true,
@@ -254,6 +262,8 @@ export const tasks = pgTable(
     description: text("description"),
     dueAt: timestamp("due_at", { withTimezone: true, mode: "date" }).notNull(),
     maxPoints: integer("max_points").notNull().default(100),
+    targetType: text("target_type"), // individual | group
+    targetGroup: text("target_group"), // everyone | all_heads | all_members | committee_all | committee_heads | committee_members
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -279,6 +289,9 @@ export const taskSubmissions = pgTable(
     qualityScore: integer("quality_score"), // 1 (poor) to 5 (excellent)
     timelinessScore: integer("timeliness_score"), // 1 (very late) to 5 (early)
     totalPoints: integer("total_points"), // Derived or explicitly graded
+    submissionText: text("submission_text"),
+    submissionUrl: text("submission_url"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true, mode: "date" }),
     notes: text("notes"),
     gradedBy: uuid("graded_by").references(() => rosterMemberships.id, {
       onDelete: "set null",
@@ -405,80 +418,95 @@ export const hrFeedback = pgTable(
 );
 
 // ============================================================================
-// 12. Better-Auth Tables (Standard User, Session, Account, Verification)
+// 11b. Events (Season-scoped chapter/committee events logged by HR)
 // ============================================================================
 
-export const user = pgTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").notNull().default(false),
-  image: text("image"),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const events = pgTable(
+  "events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    seasonId: uuid("season_id")
+      .notNull()
+      .references(() => seasons.id, { onDelete: "cascade" }),
+    committeeId: uuid("committee_id").references(() => committees.id, {
+      onDelete: "set null",
+    }),
+    title: text("title").notNull(),
+    description: text("description"),
+    eventDate: timestamp("event_date", { withTimezone: true, mode: "date" }).notNull(),
+    points: integer("points").notNull().default(0),
+    createdBy: uuid("created_by").references(() => rosterMemberships.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("events_season_id_idx").on(table.seasonId),
+    index("events_committee_id_idx").on(table.committeeId),
+  ]
+);
 
-export const session = pgTable("session", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  token: text("token").notNull().unique(),
-  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+// ============================================================================
+// 11c. Member Activities & Seasonal Evaluations (Member portal data)
+// ============================================================================
 
-export const account = pgTable("account", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  idToken: text("id_token"),
-  accessTokenExpiresAt: timestamp("access_token_expires_at", {
-    withTimezone: true,
-    mode: "date",
-  }),
-  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
-    withTimezone: true,
-    mode: "date",
-  }),
-  scope: text("scope"),
-  password: text("password"),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const memberActivities = pgTable(
+  "member_activities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    seasonId: uuid("season_id")
+      .notNull()
+      .references(() => seasons.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => rosterMemberships.id, { onDelete: "cascade" }),
+    month: text("month").notNull(),
+    date: text("date").notNull(),
+    category: text("category").notNull(),
+    title: text("title").notNull(),
+    role: text("role").notNull(),
+    summary: text("summary").notNull(),
+    pointsAwarded: integer("points_awarded").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("member_activities_membership_id_idx").on(table.membershipId),
+    index("member_activities_season_id_idx").on(table.seasonId),
+  ]
+);
 
-export const verification = pgTable("verification", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull(),
-  value: text("value").notNull(),
-  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
+export const seasonalEvaluations = pgTable(
+  "seasonal_evaluations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    seasonId: uuid("season_id")
+      .notNull()
+      .references(() => seasons.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => rosterMemberships.id, { onDelete: "cascade" }),
+    seasonLabel: text("season_label").notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true, mode: "date" }).notNull(),
+    status: text("status").notNull().default("complete"),
+    evaluatorRole: text("evaluator_role").notNull(),
+    finalScore: integer("final_score"),
+    outOf: integer("out_of").notNull().default(100),
+    bonusPoints: integer("bonus_points").notNull().default(0),
+    grade: text("grade"),
+    criteria: jsonb("criteria").notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("seasonal_evaluations_membership_id_idx").on(table.membershipId),
+    index("seasonal_evaluations_season_id_idx").on(table.seasonId),
+  ]
+);
 
 // ============================================================================
 // Drizzle Relations
@@ -636,21 +664,3 @@ export const hrFeedbackRelations = relations(hrFeedback, ({ one }) => ({
   }),
 }));
 
-export const userRelations = relations(user, ({ many }) => ({
-  sessions: many(session),
-  accounts: many(account),
-}));
-
-export const sessionRelations = relations(session, ({ one }) => ({
-  user: one(user, {
-    fields: [session.userId],
-    references: [user.id],
-  }),
-}));
-
-export const accountRelations = relations(account, ({ one }) => ({
-  user: one(user, {
-    fields: [account.userId],
-    references: [user.id],
-  }),
-}));

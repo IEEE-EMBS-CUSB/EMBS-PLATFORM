@@ -118,7 +118,7 @@ describe("PointsLedgerView", () => {
       />
     );
 
-    const adjustBtn = screen.getByRole("button", { name: /\+ adjust points/i });
+    const adjustBtn = screen.getByRole("button", { name: /adjust points/i });
     await user.click(adjustBtn);
 
     // Dialog opens

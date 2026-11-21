@@ -1,7 +1,7 @@
 import * as store from "@/db/store";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import type {
   Committee,
   CommitteeLeaderSpotlight,
@@ -13,15 +13,74 @@ import type {
 
 export const LEADERBOARD_TOP_LIMIT = store.LEADERBOARD_TOP_LIMIT;
 
+interface SnapshotEntryShape {
+  rank?: number;
+  previousRank?: number | null;
+  previousCommitteeRank?: number | null;
+  memberId: string;
+  memberName: string;
+  committeeSlug: string;
+  committeeName: string;
+  role: string;
+  monthlyScore: number;
+}
+
+interface SnapshotJsonShape {
+  monthLabel?: string;
+  entries?: SnapshotEntryShape[];
+  overallEntries?: SnapshotEntryShape[];
+  committeeEntries?: Record<string, SnapshotEntryShape[]>;
+}
+
+function getOverallEntriesFromSnapshot(json: SnapshotJsonShape) {
+  return (json.overallEntries ?? json.entries ?? []).map((e, idx) => ({
+    rank: e.rank ?? idx + 1,
+    previousRank: e.previousRank ?? null,
+    memberId: e.memberId,
+    memberName: e.memberName,
+    committeeSlug: e.committeeSlug,
+    committeeName: e.committeeName,
+    role: e.role,
+    monthlyScore: e.monthlyScore,
+  }));
+}
+
+async function resolvePublicSeasonId(): Promise<string | null> {
+  const [activeSeason] = await db
+    .select({ id: schema.seasons.id })
+    .from(schema.seasons)
+    .where(eq(schema.seasons.status, "active"))
+    .limit(1);
+
+  if (activeSeason) return activeSeason.id;
+
+  // Fallback only to most recent archived season if no season is active
+  const [archivedSeason] = await db
+    .select({ id: schema.seasons.id })
+    .from(schema.seasons)
+    .where(eq(schema.seasons.status, "archived"))
+    .orderBy(desc(schema.seasons.startDate))
+    .limit(1);
+
+  return archivedSeason?.id ?? null;
+}
+
 export async function getCommittees(): Promise<Committee[]> {
   try {
+    const seasonId = await resolvePublicSeasonId();
+    if (!seasonId) return [];
+
     const rows = await db
       .select()
       .from(schema.committees)
-      .where(eq(schema.committees.isActive, true));
+      .where(
+        and(
+          eq(schema.committees.seasonId, seasonId),
+          eq(schema.committees.isActive, true)
+        )
+      );
 
     if (rows.length > 0) {
-      // Map stored committees, preserving descriptions and short names from store if available
       const storeCommittees = store.getCommittees();
       const storeMap = new Map(storeCommittees.map((c) => [c.slug, c]));
 
@@ -38,13 +97,16 @@ export async function getCommittees(): Promise<Committee[]> {
       });
     }
   } catch {
-    // Graceful fallback to static store
+    // Graceful fallback when DB is unreachable
   }
-  return store.getCommittees();
+  return [];
 }
 
 export async function getPublishedMonths(): Promise<PublishedMonthOption[]> {
   try {
+    const seasonId = await resolvePublicSeasonId();
+    if (!seasonId) return [];
+
     const snapshots = await db
       .select({
         month: schema.monthlySnapshots.month,
@@ -52,12 +114,17 @@ export async function getPublishedMonths(): Promise<PublishedMonthOption[]> {
         snapshotJson: schema.monthlySnapshots.snapshotJson,
       })
       .from(schema.monthlySnapshots)
-      .where(eq(schema.monthlySnapshots.status, "published"))
+      .where(
+        and(
+          eq(schema.monthlySnapshots.status, "published"),
+          eq(schema.monthlySnapshots.seasonId, seasonId)
+        )
+      )
       .orderBy(desc(schema.monthlySnapshots.month));
 
     if (snapshots.length > 0) {
       return snapshots.map((s) => {
-        const json = s.snapshotJson as { monthLabel?: string };
+        const json = s.snapshotJson as SnapshotJsonShape;
         return {
           month: s.month as MonthKey,
           monthLabel: json.monthLabel ?? s.month,
@@ -70,36 +137,33 @@ export async function getPublishedMonths(): Promise<PublishedMonthOption[]> {
   } catch {
     // Graceful fallback
   }
-  return store.getPublishedMonths();
+  return [];
 }
 
 export async function getOverallLeaderboard(
   month?: MonthKey
 ): Promise<MonthlyLeaderboard | null> {
   try {
+    const seasonId = await resolvePublicSeasonId();
+    if (!seasonId) return null;
+
     const rows = await db
       .select()
       .from(schema.monthlySnapshots)
-      .where(eq(schema.monthlySnapshots.status, "published"))
+      .where(
+        and(
+          eq(schema.monthlySnapshots.status, "published"),
+          eq(schema.monthlySnapshots.seasonId, seasonId)
+        )
+      )
       .orderBy(desc(schema.monthlySnapshots.month));
 
     if (rows.length > 0) {
       const target = month ? rows.find((r) => r.month === month) : rows[0];
       if (!target) return null;
 
-      const json = target.snapshotJson as {
-        monthLabel?: string;
-        entries: Array<{
-          rank: number;
-          previousRank: number | null;
-          memberId: string;
-          memberName: string;
-          committeeSlug: string;
-          committeeName: string;
-          role: string;
-          monthlyScore: number;
-        }>;
-      };
+      const json = target.snapshotJson as SnapshotJsonShape;
+      const overallEntries = getOverallEntriesFromSnapshot(json);
 
       return {
         month: target.month as MonthKey,
@@ -109,13 +173,13 @@ export async function getOverallLeaderboard(
           ? target.publishedAt.toISOString().slice(0, 10)
           : "",
         scope: "overall",
-        entries: (json.entries ?? []).slice(0, LEADERBOARD_TOP_LIMIT),
+        entries: overallEntries.slice(0, LEADERBOARD_TOP_LIMIT),
       };
     }
   } catch {
     // Graceful fallback
   }
-  return store.getOverallLeaderboard(month);
+  return null;
 }
 
 export async function getCommitteeLeaderboard(
@@ -127,46 +191,49 @@ export async function getCommitteeLeaderboard(
     const committee = comms.find((c) => c.slug === committeeSlug);
     if (!committee) return null;
 
+    const seasonId = await resolvePublicSeasonId();
+    if (!seasonId) return null;
+
     const rows = await db
       .select()
       .from(schema.monthlySnapshots)
-      .where(eq(schema.monthlySnapshots.status, "published"))
+      .where(
+        and(
+          eq(schema.monthlySnapshots.status, "published"),
+          eq(schema.monthlySnapshots.seasonId, seasonId)
+        )
+      )
       .orderBy(desc(schema.monthlySnapshots.month));
 
     if (rows.length > 0) {
       const target = month ? rows.find((r) => r.month === month) : rows[0];
       if (!target) return null;
 
-      const json = target.snapshotJson as {
-        monthLabel?: string;
-        entries: Array<{
-          previousRank: number | null;
-          previousCommitteeRank?: number | null;
-          memberId: string;
-          memberName: string;
-          committeeSlug: string;
-          committeeName: string;
-          role: string;
-          monthlyScore: number;
-        }>;
-      };
+      const json = target.snapshotJson as SnapshotJsonShape;
+      const hasCommitteeEntries = Array.isArray(
+        json.committeeEntries?.[committee.slug]
+      );
+      const rawCommEntries = (
+        hasCommitteeEntries
+          ? json.committeeEntries![committee.slug]
+          : (json.entries ?? json.overallEntries ?? []).filter(
+              (e) => e.committeeSlug === committee.slug
+            )
+      ).slice(0, LEADERBOARD_TOP_LIMIT);
 
-      const committeeEntries = (json.entries ?? [])
-        .filter((entry) => entry.committeeSlug === committee.slug)
-        .slice(0, LEADERBOARD_TOP_LIMIT)
-        .map((entry, index) => ({
-          rank: index + 1,
-          previousRank:
-            entry.previousCommitteeRank !== undefined
-              ? entry.previousCommitteeRank
-              : entry.previousRank,
-          memberId: entry.memberId,
-          memberName: entry.memberName,
-          committeeSlug: entry.committeeSlug,
-          committeeName: entry.committeeName,
-          role: entry.role,
-          monthlyScore: entry.monthlyScore,
-        }));
+      const committeeEntries = rawCommEntries.map((entry, index: number) => ({
+        rank: hasCommitteeEntries ? (entry.rank ?? index + 1) : index + 1,
+        previousRank:
+          entry.previousCommitteeRank !== undefined
+            ? entry.previousCommitteeRank
+            : (entry.previousRank ?? null),
+        memberId: entry.memberId,
+        memberName: entry.memberName,
+        committeeSlug: entry.committeeSlug,
+        committeeName: entry.committeeName,
+        role: entry.role,
+        monthlyScore: entry.monthlyScore,
+      }));
 
       return {
         month: target.month as MonthKey,
@@ -183,34 +250,42 @@ export async function getCommitteeLeaderboard(
   } catch {
     // Graceful fallback
   }
-  return store.getCommitteeLeaderboard(committeeSlug, month);
+  return null;
 }
 
 export async function getLeaderboardHistory(): Promise<
   LeaderboardHistorySummary[]
 > {
   try {
+    const seasonId = await resolvePublicSeasonId();
+    if (!seasonId) return [];
+
     const rows = await db
       .select()
       .from(schema.monthlySnapshots)
-      .where(eq(schema.monthlySnapshots.status, "published"))
+      .where(
+        and(
+          eq(schema.monthlySnapshots.status, "published"),
+          eq(schema.monthlySnapshots.seasonId, seasonId)
+        )
+      )
       .orderBy(desc(schema.monthlySnapshots.month));
 
     if (rows.length > 0) {
       return rows.map((snapshot) => {
-        const json = snapshot.snapshotJson as {
-          monthLabel?: string;
-          entries: Array<{
-            memberName: string;
-            committeeName: string;
-            committeeSlug: string;
-            monthlyScore: number;
-          }>;
-        };
-
-        const entries = json.entries ?? [];
+        const json = snapshot.snapshotJson as SnapshotJsonShape;
+        const entries = getOverallEntriesFromSnapshot(json);
         const top = entries[0] ?? null;
-        const committeeSlugs = new Set(entries.map((e) => e.committeeSlug));
+        const committeeSlugs = new Set<string>(
+          entries.map((e) => e.committeeSlug)
+        );
+        if (json.committeeEntries) {
+          for (const slug of Object.keys(json.committeeEntries)) {
+            if ((json.committeeEntries[slug]?.length ?? 0) > 0) {
+              committeeSlugs.add(slug);
+            }
+          }
+        }
 
         return {
           month: snapshot.month as MonthKey,
@@ -233,7 +308,7 @@ export async function getLeaderboardHistory(): Promise<
   } catch {
     // Graceful fallback
   }
-  return store.getLeaderboardHistory();
+  return [];
 }
 
 export async function getCommitteeLeaders(
@@ -241,32 +316,34 @@ export async function getCommitteeLeaders(
 ): Promise<CommitteeLeaderSpotlight[]> {
   try {
     const comms = await getCommittees();
+    const seasonId = await resolvePublicSeasonId();
+    if (!seasonId) return [];
+
     const rows = await db
       .select()
       .from(schema.monthlySnapshots)
-      .where(eq(schema.monthlySnapshots.status, "published"))
+      .where(
+        and(
+          eq(schema.monthlySnapshots.status, "published"),
+          eq(schema.monthlySnapshots.seasonId, seasonId)
+        )
+      )
       .orderBy(desc(schema.monthlySnapshots.month));
 
     if (rows.length > 0) {
       const target = month ? rows.find((r) => r.month === month) : rows[0];
       if (!target) return [];
 
-      const json = target.snapshotJson as {
-        monthLabel?: string;
-        entries: Array<{
-          committeeSlug: string;
-          memberName: string;
-          role: string;
-          monthlyScore: number;
-        }>;
-      };
-
-      const entries = json.entries ?? [];
+      const json = target.snapshotJson as SnapshotJsonShape;
+      const overallEntries = getOverallEntriesFromSnapshot(json);
 
       return comms.map((committee) => {
-        const topEntry = entries.find(
-          (entry) => entry.committeeSlug === committee.slug
-        );
+        const committeeList = json.committeeEntries?.[committee.slug];
+        const topEntry =
+          committeeList && committeeList.length > 0
+            ? committeeList[0]
+            : overallEntries.find((entry) => entry.committeeSlug === committee.slug);
+
         return {
           committee: { ...committee },
           month: target.month as MonthKey,
@@ -284,6 +361,5 @@ export async function getCommitteeLeaders(
   } catch {
     // Graceful fallback
   }
-  return store.getCommitteeLeaders(month);
+  return [];
 }
-

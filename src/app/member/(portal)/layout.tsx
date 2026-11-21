@@ -19,12 +19,12 @@ export default async function MemberPortalLayout({
   ]);
 
   if (!profile) {
-    redirect("/login");
+    redirect("/login?session=invalid");
   }
 
   // Chapter leadership roles without committee assignments (Director, Master Admin)
   // operate exclusively through the HR & Operations console at /hr.
-  if (opProfile?.role === "director" || opProfile?.role === "master_admin") {
+  if (opProfile && (opProfile.role === "master_admin" || opProfile.role === "director" || opProfile.role === "hr_admin" || opProfile.role === "hr_member" || opProfile.role === "committee_head")) {
     redirect("/hr");
   }
 

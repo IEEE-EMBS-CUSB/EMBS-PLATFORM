@@ -20,11 +20,49 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import type { AssignedTaskItem } from "@/components/hr/task-delegation-view";
 
+export interface DashboardKpis {
+  activeMembers: number;
+  committeeCount: number;
+  hrOfficers: number;
+  assignedTasksCount: number;
+  pendingGradingCount: number;
+  avgMemberPoints: number;
+  sessionsCount: number;
+  publishedMonthsCount: number;
+}
+
 interface RoleOperationalDashboardProps {
   currentUserRole: MembershipRole;
   userName?: string;
   committeeName?: string;
   assignedTasks?: AssignedTaskItem[];
+  kpis?: DashboardKpis;
+}
+
+const DEFAULT_KPIS: DashboardKpis = {
+  activeMembers: 0,
+  committeeCount: 0,
+  hrOfficers: 0,
+  assignedTasksCount: 0,
+  pendingGradingCount: 0,
+  avgMemberPoints: 0,
+  sessionsCount: 0,
+  publishedMonthsCount: 0,
+};
+
+function formatAssignerPrefix(role: MembershipRole): string {
+  switch (role) {
+    case "master_admin":
+      return "Master Admin";
+    case "director":
+      return "Director";
+    case "hr_admin":
+      return "HR Admin";
+    case "committee_head":
+      return "Committee Head";
+    default:
+      return "Leadership";
+  }
 }
 
 export function RoleOperationalDashboard({
@@ -32,8 +70,8 @@ export function RoleOperationalDashboard({
   userName = "Officer",
   committeeName,
   assignedTasks = [],
+  kpis = DEFAULT_KPIS,
 }: RoleOperationalDashboardProps) {
-  // Common assigned tasks section for roles that receive directives
   const renderAssignedTasksSection = (heading: string, subtitle: string) => (
     <div className="space-y-4">
       <div className="border-b border-border pb-2">
@@ -72,7 +110,12 @@ export function RoleOperationalDashboard({
               <CardContent className="space-y-1.5 pt-0 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1.5 text-foreground/85">
                   <UserCheck className="h-3.5 w-3.5 text-[#00629b]" />
-                  <span>Assigned by Director {task.assignedByName}</span>
+                  <span>
+                    Assigned by {formatAssignerPrefix(task.assignerRole)}
+                    {task.assignedByName && task.assignedByName !== "Leadership"
+                      ? ` ${task.assignedByName}`
+                      : ""}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Clock className="h-3.5 w-3.5 text-muted-foreground" />
@@ -90,13 +133,11 @@ export function RoleOperationalDashboard({
   if (currentUserRole === "committee_head") {
     return (
       <div className="space-y-10">
-        {/* SECTION 1: Personal Deliverables from Director */}
         {renderAssignedTasksSection(
           "My Deliverables (Assigned by Director)",
-          `Specific milestones and curriculum tasks assigned to you by chapter directors.`
+          "Specific milestones and curriculum tasks assigned to you by chapter directors."
         )}
 
-        {/* SECTION 2: Committee Leadership Console */}
         <div className="space-y-6 border-t border-border pt-8">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -120,29 +161,39 @@ export function RoleOperationalDashboard({
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Active Members</p>
-                <p className="mt-1 font-heading text-2xl font-bold text-[#002855]">14</p>
-                <p className="mt-1 text-[11px] text-[#00629b]">In {committeeName ?? "your committee"}</p>
+                <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
+                  {kpis.activeMembers}
+                </p>
+                <p className="mt-1 text-[11px] text-[#00629b]">
+                  In {committeeName ?? "your committee"}
+                </p>
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Assigned Tasks</p>
-                <p className="mt-1 font-heading text-2xl font-bold text-[#002855]">4</p>
-                <p className="mt-1 text-[11px] text-[#78be20]">Active deliverables</p>
+                <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
+                  {kpis.assignedTasksCount}
+                </p>
+                <p className="mt-1 text-[11px] text-[#1e6b0a]">Active deliverables</p>
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Pending Grading</p>
-                <p className="mt-1 font-heading text-2xl font-bold text-[#772583]">8</p>
+                <p className="mt-1 font-heading text-2xl font-bold text-[#772583] tabular-nums">
+                  {kpis.pendingGradingCount}
+                </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">Submissions to score</p>
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Avg Member Points</p>
-                <p className="mt-1 font-heading text-2xl font-bold text-[#002855]">165</p>
-                <p className="mt-1 text-[11px] text-[#007377]">Current monthly average</p>
+                <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
+                  {kpis.avgMemberPoints}
+                </p>
+                <p className="mt-1 text-[11px] text-[#007377]">Current season average</p>
               </CardContent>
             </Card>
           </div>
@@ -243,13 +294,11 @@ export function RoleOperationalDashboard({
   if (currentUserRole === "director") {
     return (
       <div className="space-y-10">
-        {/* SECTION 1: Executive Directives & Roadmap */}
         {renderAssignedTasksSection(
           "Executive Directives & Roadmap",
           "High-level strategic deliverables and milestones overseen by chapter directorship."
         )}
 
-        {/* SECTION 2: Committee Overseer & Heads Delegation */}
         <div className="space-y-6 border-t border-border pt-8">
           <div>
             <div className="flex items-center gap-2">
@@ -261,7 +310,7 @@ export function RoleOperationalDashboard({
               </Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Welcome back, Director {userName}. Supervise all 12 committees, assign deliverables directly to Committee Heads and HR Admins, and review chapter standings.
+              Welcome back, Director {userName}. Supervise all {kpis.committeeCount || "chapter"} committees, assign deliverables directly to Committee Heads and HR Admins, and review chapter standings.
             </p>
           </div>
 
@@ -298,7 +347,7 @@ export function RoleOperationalDashboard({
                   Committees & Rubrics Review
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Review the 12 technical and non-technical tracks and scoring rubrics for the season.
+                  Review technical and non-technical tracks and scoring rubrics for the active season.
                 </p>
                 <Link
                   href="/hr/committees"
@@ -346,13 +395,11 @@ export function RoleOperationalDashboard({
   if (currentUserRole === "hr_admin") {
     return (
       <div className="space-y-10">
-        {/* SECTION 1: Tasks from Director */}
         {renderAssignedTasksSection(
           "Directives from Director",
           "Tasks and operational mandates assigned to HR Administration by chapter directors."
         )}
 
-        {/* SECTION 2: HR Operations Console */}
         <div className="space-y-6 border-t border-border pt-8">
           <div>
             <div className="flex items-center gap-2">
@@ -372,29 +419,39 @@ export function RoleOperationalDashboard({
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Tracked Members</p>
-                <p className="mt-1 font-heading text-2xl font-bold text-[#002855]">84</p>
-                <p className="mt-1 text-[11px] text-[#00629b]">Across 12 committees</p>
+                <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
+                  {kpis.activeMembers}
+                </p>
+                <p className="mt-1 text-[11px] text-[#00629b]">
+                  Across {kpis.committeeCount} committees
+                </p>
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5">
                 <p className="text-xs font-semibold text-muted-foreground">HR Officers</p>
-                <p className="mt-1 font-heading text-2xl font-bold text-[#007377]">12</p>
+                <p className="mt-1 font-heading text-2xl font-bold text-[#007377] tabular-nums">
+                  {kpis.hrOfficers}
+                </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">Assigned to committees</p>
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Attendance Sessions</p>
-                <p className="mt-1 font-heading text-2xl font-bold text-[#002855]">14</p>
-                <p className="mt-1 text-[11px] text-[#78be20]">Logged this season</p>
+                <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
+                  {kpis.sessionsCount}
+                </p>
+                <p className="mt-1 text-[11px] text-[#1e6b0a]">Logged this season</p>
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5">
-                <p className="text-xs font-semibold text-muted-foreground">Ledger Status</p>
-                <p className="mt-1 font-heading text-2xl font-bold text-[#772583]">Synchronized</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">Ready for monthly publish</p>
+                <p className="text-xs font-semibold text-muted-foreground">Published Months</p>
+                <p className="mt-1 font-heading text-2xl font-bold text-[#772583] tabular-nums">
+                  {kpis.publishedMonthsCount}
+                </p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Frozen leaderboard snapshots</p>
               </CardContent>
             </Card>
           </div>
@@ -494,6 +551,45 @@ export function RoleOperationalDashboard({
           </p>
         </div>
 
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card className="border-border bg-white shadow-xs">
+            <CardContent className="p-5">
+              <p className="text-xs font-semibold text-muted-foreground">Active Members</p>
+              <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
+                {kpis.activeMembers}
+              </p>
+              <p className="mt-1 text-[11px] text-[#00629b]">Across {kpis.committeeCount} committees</p>
+            </CardContent>
+          </Card>
+          <Card className="border-border bg-white shadow-xs">
+            <CardContent className="p-5">
+              <p className="text-xs font-semibold text-muted-foreground">Sessions Logged</p>
+              <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
+                {kpis.sessionsCount}
+              </p>
+              <p className="mt-1 text-[11px] text-[#1e6b0a]">Active season</p>
+            </CardContent>
+          </Card>
+          <Card className="border-border bg-white shadow-xs">
+            <CardContent className="p-5">
+              <p className="text-xs font-semibold text-muted-foreground">Pending Grading</p>
+              <p className="mt-1 font-heading text-2xl font-bold text-[#772583] tabular-nums">
+                {kpis.pendingGradingCount}
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">Open task submissions</p>
+            </CardContent>
+          </Card>
+          <Card className="border-border bg-white shadow-xs">
+            <CardContent className="p-5">
+              <p className="text-xs font-semibold text-muted-foreground">Published Months</p>
+              <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
+                {kpis.publishedMonthsCount}
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">Frozen leaderboard snapshots</p>
+            </CardContent>
+          </Card>
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-3">
           <Card className="border-border bg-white shadow-xs">
             <CardContent className="p-5 space-y-3">
@@ -572,13 +668,11 @@ export function RoleOperationalDashboard({
   // 5. HR MEMBER VIEW
   return (
     <div className="space-y-10">
-      {/* SECTION 1: Tasks from HR Admin */}
       {renderAssignedTasksSection(
         "My Tasks (From HR Admin)",
         "Directives and operational assignments from chapter HR administration."
       )}
 
-      {/* SECTION 2: Committee Attendance Operations */}
       <div className="space-y-6 border-t border-border pt-8">
         <div>
           <div className="flex items-center gap-2">

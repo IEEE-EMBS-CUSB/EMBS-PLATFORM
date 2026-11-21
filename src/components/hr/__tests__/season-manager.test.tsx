@@ -39,7 +39,7 @@ describe("SeasonManagerView Component", () => {
 
     await user.click(cloneButton);
     expect(
-      screen.getByText(/copy committees and scoring rubrics/i)
+      screen.getByText(/committees and scoring rubrics/i)
     ).toBeInTheDocument();
   });
 

@@ -1,91 +1,114 @@
 import { HrShell } from "@/components/hr/hr-shell";
-import { PointsLedgerView } from "@/components/hr/points-ledger-view";
-import { requireOperationalSession } from "@/lib/portal-guards";
-
-const INITIAL_MEMBERS = [
-  {
-    id: "mem-1",
-    fullName: "Salma El-Sayed",
-    committeeName: "AI & Machine Learning",
-    email: "salma@cusb.org",
-  },
-  {
-    id: "mem-2",
-    fullName: "Ziad Hany",
-    committeeName: "Web Development",
-    email: "ziad@cusb.org",
-  },
-  {
-    id: "mem-3",
-    fullName: "Omar Tarek",
-    committeeName: "Robotics & Automation",
-    email: "omar@cusb.org",
-  },
-  {
-    id: "mem-4",
-    fullName: "Nourhan Khaled",
-    committeeName: "Graphic Design",
-    email: "nourhan@cusb.org",
-  },
-];
-
-const INITIAL_ENTRIES = [
-  {
-    id: "led-1",
-    membershipId: "mem-1",
-    memberName: "Salma El-Sayed",
-    memberEmail: "salma@cusb.org",
-    committeeName: "AI & Machine Learning",
-    month: "2026-10",
-    sourceType: "manual_override" as const,
-    points: 15,
-    reason: "Outstanding support during workshop setup",
-    createdByName: "HR Admin",
-    createdAt: "2026-10-15T12:00:00Z",
-  },
-  {
-    id: "led-2",
-    membershipId: "mem-2",
-    memberName: "Ziad Hany",
-    memberEmail: "ziad@cusb.org",
-    committeeName: "Web Development",
-    month: "2026-10",
-    sourceType: "attendance" as const,
-    points: 15,
-    reason: "Attended Web Track Session #1 with punctuality bonus",
-    createdByName: "System QR Check-In",
-    createdAt: "2026-10-10T18:00:00Z",
-  },
-  {
-    id: "led-3",
-    membershipId: "mem-2",
-    memberName: "Ziad Hany",
-    memberEmail: "ziad@cusb.org",
-    committeeName: "Web Development",
-    month: "2026-10",
-    sourceType: "manual_override" as const,
-    points: -5,
-    reason: "Late submission without prior notice",
-    createdByName: "HR Admin",
-    createdAt: "2026-10-20T10:00:00Z",
-  },
-  {
-    id: "led-4",
-    membershipId: "mem-4",
-    memberName: "Nourhan Khaled",
-    memberEmail: "nourhan@cusb.org",
-    committeeName: "Graphic Design",
-    month: "2026-10",
-    sourceType: "task" as const,
-    points: 95,
-    reason: "Social media visual brand deck submission",
-    createdByName: "Design Head",
-    createdAt: "2026-10-18T14:30:00Z",
-  },
-];
+import {
+  PointsLedgerView,
+  type LedgerEntryItem,
+} from "@/components/hr/points-ledger-view";
+import { requireHrModule } from "@/lib/portal-guards";
+import { db } from "@/db";
+import * as schema from "@/db/schema";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { addManualLedgerEntryAction } from "./actions";
 
 export default async function HrLedgerPage() {
-  const { profile } = await requireOperationalSession();
+  const { profile } = await requireHrModule("ledger");
+
+  let members: Array<{
+    id: string;
+    fullName: string;
+    committeeName: string;
+    email: string;
+  }> = [];
+  let entries: LedgerEntryItem[] = [];
+  let activeSeasonName = "Active Season";
+  const defaultMonth = new Date().toISOString().slice(0, 7);
+
+  const isCommitteeScoped =
+    profile.role === "committee_head" || profile.role === "hr_member";
+
+  try {
+    const [activeSeason] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"))
+      .limit(1);
+
+    if (activeSeason) {
+      activeSeasonName = activeSeason.name;
+      const seasonId = activeSeason.id;
+
+      const [allSeasonMembers, dbCommittees] = await Promise.all([
+        db
+          .select()
+          .from(schema.rosterMemberships)
+          .where(eq(schema.rosterMemberships.seasonId, seasonId)),
+        db
+          .select()
+          .from(schema.committees)
+          .where(eq(schema.committees.seasonId, seasonId)),
+      ]);
+
+      const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
+      const memberMap = new Map(allSeasonMembers.map((m) => [m.id, m]));
+      const authorMap = new Map(allSeasonMembers.map((m) => [m.id, m.fullName]));
+
+      const visibleMembers = allSeasonMembers.filter((m) => {
+        if (!m.isActive || m.role === "attendee") return false;
+        if (isCommitteeScoped) {
+          return profile.committeeId !== null && m.committeeId === profile.committeeId;
+        }
+        return true;
+      });
+
+      // Exclude self from manual bonus award dropdown
+      members = visibleMembers
+        .filter((m) => m.id !== profile.id)
+        .map((m) => ({
+          id: m.id,
+          fullName: m.fullName,
+          email: m.email,
+          committeeName: m.committeeId
+            ? commMap.get(m.committeeId) ?? "Unassigned"
+            : "Unassigned",
+        }));
+
+      const visibleMemberIds = visibleMembers.map((m) => m.id);
+      const dbLedger =
+        visibleMemberIds.length > 0
+          ? await db
+              .select()
+              .from(schema.scoreLedger)
+              .where(
+                isCommitteeScoped
+                  ? and(
+                      eq(schema.scoreLedger.seasonId, seasonId),
+                      inArray(schema.scoreLedger.membershipId, visibleMemberIds)
+                    )
+                  : eq(schema.scoreLedger.seasonId, seasonId)
+              )
+              .orderBy(desc(schema.scoreLedger.createdAt))
+          : [];
+
+      entries = dbLedger.map((l) => ({
+        id: l.id,
+        membershipId: l.membershipId,
+        memberName: memberMap.get(l.membershipId)?.fullName ?? "Unknown",
+        memberEmail: memberMap.get(l.membershipId)?.email ?? "",
+        committeeName:
+          commMap.get(memberMap.get(l.membershipId)?.committeeId ?? "") ??
+          "Unassigned",
+        month: l.month,
+        sourceType: l.sourceType,
+        points: l.points,
+        reason: l.reason,
+        createdByName: l.createdBy
+          ? authorMap.get(l.createdBy) ?? "System"
+          : "System",
+        createdAt: l.createdAt.toISOString(),
+      }));
+    }
+  } catch {
+    // DB offline
+  }
 
   return (
     <HrShell
@@ -93,8 +116,15 @@ export default async function HrLedgerPage() {
       currentUserRole={profile.role}
       userName={profile.fullName}
       userCommitteeName={profile.committeeName}
+      activeSeasonName={activeSeasonName}
     >
-      <PointsLedgerView entries={INITIAL_ENTRIES} members={INITIAL_MEMBERS} />
+      <PointsLedgerView
+        entries={entries}
+        members={members}
+        currentUserName={profile.fullName}
+        defaultMonth={defaultMonth}
+        onAddEntry={addManualLedgerEntryAction}
+      />
     </HrShell>
   );
 }

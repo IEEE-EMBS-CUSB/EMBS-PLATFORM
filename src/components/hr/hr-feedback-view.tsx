@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Lock,
@@ -36,16 +36,26 @@ export interface MemberOption {
 interface HrFeedbackViewProps {
   feedbackList: FeedbackItem[];
   members: MemberOption[];
+  canCreateWarning?: boolean;
+  currentUserName?: string;
+  onAddFeedback?: (input: {
+    membershipId: string;
+    content: string;
+    isWarning: boolean;
+  }) => Promise<{ ok: boolean; id?: string; error?: string } | void>;
 }
 
 export function HrFeedbackView({
   feedbackList: initialFeedback,
   members,
+  canCreateWarning = true,
+  currentUserName = "HR Team",
+  onAddFeedback,
 }: HrFeedbackViewProps) {
   const [feedbackList, setFeedbackList] = useState(initialFeedback);
-  const [activeFilter, setActiveFilter] = useState<"all" | "warnings" | "public">(
-    "all"
-  );
+  const [activeFilter, setActiveFilter] = useState<
+    "all" | "warnings" | "public"
+  >("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -55,6 +65,16 @@ export function HrFeedbackView({
   );
   const [entryType, setEntryType] = useState<"public" | "warning">("public");
   const [content, setContent] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const filteredItems = feedbackList.filter((item) => {
     const matchesSearch =
@@ -69,31 +89,59 @@ export function HrFeedbackView({
     return true;
   });
 
-  const handleSaveEntry = (e: React.FormEvent) => {
+  const handleSaveEntry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!content.trim()) return;
+    if (!content.trim() || isSubmitting) return;
 
     const targetMember = members.find((m) => m.id === selectedMemberId);
-    if (!targetMember) return;
+    if (!targetMember) {
+      setFormError("Please select a target member.");
+      return;
+    }
 
-    const isWarning = entryType === "warning";
-    const newItem: FeedbackItem = {
-      id: `fb-${Date.now()}`,
-      membershipId: targetMember.id,
-      memberName: targetMember.fullName,
-      memberEmail: targetMember.email,
-      committeeName: targetMember.committeeName,
-      content: content.trim(),
-      isPublished: !isWarning,
-      isWarning,
-      createdByName: "HR Admin",
-      createdAt: new Date().toISOString(),
-    };
+    const isWarning = canCreateWarning && entryType === "warning";
+    setIsSubmitting(true);
+    setFormError(null);
 
-    setFeedbackList([newItem, ...feedbackList]);
-    setIsModalOpen(false);
-    setContent("");
-    setEntryType("public");
+    try {
+      let createdId = `fb-${Date.now()}`;
+      if (onAddFeedback) {
+        const res = await onAddFeedback({
+          membershipId: targetMember.id,
+          content: content.trim(),
+          isWarning,
+        });
+        if (res && !res.ok) {
+          setFormError(res.error ?? "Failed to save feedback.");
+          return;
+        }
+        if (res && res.id) createdId = res.id;
+      }
+
+      const newItem: FeedbackItem = {
+        id: createdId,
+        membershipId: targetMember.id,
+        memberName: targetMember.fullName,
+        memberEmail: targetMember.email,
+        committeeName: targetMember.committeeName,
+        content: content.trim(),
+        isPublished: !isWarning,
+        isWarning,
+        createdByName: currentUserName,
+        createdAt: new Date().toISOString(),
+      };
+
+      setFeedbackList((prev) => [newItem, ...prev]);
+      setIsModalOpen(false);
+      setContent("");
+      setEntryType("public");
+    } catch (err: unknown) {
+      setFormError(
+        err instanceof Error ? err.message : "Failed to save feedback."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -109,17 +157,22 @@ export function HrFeedbackView({
         </div>
 
         <Button
-          onClick={() => setIsModalOpen(true)}
+          type="button"
+          disabled={members.length === 0}
+          onClick={() => {
+            setFormError(null);
+            setIsModalOpen(true);
+          }}
           className="inline-flex items-center gap-2 bg-[#772583] text-white hover:bg-[#5a1b63]"
         >
-          <Plus className="h-4 w-4" />
-          + Add Note / Warning
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          <span>{canCreateWarning ? "Add Note / Warning" : "Add Feedback"}</span>
         </Button>
       </div>
 
       {/* Security Privacy Notice */}
       <div className="flex items-start gap-3 rounded-lg border border-[#00629b]/20 bg-[#f0f6fa] p-4 text-xs text-[#002855]">
-        <Lock className="mt-0.5 h-4 w-4 shrink-0 text-[#00629b]" />
+        <Lock className="mt-0.5 h-4 w-4 shrink-0 text-[#00629b]" aria-hidden="true" />
         <div>
           <span className="font-bold">Strict Data-Layer Privacy Guarded:</span>{" "}
           Internal HR warnings and unpublished notes are filtered at the database query level and never returned to members or attendees. Only entries explicitly flagged as Public Recognition are visible in member portals.
@@ -163,17 +216,19 @@ export function HrFeedbackView({
               >
                 Public Recognition
               </button>
-              <button
-                type="button"
-                onClick={() => setActiveFilter("warnings")}
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                  activeFilter === "warnings"
-                    ? "bg-[#772583] text-white"
-                    : "text-foreground hover:bg-muted"
-                }`}
-              >
-                Warnings Only
-              </button>
+              {canCreateWarning && (
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter("warnings")}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
+                    activeFilter === "warnings"
+                      ? "bg-[#772583] text-white"
+                      : "text-foreground hover:bg-muted"
+                  }`}
+                >
+                  Warnings Only
+                </button>
+              )}
             </div>
           </div>
         </CardContent>
@@ -193,8 +248,8 @@ export function HrFeedbackView({
               key={item.id}
               className={`border transition-all ${
                 item.isWarning
-                  ? "border-[#f9c5c5] bg-[#fffbfb]"
-                  : "border-[#d8ecd8] bg-[#fcfdfc]"
+                  ? "border-[#ba0c2f]/30 bg-[#ba0c2f]/[0.03]"
+                  : "border-[#78be20]/30 bg-white"
               }`}
             >
               <CardContent className="p-5">
@@ -215,13 +270,13 @@ export function HrFeedbackView({
 
                   <div>
                     {item.isWarning ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-[#f9c5c5] bg-[#fdf2f2] px-2.5 py-0.5 text-xs font-semibold text-[#cc0000]">
-                        <AlertTriangle className="h-3 w-3" />
+                      <span className="inline-flex items-center gap-1 rounded-full border border-[#ba0c2f]/30 bg-[#ba0c2f]/10 px-2.5 py-0.5 text-xs font-semibold text-[#ba0c2f]">
+                        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
                         HR Warning (Private)
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-[#c4e8aa] bg-[#f0f9eb] px-2.5 py-0.5 text-xs font-semibold text-[#408c10]">
-                        <Sparkles className="h-3 w-3" />
+                      <span className="inline-flex items-center gap-1 rounded-full border border-[#78be20]/40 bg-[#78be20]/10 px-2.5 py-0.5 text-xs font-semibold text-[#1e6b0a]">
+                        <Sparkles className="h-3 w-3" aria-hidden="true" />
                         Public Recognition
                       </span>
                     )}
@@ -233,7 +288,7 @@ export function HrFeedbackView({
                 </p>
 
                 <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
-                  <span>Logged by {item.createdByName || "HR Admin"}</span>
+                  <span>Logged by {item.createdByName || "HR Team"}</span>
                   <span>{item.createdAt.slice(0, 10)}</span>
                 </div>
               </CardContent>
@@ -247,24 +302,39 @@ export function HrFeedbackView({
         <div
           role="dialog"
           aria-modal="true"
+          aria-label="Log Feedback or HR Warning"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsModalOpen(false);
+          }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
         >
-          <div className="w-full max-w-lg rounded-xl border border-border bg-white p-6 shadow-xl animate-in zoom-in-95">
+          <div className="w-full max-w-lg rounded-xl border border-border bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between border-b pb-4">
               <h2 className="text-lg font-bold text-[#002855]">
-                Log Feedback or HR Warning
+                {canCreateWarning ? "Log Feedback or HR Warning" : "Log Member Feedback"}
               </h2>
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
+                aria-label="Close modal"
                 onClick={() => setIsModalOpen(false)}
                 className="h-8 w-8 p-0"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </Button>
             </div>
 
             <form onSubmit={handleSaveEntry} className="mt-4 space-y-4">
+              {formError && (
+                <div
+                  role="alert"
+                  className="rounded-md bg-[#ba0c2f]/10 p-2.5 text-xs font-semibold text-[#ba0c2f]"
+                >
+                  {formError}
+                </div>
+              )}
+
               <div>
                 <label
                   htmlFor="fbMemberSelect"
@@ -287,50 +357,52 @@ export function HrFeedbackView({
                 </select>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Feedback Type & Privacy
-                </label>
-                <div className="mt-2 grid grid-cols-2 gap-3">
-                  <label
-                    className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-colors ${
-                      entryType === "public"
-                        ? "border-[#772583] bg-[#f5edf7] text-[#772583]"
-                        : "border-border hover:bg-muted/50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="entryType"
-                      value="public"
-                      checked={entryType === "public"}
-                      onChange={() => setEntryType("public")}
-                      className="sr-only"
-                    />
-                    <Sparkles className="h-4 w-4" />
-                    <span>Public Recognition</span>
+              {canCreateWarning && (
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Feedback Type & Privacy
                   </label>
+                  <div className="mt-2 grid grid-cols-2 gap-3">
+                    <label
+                      className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-colors ${
+                        entryType === "public"
+                          ? "border-[#772583] bg-[#f5edf7] text-[#772583]"
+                          : "border-border hover:bg-muted/50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="entryType"
+                        value="public"
+                        checked={entryType === "public"}
+                        onChange={() => setEntryType("public")}
+                        className="sr-only"
+                      />
+                      <Sparkles className="h-4 w-4" aria-hidden="true" />
+                      <span>Public Recognition</span>
+                    </label>
 
-                  <label
-                    className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-colors ${
-                      entryType === "warning"
-                        ? "border-[#cc0000] bg-[#fdf2f2] text-[#cc0000]"
-                        : "border-border hover:bg-muted/50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="entryType"
-                      value="warning"
-                      checked={entryType === "warning"}
-                      onChange={() => setEntryType("warning")}
-                      className="sr-only"
-                    />
-                    <AlertTriangle className="h-4 w-4" />
-                    <span>Internal HR Warning (Private)</span>
-                  </label>
+                    <label
+                      className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-colors ${
+                        entryType === "warning"
+                          ? "border-[#ba0c2f] bg-[#ba0c2f]/10 text-[#ba0c2f]"
+                          : "border-border hover:bg-muted/50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="entryType"
+                        value="warning"
+                        checked={entryType === "warning"}
+                        onChange={() => setEntryType("warning")}
+                        className="sr-only"
+                      />
+                      <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                      <span>Internal HR Warning (Private)</span>
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label
@@ -360,9 +432,10 @@ export function HrFeedbackView({
                 </Button>
                 <Button
                   type="submit"
+                  disabled={isSubmitting}
                   className="bg-[#772583] text-white hover:bg-[#5a1b63]"
                 >
-                  Save Entry
+                  {isSubmitting ? "Saving..." : "Save Entry"}
                 </Button>
               </div>
             </form>

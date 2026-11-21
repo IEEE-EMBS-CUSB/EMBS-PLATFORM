@@ -89,7 +89,7 @@ export function LeaderboardNav({
             <span className="truncate">
               {activeCommittee
                 ? `Committee: ${activeCommittee.name}`
-                : "Filter by committee (12)"}
+                : `Filter by committee (${committees.length})`}
             </span>
             <ChevronDown
               className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"

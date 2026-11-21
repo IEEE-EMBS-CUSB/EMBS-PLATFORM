@@ -1,11 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import {
-  Crown,
-  LayoutDashboard,
-  Shield,
-  Trophy,
-} from "lucide-react";
+import { Crown, Shield, Trophy } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { EmbsMark } from "@/components/brand/embs-mark";
 import { Badge } from "@/components/ui/badge";
@@ -23,26 +18,43 @@ export interface HrShellProps {
 
 export function HrShell({
   activeTab,
-  activeSeasonName = "Fall 2026",
+  activeSeasonName = "Active Season",
   currentUserRole = "hr_admin",
   userName,
   userCommitteeName,
   children,
 }: HrShellProps) {
   const isMaster = currentUserRole === "master_admin";
-  const hasDualRoles =
-    currentUserRole === "committee_head" ||
-    currentUserRole === "hr_admin" ||
-    currentUserRole === "hr_member";
 
   const roleLabelMap: Record<MembershipRole, { label: string; badge: string }> = {
-    master_admin: { label: "Master Authority", badge: "bg-[#002855] text-[#ffc627] border-[#ffc627]/40" },
-    director: { label: "Director Console", badge: "bg-[#5a1b63] text-white border-white/20" },
-    hr_admin: { label: "HR Administration", badge: "bg-white/15 text-white border-white/20" },
-    hr_member: { label: "Committee HR", badge: "bg-[#007377] text-white border-white/20" },
-    committee_head: { label: "Head Console", badge: "bg-[#00629b] text-white border-white/20" },
-    member: { label: "Member", badge: "bg-white/15 text-white border-white/20" },
-    attendee: { label: "Attendee", badge: "bg-white/15 text-white border-white/20" },
+    master_admin: {
+      label: "Master Authority",
+      badge: "bg-[#002855] text-[#ffc627] border-[#ffc627]/40",
+    },
+    director: {
+      label: "Director Console",
+      badge: "bg-[#5a1b63] text-white border-white/20",
+    },
+    hr_admin: {
+      label: "HR Administration",
+      badge: "bg-white/15 text-white border-white/20",
+    },
+    hr_member: {
+      label: "Committee HR",
+      badge: "bg-[#007377] text-white border-white/20",
+    },
+    committee_head: {
+      label: "Head Console",
+      badge: "bg-[#00629b] text-white border-white/20",
+    },
+    member: {
+      label: "Member",
+      badge: "bg-white/15 text-white border-white/20",
+    },
+    attendee: {
+      label: "Attendee",
+      badge: "bg-white/15 text-white border-white/20",
+    },
   };
 
   const currentRoleInfo = roleLabelMap[currentUserRole] ?? {
@@ -62,13 +74,19 @@ export function HrShell({
             >
               <EmbsMark inverted />
             </Link>
-            <div className="hidden h-5 w-px bg-white/25 sm:block" aria-hidden="true" />
+            <div
+              className="hidden h-5 w-px bg-white/25 sm:block"
+              aria-hidden="true"
+            />
             <div className="hidden items-center gap-2 sm:flex">
               <Badge
                 className={`text-xs font-bold gap-1 border ${currentRoleInfo.badge}`}
               >
                 {isMaster ? (
-                  <Crown className="h-3 w-3 text-[#ffc627]" aria-hidden="true" />
+                  <Crown
+                    className="h-3 w-3 text-[#ffc627]"
+                    aria-hidden="true"
+                  />
                 ) : (
                   <Shield className="h-3 w-3" aria-hidden="true" />
                 )}
@@ -80,28 +98,17 @@ export function HrShell({
                 </span>
               )}
               <span className="text-xs text-white/60">
-                Season: <strong className="text-white">{activeSeasonName}</strong>
+                Season:{" "}
+                <strong className="text-white">{activeSeasonName}</strong>
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* User Profile Info */}
             {userName && (
               <span className="hidden font-heading text-xs font-bold text-white/95 sm:inline-block">
                 {userName}
               </span>
-            )}
-
-            {/* Personal Workspace Switcher for Roles with Dual Responsibilities */}
-            {hasDualRoles && (
-              <Link
-                href="/member"
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/90 transition-colors hover:bg-white/20 hover:text-white"
-              >
-                <LayoutDashboard className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Personal Portal</span>
-              </Link>
             )}
 
             <Link
@@ -115,13 +122,25 @@ export function HrShell({
             <LogoutButton className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white" />
           </div>
         </div>
+
+        {/* Compact mobile context strip */}
+        <div className="flex items-center justify-between gap-2 border-t border-white/15 bg-[#5a1b63] px-4 py-1.5 text-[11px] text-white/90 sm:hidden">
+          <span className="font-semibold truncate">
+            {currentRoleInfo.label}
+            {userCommitteeName ? ` · ${userCommitteeName}` : ""}
+          </span>
+          <span className="shrink-0 text-white/75">{activeSeasonName}</span>
+        </div>
       </header>
 
       {/* Tab navigation */}
       <HrNav activeTab={activeTab} currentUserRole={currentUserRole} />
 
       {/* Main content */}
-      <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6">
+      <main
+        id="main-content"
+        className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6"
+      >
         {children}
       </main>
     </div>

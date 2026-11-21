@@ -453,7 +453,59 @@ export async function seedDatabase() {
       .onConflictDoNothing();
   }
 
-  console.log("✅ Seed completed successfully with snapshots, sessions, tasks, ledger, and feedback.");
+  if (salmaMember) {
+    await db
+      .insert(schema.memberActivities)
+      .values([
+        {
+          seasonId,
+          membershipId: salmaMember.id,
+          month: "2026-10",
+          date: "2026-10-18",
+          category: "delivered_session",
+          title: "Delivered PyTorch Workshop",
+          role: "Lead Speaker",
+          summary: "Delivered a 2-hour technical hands-on workshop covering attention heads for 45 members.",
+          pointsAwarded: 5,
+        },
+        {
+          seasonId,
+          membershipId: salmaMember.id,
+          month: "2026-10",
+          date: "2026-10-15",
+          category: "project",
+          title: "Skin Lesion Classifier Deployment",
+          role: "ML Architect",
+          summary: "Published Dockerized inference API with ONNX runtime.",
+          pointsAwarded: 15,
+        },
+      ])
+      .onConflictDoNothing();
+
+    await db
+      .insert(schema.seasonalEvaluations)
+      .values({
+        seasonId,
+        membershipId: salmaMember.id,
+        seasonLabel: "Fall 2026",
+        publishedAt: new Date("2026-10-25T12:00:00Z"),
+        status: "complete",
+        evaluatorRole: "Vice Chair",
+        finalScore: 96,
+        outOf: 100,
+        bonusPoints: 4,
+        grade: "Outstanding",
+        criteria: [
+          { id: "c1", label: "Technical Competence & Execution", earned: 25, max: 25, ratingOutOfFive: 5 },
+          { id: "c2", label: "Committee Leadership & Mentorship", earned: 24, max: 25, ratingOutOfFive: 5 },
+          { id: "c3", label: "Session Delivery & Knowledge Sharing", earned: 24, max: 25, ratingOutOfFive: 5 },
+          { id: "c4", label: "Chapter Initiative & Cross-Team Support", earned: 23, max: 25, ratingOutOfFive: 5 },
+        ],
+      })
+      .onConflictDoNothing();
+  }
+
+  console.log("✅ Seed completed successfully with snapshots, sessions, tasks, ledger, feedback, activities, and evaluations.");
 }
 
 // Allow direct execution via tsx/node if executed as main

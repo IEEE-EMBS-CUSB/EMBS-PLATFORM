@@ -14,11 +14,11 @@ export function PublicFooter() {
           <Link href="/leaderboards" className="hover:text-[#002855]">
             Leaderboard
           </Link>
-          <Link href="/member/access" className="hover:text-[#002855]">
-            Member access
+          <Link href="/login" className="hover:text-[#002855]">
+            Member portal
           </Link>
-          <Link href="/attendee/access" className="hover:text-[#002855]">
-            Attendee access
+          <Link href="/login" className="hover:text-[#002855]">
+            Attendee portal
           </Link>
         </nav>
       </div>

@@ -58,7 +58,7 @@ describe("Password Authentication & First-Login Reset Service", () => {
     }
   });
 
-  it("rejects non-whitelisted emails cleanly", async () => {
+  it("rejects non-whitelisted emails cleanly without disclosing account existence", async () => {
     const result = await authenticateWithPassword({
       email: "stranger@gmail.com",
       password: initialPassword,
@@ -67,8 +67,22 @@ describe("Password Authentication & First-Login Reset Service", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.reason).toMatch(/not registered on the roster/i);
+      expect(result.reason).toMatch(/invalid email or password/i);
     }
+  });
+
+  it("rejects first-login password change if mustChangePassword is already false", async () => {
+    const res = await changeFirstLoginPassword({
+      currentPassword: initialPassword,
+      newPassword: "NewSecretPassword2026!",
+      member: {
+        id: "mem-test-1",
+        email: "salma.elsayed@cu.edu.eg",
+        passwordHash: initialHash,
+        mustChangePassword: false,
+      },
+    });
+    expect(res.ok).toBe(false);
   });
 
   it("enforces password change on first login and marks mustChangePassword = false", async () => {

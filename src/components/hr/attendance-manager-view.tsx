@@ -1,21 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import {
-  Plus,
-  QrCode,
-  Radio,
-  StopCircle,
-  X,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import Image from "next/image";
+import { Plus, QrCode, Radio, StopCircle, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import QRCode from "qrcode";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   createSessionAction,
   toggleSessionCheckinAction,
+  rotateSessionCheckinCodeAction,
   type CreateSessionInput,
 } from "@/app/hr/attendance/actions";
 
@@ -63,9 +60,12 @@ export function AttendanceManagerView({
 }: AttendanceManagerViewProps) {
   const [liveCheckinSession, setLiveCheckinSession] =
     useState<SessionItem | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   // Form state
   const [newTitle, setNewTitle] = useState("");
@@ -83,9 +83,73 @@ export function AttendanceManagerView({
   const [newPunctualityBonus, setNewPunctualityBonus] = useState(5);
   const [newOpenImmediately, setNewOpenImmediately] = useState(true);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowCreateModal(false);
+        setLiveCheckinSession(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (liveCheckinSession?.checkinCode) {
+      QRCode.toDataURL(liveCheckinSession.checkinCode, {
+        width: 256,
+        margin: 1,
+      })
+        .then((url) => {
+          if (!cancelled) setQrDataUrl(url);
+        })
+        .catch(() => {
+          if (!cancelled) setQrDataUrl(null);
+        });
+    } else {
+      queueMicrotask(() => {
+        if (!cancelled) setQrDataUrl(null);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [liveCheckinSession?.checkinCode]);
+
+  useEffect(() => {
+    if (!liveCheckinSession?.checkinOpen) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await rotateSessionCheckinCodeAction(
+          liveCheckinSession.id,
+          30
+        );
+        if (res.ok && res.checkinCode) {
+          setLiveCheckinSession((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  checkinCode: res.checkinCode ?? prev.checkinCode,
+                  checkinExpiresAt:
+                    res.checkinExpiresAt ?? prev.checkinExpiresAt,
+                }
+              : prev
+          );
+        }
+      } catch {
+        // Keep current code visible if rotation request transiently fails
+      }
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [liveCheckinSession?.id, liveCheckinSession?.checkinOpen]);
+
+  const isCommitteeScoped =
+    currentUserRole === "committee_head" || currentUserRole === "hr_member";
   const canCreate =
     currentUserRole === "master_admin" ||
     currentUserRole === "hr_admin" ||
+    currentUserRole === "hr_member" ||
     currentUserRole === "committee_head";
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -98,10 +162,9 @@ export function AttendanceManagerView({
     const input: CreateSessionInput = {
       title: newTitle.trim(),
       startsAt: new Date(newStartsAt).toISOString(),
-      committeeId:
-        currentUserRole === "committee_head"
-          ? currentUserCommitteeId
-          : newCommitteeId || null,
+      committeeId: isCommitteeScoped
+        ? currentUserCommitteeId
+        : newCommitteeId || null,
       checkinWindowMinutes: newWindowMinutes,
       punctualityCutoffMinutes: newPunctualityCutoff,
       basePoints: newBasePoints,
@@ -113,13 +176,9 @@ export function AttendanceManagerView({
       if (onCreateSession) {
         await onCreateSession(input);
       } else {
-        const res = await createSessionAction(
-          input,
-          currentUserRole,
-          currentUserCommitteeId
-        );
+        const res = await createSessionAction(input);
         if (!res.ok) {
-          setErrorMessage(res.error || "Failed to create session");
+          setErrorMessage(res.error || "Failed to create session.");
           return;
         }
       }
@@ -128,7 +187,7 @@ export function AttendanceManagerView({
       setNewTitle("");
     } catch (err: unknown) {
       setErrorMessage(
-        err instanceof Error ? err.message : "Error creating session"
+        err instanceof Error ? err.message : "Error creating session."
       );
     } finally {
       setIsSubmitting(false);
@@ -140,25 +199,42 @@ export function AttendanceManagerView({
     open: boolean,
     windowMinutes: number = 30
   ) => {
+    setTogglingId(sessionId);
+    setActionError(null);
     try {
       if (onToggleCheckin) {
         await onToggleCheckin(sessionId, open, windowMinutes);
       } else {
-        await toggleSessionCheckinAction(
+        const res = await toggleSessionCheckinAction(
           sessionId,
           open,
-          windowMinutes,
-          currentUserRole,
-          currentUserCommitteeId
+          windowMinutes
         );
+        if (!res.ok) {
+          setActionError(res.error ?? "Failed to update check-in status.");
+          return;
+        }
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: unknown) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to update check-in status."
+      );
+    } finally {
+      setTogglingId(null);
     }
   };
 
   return (
     <div className="space-y-6">
+      {actionError && (
+        <div
+          role="alert"
+          className="rounded-lg border border-[#ba0c2f]/30 bg-[#ba0c2f]/10 p-3 text-xs font-semibold text-[#ba0c2f]"
+        >
+          {actionError}
+        </div>
+      )}
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#002855] sm:text-3xl">
@@ -172,10 +248,13 @@ export function AttendanceManagerView({
         {canCreate && (
           <Button
             type="button"
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              setErrorMessage(null);
+              setShowCreateModal(true);
+            }}
             className="h-10 gap-2 bg-[#772583] px-4 text-xs font-bold text-white shadow-xs hover:bg-[#5a1b63]"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4" aria-hidden="true" />
             <span>Create Session</span>
           </Button>
         )}
@@ -186,16 +265,20 @@ export function AttendanceManagerView({
         <div
           role="dialog"
           aria-modal="true"
+          aria-label="Create New Session"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCreateModal(false);
+          }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
-          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-white p-6 shadow-2xl animate-in zoom-in-95">
+          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-white p-6 shadow-2xl">
             <button
               type="button"
+              aria-label="Close create session modal"
               onClick={() => setShowCreateModal(false)}
               className="absolute right-4 top-4 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <X className="h-5 w-5" aria-hidden="true" />
-              <span className="sr-only">Close</span>
             </button>
 
             <div className="border-b border-border/70 pb-3">
@@ -208,7 +291,10 @@ export function AttendanceManagerView({
             </div>
 
             {errorMessage && (
-              <div className="mt-3 rounded bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">
+              <div
+                role="alert"
+                className="mt-3 rounded bg-[#ba0c2f]/10 px-3 py-2 text-xs font-semibold text-[#ba0c2f]"
+              >
                 {errorMessage}
               </div>
             )}
@@ -257,7 +343,7 @@ export function AttendanceManagerView({
                   >
                     Committee
                   </label>
-                  {currentUserRole === "committee_head" ? (
+                  {isCommitteeScoped ? (
                     <Input
                       id="session-committee-select"
                       disabled
@@ -316,14 +402,15 @@ export function AttendanceManagerView({
                   <Input
                     id="session-punctual-input"
                     type="number"
-                    min={1}
-                    max={120}
+                    min={0}
+                    max={240}
                     value={newPunctualityCutoff}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
                       setNewPunctualityCutoff(
-                        parseInt(e.target.value, 10) || 15
-                      )
-                    }
+                        Number.isNaN(v) ? 0 : Math.max(0, v)
+                      );
+                    }}
                     className="mt-1 h-10 text-sm"
                   />
                 </div>
@@ -340,12 +427,14 @@ export function AttendanceManagerView({
                       id="session-points-input"
                       type="number"
                       min={0}
+                      max={500}
                       value={newBasePoints}
-                      onChange={(e) =>
-                        setNewBasePoints(parseInt(e.target.value, 10) || 10)
-                      }
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        setNewBasePoints(Number.isNaN(v) ? 0 : Math.max(0, v));
+                      }}
                       className="h-10 text-xs"
-                      title="Base points"
+                      aria-label="Base points"
                     />
                     <span className="text-xs font-bold text-muted-foreground">
                       +
@@ -353,14 +442,16 @@ export function AttendanceManagerView({
                     <Input
                       type="number"
                       min={0}
+                      max={500}
                       value={newPunctualityBonus}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
                         setNewPunctualityBonus(
-                          parseInt(e.target.value, 10) || 5
-                        )
-                      }
+                          Number.isNaN(v) ? 0 : Math.max(0, v)
+                        );
+                      }}
                       className="h-10 text-xs"
-                      title="Punctuality bonus points"
+                      aria-label="Punctuality bonus points"
                     />
                   </div>
                 </div>
@@ -396,7 +487,7 @@ export function AttendanceManagerView({
                   disabled={isSubmitting || !newTitle.trim()}
                   className="h-10 gap-2 bg-[#772583] px-5 text-xs font-bold text-white hover:bg-[#5a1b63]"
                 >
-                  <span>Save Session</span>
+                  <span>{isSubmitting ? "Saving..." : "Save Session"}</span>
                 </Button>
               </div>
             </form>
@@ -410,8 +501,8 @@ export function AttendanceManagerView({
           const canManageThis =
             currentUserRole === "master_admin" ||
             currentUserRole === "hr_admin" ||
-            (currentUserRole === "committee_head" &&
-              sess.committeeId === currentUserCommitteeId);
+            (isCommitteeScoped && sess.committeeId === currentUserCommitteeId);
+          const canProject = sess.checkinOpen && Boolean(sess.checkinCode);
 
           return (
             <Card key={sess.id} className="border-border bg-white shadow-xs">
@@ -427,7 +518,7 @@ export function AttendanceManagerView({
                     {sess.checkinOpen ? "Check-in Open" : "Closed"}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
-                    {sess.startsAt.toLocaleDateString("en-US", {
+                    {new Date(sess.startsAt).toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                     })}
@@ -456,7 +547,7 @@ export function AttendanceManagerView({
                   </div>
                 </div>
 
-                {sess.checkinOpen && sess.checkinCode && (
+                {canProject && (
                   <div className="flex items-center justify-between rounded-lg bg-[#002855]/5 px-3 py-1.5 text-xs">
                     <span className="font-semibold text-muted-foreground">
                       Code:
@@ -470,8 +561,9 @@ export function AttendanceManagerView({
                 <div className="flex flex-col gap-2 pt-1">
                   <Button
                     type="button"
+                    disabled={!canProject}
                     onClick={() => setLiveCheckinSession(sess)}
-                    className="w-full h-10 gap-2 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
+                    className="w-full h-10 gap-2 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63] disabled:opacity-45"
                   >
                     <QrCode className="h-4 w-4" aria-hidden="true" />
                     <span>Open Live Check-In</span>
@@ -481,12 +573,13 @@ export function AttendanceManagerView({
                     <Button
                       type="button"
                       variant="outline"
+                      disabled={togglingId === sess.id}
                       onClick={() =>
                         handleToggleCheckin(sess.id, !sess.checkinOpen, 30)
                       }
                       className={`h-9 text-xs font-semibold ${
                         sess.checkinOpen
-                          ? "text-destructive hover:bg-destructive/10"
+                          ? "text-[#ba0c2f] hover:bg-[#ba0c2f]/10"
                           : "text-[#1e6b0a] hover:bg-[#78be20]/10"
                       }`}
                     >
@@ -511,20 +604,24 @@ export function AttendanceManagerView({
       </div>
 
       {/* Full-Screen Live Check-In Projector View */}
-      {liveCheckinSession && (
+      {liveCheckinSession && liveCheckinSession.checkinCode && (
         <div
           role="dialog"
           aria-modal="true"
+          aria-label="Live Check-In Projector"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setLiveCheckinSession(null);
+          }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
         >
-          <div className="relative flex w-full max-w-lg flex-col items-center rounded-2xl border border-border bg-white p-8 text-center shadow-2xl animate-in zoom-in-95">
+          <div className="relative flex w-full max-w-lg flex-col items-center rounded-2xl border border-border bg-white p-8 text-center shadow-2xl">
             <button
               type="button"
+              aria-label="Close check-in"
               onClick={() => setLiveCheckinSession(null)}
               className="absolute right-4 top-4 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <X className="h-5 w-5" aria-hidden="true" />
-              <span className="sr-only">Close check-in</span>
             </button>
 
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f5edf7] px-3 py-1 font-heading text-xs font-bold text-[#772583]">
@@ -544,17 +641,20 @@ export function AttendanceManagerView({
             {/* High-contrast QR display */}
             <div className="mt-6 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#772583]/40 bg-[#f8f9fb] p-6">
               <div className="flex h-48 w-48 items-center justify-center rounded-lg bg-white p-2 shadow-sm border border-border">
-                <svg
-                  viewBox="0 0 100 100"
-                  className="h-40 w-40 text-[#002855]"
-                  aria-hidden="true"
-                >
-                  <rect width="100" height="100" fill="white" />
-                  <path
-                    d="M10 10h30v30H10zm4v4h22v22H14zm4 4h14v14H18zM60 10h30v30H60zm4 4h22v22H64zm4 4h14v14H68zM10 60h30v30H10zm4 4h22v22H14zm4 4h14v14H18zm46 0h8v8h-8zm12 0h8v8h-8zm-8 12h8v8h-8zm16 8h8v8h-8zm-20 4h8v8h-8zm16-8h8v8h-8zm-8 12h8v8h-8z"
-                    fill="currentColor"
+                {qrDataUrl ? (
+                  <Image
+                    src={qrDataUrl}
+                    alt="Check-in QR code"
+                    width={160}
+                    height={160}
+                    unoptimized
+                    className="h-40 w-40"
                   />
-                </svg>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    Generating…
+                  </span>
+                )}
               </div>
 
               <p className="mt-4 text-xs font-semibold text-foreground/85">
@@ -562,12 +662,12 @@ export function AttendanceManagerView({
               </p>
 
               <div className="mt-2 inline-flex items-center gap-2 rounded-lg bg-[#002855] px-4 py-2 font-mono text-2xl font-extrabold tracking-widest text-white shadow-inner">
-                {liveCheckinSession.checkinCode ?? "948216"}
+                {liveCheckinSession.checkinCode}
               </div>
             </div>
 
             <p className="mt-6 text-xs text-muted-foreground">
-              Codes rotate periodically to prevent remote sharing.
+              Codes rotate every minute to prevent remote sharing.
             </p>
           </div>
         </div>

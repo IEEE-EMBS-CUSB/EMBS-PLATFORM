@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   requireAttendeeSession,
+  requireHrModule,
   requireMemberSession,
   requireOperationalSession,
 } from "@/lib/portal-guards";
@@ -33,10 +34,10 @@ describe("portal-guards", () => {
   });
 
   describe("requireMemberSession", () => {
-    it("redirects to /login when no session exists", async () => {
+    it("redirects to /login?session=invalid when no session exists", async () => {
       mockSession = null;
-      await expect(requireMemberSession()).rejects.toThrow("REDIRECT:/login");
-      expect(mockRedirect).toHaveBeenCalledWith("/login");
+      await expect(requireMemberSession()).rejects.toThrow("REDIRECT:/login?session=invalid");
+      expect(mockRedirect).toHaveBeenCalledWith("/login?session=invalid");
     });
 
     it("redirects to /attendee when participant is attendee", async () => {
@@ -71,10 +72,10 @@ describe("portal-guards", () => {
   });
 
   describe("requireAttendeeSession", () => {
-    it("redirects to /login when no session exists", async () => {
+    it("redirects to /login?session=invalid when no session exists", async () => {
       mockSession = null;
-      await expect(requireAttendeeSession()).rejects.toThrow("REDIRECT:/login");
-      expect(mockRedirect).toHaveBeenCalledWith("/login");
+      await expect(requireAttendeeSession()).rejects.toThrow("REDIRECT:/login?session=invalid");
+      expect(mockRedirect).toHaveBeenCalledWith("/login?session=invalid");
     });
 
     it("redirects to /member when participant is member", async () => {
@@ -94,10 +95,10 @@ describe("portal-guards", () => {
   });
 
   describe("requireOperationalSession", () => {
-    it("redirects to /login when no session exists", async () => {
+    it("redirects to /login?session=invalid when no session exists", async () => {
       mockSession = null;
-      await expect(requireOperationalSession()).rejects.toThrow("REDIRECT:/login");
-      expect(mockRedirect).toHaveBeenCalledWith("/login");
+      await expect(requireOperationalSession()).rejects.toThrow("REDIRECT:/login?session=invalid");
+      expect(mockRedirect).toHaveBeenCalledWith("/login?session=invalid");
     });
 
     it("redirects to /attendee when participant is attendee", async () => {
@@ -115,7 +116,7 @@ describe("portal-guards", () => {
       expect(mockRedirect).toHaveBeenCalledWith("/attendee");
     });
 
-    it("redirects to /login if operational profile cannot be found", async () => {
+    it("redirects to /login?session=invalid if operational profile cannot be found", async () => {
       mockSession = {
         sessionId: "s-1",
         participantId: "mem-unknown",
@@ -127,8 +128,8 @@ describe("portal-guards", () => {
         expiresAt: new Date().toISOString(),
       };
       mockOperationalProfile = null;
-      await expect(requireOperationalSession()).rejects.toThrow("REDIRECT:/login");
-      expect(mockRedirect).toHaveBeenCalledWith("/login");
+      await expect(requireOperationalSession()).rejects.toThrow("REDIRECT:/login?session=invalid");
+      expect(mockRedirect).toHaveBeenCalledWith("/login?session=invalid");
     });
 
     it("redirects plain member to /member (non-operational role)", async () => {
@@ -177,6 +178,36 @@ describe("portal-guards", () => {
       expect(result.session.participantId).toBe("mem-dir");
       expect(result.profile.role).toBe("director");
       expect(result.profile.fullName).toBe("Khaled Mansour");
+    });
+  });
+
+  describe("requireHrModule", () => {
+    it("redirects unauthorized operational roles to /hr", async () => {
+      mockSession = {
+        sessionId: "s-1",
+        participantId: "mem-hr",
+        displayId: "MHR1",
+        fullName: "HR Member",
+        participantType: "member",
+        membershipRole: "hr_member",
+        keyVersion: 1,
+        issuedAt: new Date().toISOString(),
+        expiresAt: new Date().toISOString(),
+      };
+      mockOperationalProfile = {
+        id: "mem-hr",
+        fullName: "HR Member",
+        email: "hr.member@cu.edu.eg",
+        role: "hr_member",
+        committeeId: "com-1",
+      };
+
+      await expect(requireHrModule("feedback")).rejects.toThrow("REDIRECT:/hr");
+      await expect(requireHrModule("roster")).rejects.toThrow("REDIRECT:/hr");
+      await expect(requireHrModule("seasons")).rejects.toThrow("REDIRECT:/hr");
+
+      const allowed = await requireHrModule("attendance");
+      expect(allowed.profile.role).toBe("hr_member");
     });
   });
 });

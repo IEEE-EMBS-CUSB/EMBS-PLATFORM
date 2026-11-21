@@ -113,7 +113,10 @@ export function LiveCheckinCard({
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3">
             {errorMessage && (
-              <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">
+              <div
+                role="alert"
+                className="rounded-lg bg-[#ba0c2f]/10 px-3 py-2 text-xs font-semibold text-[#ba0c2f]"
+              >
                 {errorMessage}
               </div>
             )}

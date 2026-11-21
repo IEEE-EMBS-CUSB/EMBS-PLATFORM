@@ -23,7 +23,8 @@ export type HrTabKey =
   | "tasks"
   | "ledger"
   | "feedback"
-  | "publishing";
+  | "publishing"
+  | "events";
 
 interface HrNavProps {
   activeTab: HrTabKey;
@@ -68,6 +69,12 @@ const HR_NAV_ITEMS: {
     key: "publishing",
     label: "Publishing",
     href: "/hr/publishing",
+    icon: CalendarDays,
+  },
+  {
+    key: "events",
+    label: "Events",
+    href: "/hr/events",
     icon: CalendarDays,
   },
 ];

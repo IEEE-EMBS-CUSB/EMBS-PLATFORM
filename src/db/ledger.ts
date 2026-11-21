@@ -124,7 +124,7 @@ export async function upsertScoreLedgerEntry(db: any, input: ScoreLedgerUpsertIn
         scoreLedger.sourceType,
         scoreLedger.sourceId,
       ],
-      where: sql`${scoreLedger.sourceId} IS NOT NULL`,
+      targetWhere: sql`${scoreLedger.sourceId} IS NOT NULL`,
       set: {
         points: input.points,
         reason: input.reason,
