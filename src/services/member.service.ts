@@ -2,6 +2,11 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
+import {
+  DEFAULT_SEASON_SETTINGS,
+  deriveActivityTier,
+  normalizeSeasonSettings,
+} from "@/lib/season-settings";
 import type {
   MemberActivity,
   MemberAttendanceRecord,
@@ -116,6 +121,8 @@ export interface OperationalUserProfile {
   role: MembershipRole;
   committeeId: string | null;
   committeeName?: string;
+  managedTrackId: string | null;
+  managedTrackName?: string;
   seasonId?: string;
 }
 
@@ -131,12 +138,18 @@ export async function getOperationalUserProfile(
         role: schema.rosterMemberships.role,
         committeeId: schema.rosterMemberships.committeeId,
         committeeName: schema.committees.name,
+        managedTrackId: schema.rosterMemberships.managedTrackId,
+        managedTrackName: schema.committeeTracks.name,
         seasonId: schema.rosterMemberships.seasonId,
       })
       .from(schema.rosterMemberships)
       .leftJoin(
         schema.committees,
         eq(schema.rosterMemberships.committeeId, schema.committees.id)
+      )
+      .leftJoin(
+        schema.committeeTracks,
+        eq(schema.rosterMemberships.managedTrackId, schema.committeeTracks.id)
       )
       .where(
         and(
@@ -155,6 +168,8 @@ export async function getOperationalUserProfile(
         role: member.role as MembershipRole,
         committeeId: member.committeeId,
         committeeName: member.committeeName ?? undefined,
+        managedTrackId: member.managedTrackId ?? null,
+        managedTrackName: member.managedTrackName ?? undefined,
         seasonId: member.seasonId,
       };
     }
@@ -571,11 +586,26 @@ export async function getMemberDashboard(
     }
   }
 
-  let activityTier: MemberEngagementMetrics["activityTier"] = "Member";
-  if (livePoints >= 90) activityTier = "Diamond";
-  else if (livePoints >= 75) activityTier = "Gold";
-  else if (livePoints >= 60) activityTier = "Silver";
-  else if (livePoints >= 40) activityTier = "Bronze";
+  let tierThresholds = DEFAULT_SEASON_SETTINGS.leaderboard.tierThresholds;
+  try {
+    const [seasonRow] = await db
+      .select({ settingsJson: schema.seasons.settingsJson })
+      .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.seasons,
+        eq(schema.rosterMemberships.seasonId, schema.seasons.id)
+      )
+      .where(eq(schema.rosterMemberships.id, memberId))
+      .limit(1);
+    if (seasonRow) {
+      tierThresholds = normalizeSeasonSettings(seasonRow.settingsJson)
+        .leaderboard.tierThresholds;
+    }
+  } catch {
+    // Use default thresholds
+  }
+
+  const activityTier = deriveActivityTier(livePoints, tierThresholds);
 
   const streak = attendance.filter((a) => a.status === "attended").length;
   const completedTasks = tasks.filter((t) => t.status === "completed").length;

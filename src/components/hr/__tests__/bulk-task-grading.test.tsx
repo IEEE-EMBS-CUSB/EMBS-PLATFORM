@@ -52,4 +52,27 @@ describe("BulkTaskGradingView Component", () => {
     await user.type(effortInputs[0], "5");
     expect(effortInputs[0]).toHaveValue(5);
   });
+
+  it("calculates total points dynamically using custom season grading weights", async () => {
+    const user = userEvent.setup();
+    render(
+      <BulkTaskGradingView
+        task={sampleTask}
+        submissions={sampleSubmissions}
+        gradingWeights={{
+          effortWeight: 12,
+          qualityWeight: 4,
+          timelinessWeight: 2,
+          defaultMaxPoints: 100,
+        }}
+      />
+    );
+
+    const effortInputs = screen.getAllByLabelText(/effort/i);
+    await user.clear(effortInputs[0]);
+    await user.type(effortInputs[0], "3");
+
+    // Custom weights: 3*12 + 5*4 + 5*2 = 66 pts (default weights would produce 80 pts)
+    expect(screen.getByText("66 pts")).toBeInTheDocument();
+  });
 });

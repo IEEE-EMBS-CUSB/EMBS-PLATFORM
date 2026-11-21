@@ -1,8 +1,16 @@
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { canManageSeasons } from "@/lib/permissions";
+import { canManageRubrics, canManageSeasons } from "@/lib/permissions";
 import type { MembershipRole } from "@/lib/auth-helpers";
+import {
+  DEFAULT_COMMITTEE_TRACKS,
+  DEFAULT_SEASON_SETTINGS,
+  normalizeSeasonSettings,
+  validateSeasonSettings,
+  type SeasonSettings,
+} from "@/lib/season-settings";
+import { ensureDefaultTracksForSeason } from "./committees.service";
 import { isValidDateString, sanitizeDbError } from "./helpers";
 
 interface SeasonActor {
@@ -10,11 +18,19 @@ interface SeasonActor {
 }
 
 export async function createSeasonAsActor(
-  input: { name: string; startDate: string; endDate?: string },
+  input: {
+    name: string;
+    startDate: string;
+    endDate?: string;
+    settings?: SeasonSettings;
+  },
   actor: SeasonActor
 ) {
   if (!canManageSeasons(actor.profile.role)) {
-    return { ok: false, error: "Unauthorized: only Master Admin can manage seasons." };
+    return {
+      ok: false,
+      error: "Unauthorized: only Master Admin can manage seasons.",
+    };
   }
 
   const trimmedName = input.name?.trim() ?? "";
@@ -32,8 +48,19 @@ export async function createSeasonAsActor(
     }
     endDate = new Date(input.endDate);
     if (endDate.getTime() < startDate.getTime()) {
-      return { ok: false, error: "End date must be on or after the start date." };
+      return {
+        ok: false,
+        error: "End date must be on or after the start date.",
+      };
     }
+  }
+
+  const settings = input.settings
+    ? normalizeSeasonSettings(input.settings)
+    : DEFAULT_SEASON_SETTINGS;
+  const validation = validateSeasonSettings(settings);
+  if (!validation.ok) {
+    return { ok: false, error: validation.error };
   }
 
   try {
@@ -44,11 +71,85 @@ export async function createSeasonAsActor(
         status: "draft",
         startDate,
         endDate,
+        settingsJson: settings,
       })
       .returning();
+
+    // Seed the 3 default editable committee tracks: Technical, Creative, Operations
+    await db
+      .insert(schema.committeeTracks)
+      .values(
+        DEFAULT_COMMITTEE_TRACKS.map((t) => ({
+          seasonId: season.id,
+          name: t.name,
+          slug: t.slug,
+          description: t.description,
+          sortOrder: t.sortOrder,
+        }))
+      )
+      .onConflictDoNothing();
+
     return { ok: true, seasonId: season.id };
   } catch (err: unknown) {
-    return { ok: false, error: sanitizeDbError(err, "Failed to create season.") };
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to create season."),
+    };
+  }
+}
+
+export async function updateSeasonSettingsAsActor(
+  seasonId: string,
+  settingsInput: SeasonSettings,
+  actor: SeasonActor
+) {
+  // Master Admin and HR Admin can configure season grading/attendance rules
+  if (!canManageRubrics(actor.profile.role)) {
+    return {
+      ok: false,
+      error:
+        "Unauthorized: only Master Admin and HR Admin can adjust season settings.",
+    };
+  }
+
+  const normalized = normalizeSeasonSettings(settingsInput);
+  const validation = validateSeasonSettings(normalized);
+  if (!validation.ok) {
+    return { ok: false, error: validation.error };
+  }
+
+  try {
+    const [target] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.id, seasonId))
+      .limit(1);
+
+    if (!target) {
+      return { ok: false, error: "Season not found." };
+    }
+    if (target.status === "archived") {
+      return {
+        ok: false,
+        error:
+          "Archived seasons are permanently frozen and their settings cannot be modified.",
+      };
+    }
+
+    await db
+      .update(schema.seasons)
+      .set({
+        settingsJson: normalized,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.seasons.id, seasonId));
+
+    return { ok: true, settings: normalized };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to save season settings."),
+    };
   }
 }
 
@@ -59,7 +160,10 @@ export async function cloneSeasonAsActor(
   options?: { includeRoster?: boolean }
 ) {
   if (!canManageSeasons(actor.profile.role)) {
-    return { ok: false, error: "Unauthorized: only Master Admin can clone seasons." };
+    return {
+      ok: false,
+      error: "Unauthorized: only Master Admin can clone seasons.",
+    };
   }
 
   const trimmedName = newName?.trim() ?? "";
@@ -76,6 +180,9 @@ export async function cloneSeasonAsActor(
       return { ok: false, error: "Source season not found." };
     }
 
+    const sourceTracks = await ensureDefaultTracksForSeason(sourceSeasonId);
+    const clonedSettings = normalizeSeasonSettings(source.settingsJson);
+
     const [newSeason] = await db
       .insert(schema.seasons)
       .values({
@@ -83,8 +190,25 @@ export async function cloneSeasonAsActor(
         status: "draft",
         startDate: source.startDate,
         endDate: source.endDate,
+        settingsJson: clonedSettings,
       })
       .returning();
+
+    // Clone committee tracks (preserving custom titles and sort order)
+    const trackMap = new Map<string, string>();
+    for (const t of sourceTracks) {
+      const [nt] = await db
+        .insert(schema.committeeTracks)
+        .values({
+          seasonId: newSeason.id,
+          name: t.name,
+          slug: t.slug,
+          description: t.description,
+          sortOrder: t.sortOrder,
+        })
+        .returning();
+      trackMap.set(t.id, nt.id);
+    }
 
     const committees = await db
       .select()
@@ -97,6 +221,7 @@ export async function cloneSeasonAsActor(
         .insert(schema.committees)
         .values({
           seasonId: newSeason.id,
+          trackId: c.trackId ? trackMap.get(c.trackId) ?? null : null,
           name: c.name,
           slug: c.slug,
           category: c.category,
@@ -124,7 +249,6 @@ export async function cloneSeasonAsActor(
       );
     }
 
-    // By default, clone only active operational leadership or full roster when requested
     if (options?.includeRoster) {
       const members = await db
         .select()
@@ -138,7 +262,12 @@ export async function cloneSeasonAsActor(
             seasonId: newSeason.id,
             email: m.email,
             fullName: m.fullName,
-            committeeId: m.committeeId ? committeeMap.get(m.committeeId) ?? null : null,
+            committeeId: m.committeeId
+              ? committeeMap.get(m.committeeId) ?? null
+              : null,
+            managedTrackId: m.managedTrackId
+              ? trackMap.get(m.managedTrackId) ?? null
+              : null,
             role: m.role,
             passwordHash: m.passwordHash,
             mustChangePassword: m.mustChangePassword,
@@ -150,13 +279,22 @@ export async function cloneSeasonAsActor(
 
     return { ok: true, seasonId: newSeason.id };
   } catch (err: unknown) {
-    return { ok: false, error: sanitizeDbError(err, "Failed to clone season.") };
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to clone season."),
+    };
   }
 }
 
-export async function activateSeasonAsActor(seasonId: string, actor: SeasonActor) {
+export async function activateSeasonAsActor(
+  seasonId: string,
+  actor: SeasonActor
+) {
   if (!canManageSeasons(actor.profile.role)) {
-    return { ok: false, error: "Unauthorized: only Master Admin can activate seasons." };
+    return {
+      ok: false,
+      error: "Unauthorized: only Master Admin can activate seasons.",
+    };
   }
   try {
     const [target] = await db
@@ -171,7 +309,8 @@ export async function activateSeasonAsActor(seasonId: string, actor: SeasonActor
     if (target.status === "archived") {
       return {
         ok: false,
-        error: "Archived seasons are permanently frozen and cannot be re-activated.",
+        error:
+          "Archived seasons are permanently frozen and cannot be re-activated.",
       };
     }
     if (target.status === "active") {
@@ -189,13 +328,22 @@ export async function activateSeasonAsActor(seasonId: string, actor: SeasonActor
 
     return { ok: true };
   } catch (err: unknown) {
-    return { ok: false, error: sanitizeDbError(err, "Failed to activate season.") };
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to activate season."),
+    };
   }
 }
 
-export async function archiveSeasonAsActor(seasonId: string, actor: SeasonActor) {
+export async function archiveSeasonAsActor(
+  seasonId: string,
+  actor: SeasonActor
+) {
   if (!canManageSeasons(actor.profile.role)) {
-    return { ok: false, error: "Unauthorized: only Master Admin can archive seasons." };
+    return {
+      ok: false,
+      error: "Unauthorized: only Master Admin can archive seasons.",
+    };
   }
   try {
     const [target] = await db
@@ -218,6 +366,9 @@ export async function archiveSeasonAsActor(seasonId: string, actor: SeasonActor)
 
     return { ok: true };
   } catch (err: unknown) {
-    return { ok: false, error: sanitizeDbError(err, "Failed to archive season.") };
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to archive season."),
+    };
   }
 }

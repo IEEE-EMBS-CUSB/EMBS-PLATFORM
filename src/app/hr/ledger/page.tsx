@@ -22,6 +22,8 @@ export default async function HrLedgerPage() {
 
   const isCommitteeScoped =
     profile.role === "committee_head" || profile.role === "hr_member";
+  const isTrackDirector =
+    profile.role === "director" && Boolean(profile.managedTrackId);
 
   try {
     const [activeSeason] = await db
@@ -47,11 +49,21 @@ export default async function HrLedgerPage() {
       const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
       const memberMap = new Map(allSeasonMembers.map((m) => [m.id, m]));
       const authorMap = new Map(allSeasonMembers.map((m) => [m.id, m.fullName]));
+      const directorTrackCommitteeIds = isTrackDirector
+        ? new Set(
+            dbCommittees
+              .filter((c) => c.trackId === profile.managedTrackId)
+              .map((c) => c.id)
+          )
+        : null;
 
       const visibleMembers = allSeasonMembers.filter((m) => {
         if (!m.isActive || m.role === "attendee") return false;
         if (isCommitteeScoped) {
           return profile.committeeId !== null && m.committeeId === profile.committeeId;
+        }
+        if (directorTrackCommitteeIds) {
+          return m.committeeId !== null && directorTrackCommitteeIds.has(m.committeeId);
         }
         return true;
       });
@@ -69,13 +81,14 @@ export default async function HrLedgerPage() {
         }));
 
       const visibleMemberIds = visibleMembers.map((m) => m.id);
+      const isMemberScoped = isCommitteeScoped || Boolean(directorTrackCommitteeIds);
       const dbLedger =
         visibleMemberIds.length > 0
           ? await db
               .select()
               .from(schema.scoreLedger)
               .where(
-                isCommitteeScoped
+                isMemberScoped
                   ? and(
                       eq(schema.scoreLedger.seasonId, seasonId),
                       inArray(schema.scoreLedger.membershipId, visibleMemberIds)

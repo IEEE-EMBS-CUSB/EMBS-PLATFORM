@@ -4,6 +4,7 @@ import * as schema from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import { canManageCommitteeSessions } from "@/lib/permissions";
+import { normalizeSeasonSettings } from "@/lib/season-settings";
 import {
   assertMonthNotPublished,
   formatMonthInCairo,
@@ -78,28 +79,34 @@ export async function createSessionAsActor(
     return { ok: false, error: "A valid session start date/time is required." };
   }
 
-  const windowMinutes = input.checkinWindowMinutes ?? 30;
-  const punctualityCutoff = input.punctualityCutoffMinutes ?? 15;
-  const basePoints = input.basePoints ?? 10;
-  const punctualityBonus = input.punctualityBonus ?? 5;
-
-  if (!Number.isFinite(windowMinutes) || windowMinutes < 1 || windowMinutes > 720) {
-    return { ok: false, error: "Check-in window must be between 1 and 720 minutes." };
-  }
-  if (!Number.isFinite(punctualityCutoff) || punctualityCutoff < 0 || punctualityCutoff > 240) {
-    return { ok: false, error: "Punctuality cutoff must be between 0 and 240 minutes." };
-  }
-  if (!Number.isInteger(basePoints) || basePoints < 0 || basePoints > 500) {
-    return { ok: false, error: "Base points must be an integer between 0 and 500." };
-  }
-  if (!Number.isInteger(punctualityBonus) || punctualityBonus < 0 || punctualityBonus > 500) {
-    return { ok: false, error: "Punctuality bonus must be an integer between 0 and 500." };
-  }
-
   try {
     const seasonRes = await resolveActiveSeason(input.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
     const seasonId = seasonRes.season.id;
+    const attDefaults = normalizeSeasonSettings(
+      seasonRes.season.settingsJson
+    ).attendance;
+
+    const windowMinutes =
+      input.checkinWindowMinutes ?? attDefaults.defaultCheckinWindowMinutes;
+    const punctualityCutoff =
+      input.punctualityCutoffMinutes ?? attDefaults.punctualityCutoffMinutes;
+    const basePoints = input.basePoints ?? attDefaults.defaultBasePoints;
+    const punctualityBonus =
+      input.punctualityBonus ?? attDefaults.defaultPunctualityBonus;
+
+    if (!Number.isFinite(windowMinutes) || windowMinutes < 1 || windowMinutes > 720) {
+      return { ok: false, error: "Check-in window must be between 1 and 720 minutes." };
+    }
+    if (!Number.isFinite(punctualityCutoff) || punctualityCutoff < 0 || punctualityCutoff > 240) {
+      return { ok: false, error: "Punctuality cutoff must be between 0 and 240 minutes." };
+    }
+    if (!Number.isInteger(basePoints) || basePoints < 0 || basePoints > 500) {
+      return { ok: false, error: "Base points must be an integer between 0 and 500." };
+    }
+    if (!Number.isInteger(punctualityBonus) || punctualityBonus < 0 || punctualityBonus > 500) {
+      return { ok: false, error: "Punctuality bonus must be an integer between 0 and 500." };
+    }
 
     if (targetCommitteeId) {
       const [comm] = await db

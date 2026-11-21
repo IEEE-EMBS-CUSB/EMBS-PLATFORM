@@ -3,7 +3,11 @@ import * as schema from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { canGiveFeedback } from "@/lib/permissions";
 import type { HrActor } from "./helpers";
-import { resolveActiveSeason, sanitizeDbError } from "./helpers";
+import {
+  getDirectorTrackCommitteeIds,
+  resolveActiveSeason,
+  sanitizeDbError,
+} from "./helpers";
 
 export async function addHrFeedbackAsActor(
   input: {
@@ -64,6 +68,22 @@ export async function addHrFeedbackAsActor(
 
     const seasonRes = await resolveActiveSeason(member.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
+
+    const directorTrackCommitteeIds = await getDirectorTrackCommitteeIds(
+      seasonRes.season.id,
+      actor.profile.role,
+      actor.profile.managedTrackId
+    );
+    if (
+      directorTrackCommitteeIds &&
+      (!member.committeeId || !directorTrackCommitteeIds.has(member.committeeId))
+    ) {
+      return {
+        ok: false,
+        error:
+          "Unauthorized: Track Directors can only submit feedback for members in their assigned committee track.",
+      };
+    }
 
     const [row] = await db
       .insert(schema.hrFeedback)

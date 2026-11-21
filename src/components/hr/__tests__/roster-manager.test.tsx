@@ -181,4 +181,70 @@ describe("RosterManagerView Component", () => {
     expect(handleRemove).toHaveBeenCalledWith("m-1");
     expect(screen.queryByText("salma.elsayed@cu.edu.eg")).not.toBeInTheDocument();
   });
+
+  it("allows Master Admin to assign a Director to a committee track inline and when adding a new director", async () => {
+    const user = userEvent.setup();
+    const handleAssignTrack = vi.fn().mockResolvedValue({ ok: true });
+    const handleAdd = vi.fn().mockResolvedValue({ ok: true });
+
+    const sampleTracks = [
+      { id: "trk-tech", name: "Technical" },
+      { id: "trk-creative", name: "Creative" },
+      { id: "trk-ops", name: "Operations" },
+    ];
+
+    const membersWithDirector = [
+      ...sampleMembers,
+      {
+        id: "m-dir",
+        fullName: "Karim Nabil",
+        email: "karim@cu.edu.eg",
+        committeeId: null,
+        committeeName: "Unassigned",
+        managedTrackId: null,
+        managedTrackName: null,
+        role: "director" as const,
+        isActive: true,
+      },
+    ];
+
+    render(
+      <RosterManagerView
+        members={membersWithDirector}
+        availableTracks={sampleTracks}
+        currentUserRole="master_admin"
+        onAssignDirectorTrack={handleAssignTrack}
+        onAddMember={handleAdd}
+      />
+    );
+
+    const trackSelect = screen.getByLabelText(
+      /assign director track for karim nabil/i
+    );
+    await user.selectOptions(trackSelect, "trk-tech");
+    expect(handleAssignTrack).toHaveBeenCalledWith("m-dir", "trk-tech");
+
+    // Open Add Member modal and select Director role -> Managed Track picker appears
+    await user.click(screen.getByRole("button", { name: /add member/i }));
+    await user.type(screen.getByPlaceholderText(/ahmed mostafa/i), "Nour Director");
+    await user.type(
+      screen.getByPlaceholderText(/ahmed.mostafa@cu.edu.eg/i),
+      "nour.dir@cu.edu.eg"
+    );
+    const modalRoleSelect = screen.getByLabelText(/member role/i);
+    await user.selectOptions(modalRoleSelect, "director");
+
+    const modalTrackSelect = screen.getByLabelText(/managed committee track/i);
+    await user.selectOptions(modalTrackSelect, "trk-ops");
+    await user.click(screen.getByRole("button", { name: /^add to roster$/i }));
+
+    expect(handleAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fullName: "Nour Director",
+        role: "director",
+        managedTrackId: "trk-ops",
+        committeeId: null,
+      })
+    );
+  });
 });

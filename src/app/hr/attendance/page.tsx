@@ -3,6 +3,11 @@ import {
   type SessionItem,
 } from "@/components/hr/attendance-manager-view";
 import { requireHrModule } from "@/lib/portal-guards";
+import {
+  DEFAULT_SEASON_SETTINGS,
+  normalizeSeasonSettings,
+  type SeasonAttendanceSettings,
+} from "@/lib/season-settings";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { and, count, desc, eq } from "drizzle-orm";
@@ -12,6 +17,8 @@ export default async function HrAttendancePage() {
 
   let dbSessionsList: SessionItem[] = [];
   let dbCommitteesList: Array<{ id: string; name: string }> = [];
+  let attendanceDefaults: SeasonAttendanceSettings =
+    DEFAULT_SEASON_SETTINGS.attendance;
 
   const isCommitteeScoped =
     profile.role === "committee_head" || profile.role === "hr_member";
@@ -25,6 +32,9 @@ export default async function HrAttendancePage() {
 
     if (activeSeason) {
       const seasonId = activeSeason.id;
+      attendanceDefaults = normalizeSeasonSettings(
+        activeSeason.settingsJson
+      ).attendance;
 
       const sessionFilter =
         isCommitteeScoped && profile.committeeId
@@ -105,6 +115,7 @@ export default async function HrAttendancePage() {
       currentUserCommitteeId={profile.committeeId}
       currentUserCommitteeName={profile.committeeName}
       committees={dbCommitteesList}
+      attendanceDefaults={attendanceDefaults}
     />
   );
 }

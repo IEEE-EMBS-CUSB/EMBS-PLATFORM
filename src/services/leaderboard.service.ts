@@ -2,6 +2,7 @@ import * as store from "@/db/store";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
+import { normalizeSeasonSettings } from "@/lib/season-settings";
 import type {
   Committee,
   CommitteeLeaderSpotlight,
@@ -45,24 +46,43 @@ function getOverallEntriesFromSnapshot(json: SnapshotJsonShape) {
   }));
 }
 
-async function resolvePublicSeasonId(): Promise<string | null> {
+async function resolvePublicSeason(): Promise<{
+  id: string;
+  publicTopN: number;
+} | null> {
   const [activeSeason] = await db
-    .select({ id: schema.seasons.id })
+    .select({ id: schema.seasons.id, settingsJson: schema.seasons.settingsJson })
     .from(schema.seasons)
     .where(eq(schema.seasons.status, "active"))
     .limit(1);
 
-  if (activeSeason) return activeSeason.id;
+  if (activeSeason) {
+    return {
+      id: activeSeason.id,
+      publicTopN: normalizeSeasonSettings(activeSeason.settingsJson).leaderboard
+        .publicTopN,
+    };
+  }
 
   // Fallback only to most recent archived season if no season is active
   const [archivedSeason] = await db
-    .select({ id: schema.seasons.id })
+    .select({ id: schema.seasons.id, settingsJson: schema.seasons.settingsJson })
     .from(schema.seasons)
     .where(eq(schema.seasons.status, "archived"))
     .orderBy(desc(schema.seasons.startDate))
     .limit(1);
 
-  return archivedSeason?.id ?? null;
+  if (!archivedSeason) return null;
+  return {
+    id: archivedSeason.id,
+    publicTopN: normalizeSeasonSettings(archivedSeason.settingsJson).leaderboard
+      .publicTopN,
+  };
+}
+
+async function resolvePublicSeasonId(): Promise<string | null> {
+  const s = await resolvePublicSeason();
+  return s?.id ?? null;
 }
 
 export async function getCommittees(): Promise<Committee[]> {
@@ -144,8 +164,8 @@ export async function getOverallLeaderboard(
   month?: MonthKey
 ): Promise<MonthlyLeaderboard | null> {
   try {
-    const seasonId = await resolvePublicSeasonId();
-    if (!seasonId) return null;
+    const season = await resolvePublicSeason();
+    if (!season) return null;
 
     const rows = await db
       .select()
@@ -153,7 +173,7 @@ export async function getOverallLeaderboard(
       .where(
         and(
           eq(schema.monthlySnapshots.status, "published"),
-          eq(schema.monthlySnapshots.seasonId, seasonId)
+          eq(schema.monthlySnapshots.seasonId, season.id)
         )
       )
       .orderBy(desc(schema.monthlySnapshots.month));
@@ -173,7 +193,7 @@ export async function getOverallLeaderboard(
           ? target.publishedAt.toISOString().slice(0, 10)
           : "",
         scope: "overall",
-        entries: overallEntries.slice(0, LEADERBOARD_TOP_LIMIT),
+        entries: overallEntries.slice(0, season.publicTopN),
       };
     }
   } catch {
@@ -191,8 +211,8 @@ export async function getCommitteeLeaderboard(
     const committee = comms.find((c) => c.slug === committeeSlug);
     if (!committee) return null;
 
-    const seasonId = await resolvePublicSeasonId();
-    if (!seasonId) return null;
+    const season = await resolvePublicSeason();
+    if (!season) return null;
 
     const rows = await db
       .select()
@@ -200,7 +220,7 @@ export async function getCommitteeLeaderboard(
       .where(
         and(
           eq(schema.monthlySnapshots.status, "published"),
-          eq(schema.monthlySnapshots.seasonId, seasonId)
+          eq(schema.monthlySnapshots.seasonId, season.id)
         )
       )
       .orderBy(desc(schema.monthlySnapshots.month));
@@ -219,7 +239,7 @@ export async function getCommitteeLeaderboard(
           : (json.entries ?? json.overallEntries ?? []).filter(
               (e) => e.committeeSlug === committee.slug
             )
-      ).slice(0, LEADERBOARD_TOP_LIMIT);
+      ).slice(0, season.publicTopN);
 
       const committeeEntries = rawCommEntries.map((entry, index: number) => ({
         rank: hasCommitteeEntries ? (entry.rank ?? index + 1) : index + 1,

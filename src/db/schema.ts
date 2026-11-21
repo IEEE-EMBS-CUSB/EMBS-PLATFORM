@@ -13,6 +13,11 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import {
+  DEFAULT_SEASON_SETTINGS,
+  type SeasonSettings,
+} from "@/lib/season-settings";
+
 // ============================================================================
 // Enums
 // ============================================================================
@@ -63,6 +68,10 @@ export const seasons = pgTable(
     status: seasonStatusEnum("status").notNull().default("draft"),
     startDate: timestamp("start_date", { withTimezone: true, mode: "date" }).notNull(),
     endDate: timestamp("end_date", { withTimezone: true, mode: "date" }),
+    settingsJson: jsonb("settings_json")
+      .$type<SeasonSettings>()
+      .notNull()
+      .default(DEFAULT_SEASON_SETTINGS),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -77,7 +86,37 @@ export const seasons = pgTable(
 );
 
 // ============================================================================
-// 2. Committees
+// 2. Committee Tracks (Editable Season-Scoped Committee Sets)
+// Default sets: Technical, Creative, Operations — editable & extensible for future seasons.
+// Directors can be assigned to oversee a specific track.
+// ============================================================================
+
+export const committeeTracks = pgTable(
+  "committee_tracks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    seasonId: uuid("season_id")
+      .notNull()
+      .references(() => seasons.id, { onDelete: "cascade" }),
+    name: text("name").notNull(), // e.g. "Technical", "Creative", "Operations"
+    slug: text("slug").notNull(), // e.g. "technical", "creative", "operations"
+    description: text("description"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("committee_tracks_season_slug_idx").on(
+      table.seasonId,
+      table.slug
+    ),
+    index("committee_tracks_season_id_idx").on(table.seasonId),
+  ]
+);
+
+// ============================================================================
+// 2b. Committees
 // Scoped to a season. Strict unique constraint on (seasonId, slug).
 // ============================================================================
 
@@ -88,6 +127,9 @@ export const committees = pgTable(
     seasonId: uuid("season_id")
       .notNull()
       .references(() => seasons.id, { onDelete: "cascade" }),
+    trackId: uuid("track_id").references(() => committeeTracks.id, {
+      onDelete: "set null",
+    }),
     name: text("name").notNull(), // e.g. "AI and Machine Learning"
     slug: text("slug").notNull(), // e.g. "ai-and-machine-learning"
     category: committeeCategoryEnum("category").notNull(),
@@ -99,6 +141,7 @@ export const committees = pgTable(
   (table) => [
     uniqueIndex("committees_season_slug_idx").on(table.seasonId, table.slug),
     index("committees_season_id_idx").on(table.seasonId),
+    index("committees_track_id_idx").on(table.trackId),
   ]
 );
 
@@ -119,6 +162,9 @@ export const rosterMemberships = pgTable(
     committeeId: uuid("committee_id").references(() => committees.id, {
       onDelete: "set null",
     }), // Nullable for branch-wide HR admins or general attendees
+    managedTrackId: uuid("managed_track_id").references(() => committeeTracks.id, {
+      onDelete: "set null",
+    }), // Nullable; when set on a director, scopes them to all committees in that track
     role: membershipRoleEnum("role").notNull().default("member"),
     passwordHash: text("password_hash"),
     mustChangePassword: boolean("must_change_password").notNull().default(true),
@@ -514,6 +560,7 @@ export const seasonalEvaluations = pgTable(
 // ============================================================================
 
 export const seasonsRelations = relations(seasons, ({ many }) => ({
+  committeeTracks: many(committeeTracks),
   committees: many(committees),
   memberships: many(rosterMemberships),
   scoringRubrics: many(scoringRubrics),
@@ -524,10 +571,25 @@ export const seasonsRelations = relations(seasons, ({ many }) => ({
   feedback: many(hrFeedback),
 }));
 
+export const committeeTracksRelations = relations(
+  committeeTracks,
+  ({ one, many }) => ({
+    season: one(seasons, {
+      fields: [committeeTracks.seasonId],
+      references: [seasons.id],
+    }),
+    committees: many(committees),
+  })
+);
+
 export const committeesRelations = relations(committees, ({ one, many }) => ({
   season: one(seasons, {
     fields: [committees.seasonId],
     references: [seasons.id],
+  }),
+  track: one(committeeTracks, {
+    fields: [committees.trackId],
+    references: [committeeTracks.id],
   }),
   memberships: many(rosterMemberships),
   branchSessions: many(branchSessions),

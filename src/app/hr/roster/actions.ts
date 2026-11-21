@@ -5,6 +5,7 @@ import { getActorContext, unauthorizedResult } from "@/lib/action-auth";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   addRosterMemberAsActor,
+  assignDirectorTrackAsActor,
   assignMemberCommitteeAsActor,
   assignMemberRoleAsActor,
   bulkImportRosterAsActor,
@@ -75,5 +76,26 @@ export async function assignMemberCommitteeAction(
   if (!actor) return unauthorizedResult();
   const res = await assignMemberCommitteeAsActor(memberId, committeeId, actor);
   if (res.ok) safeRevalidateRoster();
+  return res;
+}
+
+export async function assignDirectorTrackAction(
+  memberId: string,
+  trackId: string | null
+) {
+  const actor = await getActorContext();
+  if (!actor) return unauthorizedResult();
+  const res = await assignDirectorTrackAsActor(memberId, trackId, actor);
+  if (res.ok) {
+    safeRevalidateRoster();
+    try {
+      revalidatePath("/hr/committees");
+      revalidatePath("/hr/tasks");
+      revalidatePath("/hr/ledger");
+      revalidatePath("/hr/feedback");
+    } catch {
+      // Outside Next.js request context
+    }
+  }
   return res;
 }

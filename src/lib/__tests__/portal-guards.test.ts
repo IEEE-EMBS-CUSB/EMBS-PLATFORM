@@ -150,6 +150,7 @@ describe("portal-guards", () => {
         role: "member",
         committeeId: "com-1",
         committeeName: "Robotics",
+        managedTrackId: null,
       };
       await expect(requireOperationalSession()).rejects.toThrow("REDIRECT:/member");
       expect(mockRedirect).toHaveBeenCalledWith("/member");
@@ -172,6 +173,7 @@ describe("portal-guards", () => {
         email: "director@cu.edu.eg",
         role: "director",
         committeeId: null,
+        managedTrackId: null,
       };
 
       const result = await requireOperationalSession();
@@ -200,6 +202,7 @@ describe("portal-guards", () => {
         email: "hr.member@cu.edu.eg",
         role: "hr_member",
         committeeId: "com-1",
+        managedTrackId: null,
       };
 
       await expect(requireHrModule("feedback")).rejects.toThrow("REDIRECT:/hr");

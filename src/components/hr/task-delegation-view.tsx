@@ -67,6 +67,7 @@ interface TaskDelegationViewProps {
   currentUserRole: MembershipRole;
   currentUserId: string;
   currentUserCommitteeId?: string | null;
+  defaultMaxPoints?: number;
   assignedToMe?: AssignedTaskItem[];
   eligibleMembers?: EligibleAssignee[];
   committees?: CommitteeOption[];
@@ -77,6 +78,7 @@ export function TaskDelegationView({
   currentUserRole,
   currentUserId,
   currentUserCommitteeId = null,
+  defaultMaxPoints = 100,
   assignedToMe = [],
   eligibleMembers = [],
   committees: initialCommittees,
@@ -122,7 +124,7 @@ export function TaskDelegationView({
     d.setDate(d.getDate() + 7);
     return d.toISOString().slice(0, 10);
   });
-  const [maxPoints, setMaxPoints] = useState(100);
+  const [maxPoints, setMaxPoints] = useState(defaultMaxPoints);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

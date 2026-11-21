@@ -114,4 +114,84 @@ describe("CommitteesRubricsView Component", () => {
     expect(handleRemove).toHaveBeenCalledWith("com-2");
     expect(screen.queryByText("Graphic Design")).not.toBeInTheDocument();
   });
+
+  it("groups committees by editable tracks, shows track directors, and supports track editing and reassignment", async () => {
+    const user = userEvent.setup();
+    const handleAddTrack = vi
+      .fn()
+      .mockResolvedValue({ ok: true, trackId: "trk-outreach", slug: "biomedical-outreach" });
+    const handleRenameTrack = vi.fn().mockResolvedValue({ ok: true });
+    const handleAssignTrack = vi.fn().mockResolvedValue({ ok: true });
+
+    const sampleTracks = [
+      {
+        id: "trk-tech",
+        name: "Technical",
+        slug: "technical",
+        description: "Engineering & hardware committees",
+        directorNames: ["Eng. Karim"],
+      },
+      {
+        id: "trk-creative",
+        name: "Creative",
+        slug: "creative",
+        description: "Design & media",
+        directorNames: [],
+      },
+      {
+        id: "trk-ops",
+        name: "Operations",
+        slug: "operations",
+        description: "HR, PR & logistics",
+        directorNames: ["Sara Tarek"],
+      },
+    ];
+
+    const trackedCommittees = [
+      { ...sampleCommittees[0], trackId: "trk-tech" },
+      { ...sampleCommittees[1], trackId: "trk-creative" },
+    ];
+
+    render(
+      <CommitteesRubricsView
+        tracks={sampleTracks}
+        committees={trackedCommittees}
+        rubrics={sampleRubrics}
+        currentUserRole="master_admin"
+        onAddTrack={handleAddTrack}
+        onRenameTrack={handleRenameTrack}
+        onAssignCommitteeTrack={handleAssignTrack}
+      />
+    );
+
+    expect(screen.getByText(/Eng\. Karim/i)).toBeInTheDocument();
+    expect(screen.getByText(/Sara Tarek/i)).toBeInTheDocument();
+
+    // Move Graphic Design from Creative to Operations
+    const trackSelect = screen.getByLabelText(/assign track for graphic design/i);
+    await user.selectOptions(trackSelect, "trk-ops");
+    expect(handleAssignTrack).toHaveBeenCalledWith("com-2", "trk-ops");
+
+    // Rename Operations track
+    await user.click(screen.getByRole("button", { name: /rename track operations/i }));
+    const renameInput = screen.getByLabelText(/track title for operations/i);
+    await user.clear(renameInput);
+    await user.type(renameInput, "Chapter Operations");
+    await user.click(screen.getByRole("button", { name: /save track title/i }));
+    expect(handleRenameTrack).toHaveBeenCalledWith(
+      expect.objectContaining({ trackId: "trk-ops", name: "Chapter Operations" })
+    );
+
+    // Add a new future track
+    await user.click(screen.getByRole("button", { name: /new track/i }));
+    const newTrackTitle = screen.getByLabelText(/track title/i);
+    await user.type(newTrackTitle, "Biomedical Outreach");
+    await user.click(screen.getByRole("button", { name: /create track/i }));
+    expect(handleAddTrack).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Biomedical Outreach" })
+    );
+    expect(
+      await screen.findByRole("heading", { name: /biomedical outreach/i })
+    ).toBeInTheDocument();
+  });
 });

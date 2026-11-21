@@ -11,8 +11,13 @@ import {
 } from "@/lib/permissions";
 import { upsertScoreLedgerEntry } from "@/db/ledger";
 import {
+  calculateRubricPoints,
+  normalizeSeasonSettings,
+} from "@/lib/season-settings";
+import {
   assertMonthNotPublished,
   formatMonthInCairo,
+  getDirectorTrackCommitteeIds,
   isValidDateString,
   isValidHttpUrl,
   resolveActiveSeason,
@@ -47,6 +52,7 @@ export interface TaskActor {
     id: string;
     role: MembershipRole;
     committeeId: string | null;
+    managedTrackId?: string | null;
     email?: string;
     fullName?: string;
   };
@@ -105,6 +111,11 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
     const seasonRes = await resolveActiveSeason(input.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
     const seasonId = seasonRes.season.id;
+    const directorTrackCommitteeIds = await getDirectorTrackCommitteeIds(
+      seasonId,
+      actorRole,
+      actor.profile.managedTrackId
+    );
 
     let targetMembershipIds: string[] = [];
     let taskCommitteeId: string | null = null;
@@ -150,6 +161,17 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
           ok: false,
           error:
             "Unauthorized: your role cannot assign tasks to this recipient.",
+        };
+      }
+
+      if (
+        directorTrackCommitteeIds &&
+        (!member.committeeId || !directorTrackCommitteeIds.has(member.committeeId))
+      ) {
+        return {
+          ok: false,
+          error:
+            "Unauthorized: Track Directors can only assign to heads within their assigned committee track.",
         };
       }
 
@@ -224,6 +246,14 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
           };
         }
 
+        if (directorTrackCommitteeIds && !directorTrackCommitteeIds.has(commId)) {
+          return {
+            ok: false,
+            error:
+              "Unauthorized: Track Directors can only assign to committees within their assigned track.",
+          };
+        }
+
         taskCommitteeId = commId;
 
         const commMembers = await db
@@ -272,7 +302,12 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
               eq(schema.rosterMemberships.isActive, true)
             )
           );
-        targetMembershipIds = allHeads.map((m) => m.id);
+        const scopedHeads = directorTrackCommitteeIds
+          ? allHeads.filter(
+              (h) => h.committeeId && directorTrackCommitteeIds.has(h.committeeId)
+            )
+          : allHeads;
+        targetMembershipIds = scopedHeads.map((m) => m.id);
       } else if (input.targetGroup === "all_members") {
         const allRegular = await db
           .select()
@@ -387,6 +422,22 @@ export async function gradeTaskSubmissionAsActor(
       };
     }
 
+    const directorTrackCommitteeIds = await getDirectorTrackCommitteeIds(
+      task.seasonId,
+      actor.profile.role,
+      actor.profile.managedTrackId
+    );
+    if (
+      directorTrackCommitteeIds &&
+      (!scopeCommitteeId || !directorTrackCommitteeIds.has(scopeCommitteeId))
+    ) {
+      return {
+        ok: false,
+        error:
+          "Unauthorized: Track Directors can only grade deliverables within their assigned track.",
+      };
+    }
+
     const monthKey = formatMonthInCairo(
       submission.gradedAt ?? task.dueAt ?? new Date()
     );
@@ -395,14 +446,14 @@ export async function gradeTaskSubmissionAsActor(
       if (!monthGuard.ok) return { ok: false, error: monthGuard.error };
     }
 
-    const totalPoints = Math.min(
-      task.maxPoints,
-      Math.round(
-        input.effortScore * 10 +
-          input.qualityScore * 8 +
-          input.timelinessScore * 2
-      )
-    );
+    const seasonSettings = normalizeSeasonSettings(seasonRes.season.settingsJson);
+    const totalPoints = calculateRubricPoints({
+      effortScore: input.effortScore,
+      qualityScore: input.qualityScore,
+      timelinessScore: input.timelinessScore,
+      maxPoints: task.maxPoints,
+      grading: seasonSettings.grading,
+    });
 
     await db
       .update(schema.taskSubmissions)

@@ -27,7 +27,10 @@ export default async function HrLayout({ children }: { children: ReactNode }) {
     <HrShell
       currentUserRole={profile.role}
       userName={profile.fullName}
-      userCommitteeName={profile.committeeName}
+      userCommitteeName={
+        profile.committeeName ??
+        (profile.managedTrackName ? `${profile.managedTrackName} Track` : undefined)
+      }
       activeSeasonName={activeSeasonName}
     >
       {children}

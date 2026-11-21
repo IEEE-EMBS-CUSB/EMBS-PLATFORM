@@ -13,6 +13,7 @@ export interface AddRosterMemberInput {
   email: string;
   role: MembershipRole;
   committeeId?: string | null;
+  managedTrackId?: string | null;
   seasonId?: string;
 }
 
@@ -87,6 +88,28 @@ export async function addRosterMemberAsActor(
       committeeId = comm.id;
     }
 
+    let managedTrackId: string | null =
+      input.role === "director" ? input.managedTrackId || null : null;
+    if (managedTrackId) {
+      const [track] = await db
+        .select()
+        .from(schema.committeeTracks)
+        .where(
+          and(
+            eq(schema.committeeTracks.id, managedTrackId),
+            eq(schema.committeeTracks.seasonId, seasonId)
+          )
+        )
+        .limit(1);
+      if (!track) {
+        return {
+          ok: false,
+          error: "Selected director track does not belong to this season.",
+        };
+      }
+      managedTrackId = track.id;
+    }
+
     const tempPassword = generatePreassignedPassword();
     const passwordHash = hashPassword(tempPassword);
 
@@ -97,7 +120,8 @@ export async function addRosterMemberAsActor(
         email: normalizedEmail,
         fullName: trimmedName,
         role: input.role,
-        committeeId,
+        committeeId: input.role === "director" ? null : committeeId,
+        managedTrackId,
         passwordHash,
         mustChangePassword: true,
         isActive: true,
@@ -417,6 +441,74 @@ export async function assignMemberCommitteeAsActor(
     return {
       ok: false,
       error: sanitizeDbError(err, "Failed to update member committee."),
+    };
+  }
+}
+
+export async function assignDirectorTrackAsActor(
+  memberId: string,
+  trackId: string | null,
+  actor: RosterActor
+) {
+  if (!canAssignRoles(actor.profile.role)) {
+    return {
+      ok: false,
+      error:
+        "Unauthorized: only Master Admin can assign committee tracks to Directors.",
+    };
+  }
+
+  try {
+    const [target] = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(eq(schema.rosterMemberships.id, memberId))
+      .limit(1);
+
+    if (!target) {
+      return { ok: false, error: "Member not found." };
+    }
+    if (target.role !== "director") {
+      return {
+        ok: false,
+        error: "Only Directors can be assigned to oversee a committee track.",
+      };
+    }
+
+    const seasonRes = await resolveMutableSeason(target.seasonId);
+    if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
+
+    let resolvedTrackId: string | null = trackId || null;
+    if (resolvedTrackId) {
+      const [track] = await db
+        .select()
+        .from(schema.committeeTracks)
+        .where(
+          and(
+            eq(schema.committeeTracks.id, resolvedTrackId),
+            eq(schema.committeeTracks.seasonId, target.seasonId)
+          )
+        )
+        .limit(1);
+      if (!track) {
+        return {
+          ok: false,
+          error: "Selected track does not belong to this Director's season.",
+        };
+      }
+      resolvedTrackId = track.id;
+    }
+
+    await db
+      .update(schema.rosterMemberships)
+      .set({ managedTrackId: resolvedTrackId })
+      .where(eq(schema.rosterMemberships.id, memberId));
+
+    return { ok: true };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to assign director track."),
     };
   }
 }

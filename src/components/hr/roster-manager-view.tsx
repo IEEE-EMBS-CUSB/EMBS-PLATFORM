@@ -41,11 +41,18 @@ export interface RosterMemberItem {
   email: string;
   committeeId?: string | null;
   committeeName: string;
+  managedTrackId?: string | null;
+  managedTrackName?: string | null;
   role: MembershipRole;
   isActive: boolean;
 }
 
 export interface CommitteeOption {
+  id: string;
+  name: string;
+}
+
+export interface TrackOption {
   id: string;
   name: string;
 }
@@ -69,7 +76,9 @@ interface BulkImportResult {
 interface RosterManagerViewProps {
   members: RosterMemberItem[];
   currentUserRole?: MembershipRole;
+  scopedTrackName?: string | null;
   availableCommittees?: CommitteeOption[];
+  availableTracks?: TrackOption[];
   onAssignRole?: (
     memberId: string,
     newRole: MembershipRole
@@ -77,6 +86,10 @@ interface RosterManagerViewProps {
   onAssignCommittee?: (
     memberId: string,
     committeeId: string | null
+  ) => Promise<{ ok: boolean; error?: string } | void> | void;
+  onAssignDirectorTrack?: (
+    memberId: string,
+    trackId: string | null
   ) => Promise<{ ok: boolean; error?: string } | void> | void;
   onResetPassword?: (
     memberId: string
@@ -86,6 +99,7 @@ interface RosterManagerViewProps {
     email: string;
     role: MembershipRole;
     committeeId?: string | null;
+    managedTrackId?: string | null;
   }) => Promise<
     { ok: boolean; memberId?: string; tempPassword?: string; error?: string } | void
   >;
@@ -104,6 +118,7 @@ const PROTECTED_RESET_ROLES = new Set<MembershipRole>([
 export function RosterManagerView({
   members: initialMembers,
   currentUserRole = "master_admin",
+  scopedTrackName = null,
   availableCommittees = [
     { id: "comm-ai-ml", name: "AI and Machine Learning" },
     { id: "comm-web-dev", name: "Web Development" },
@@ -118,8 +133,14 @@ export function RosterManagerView({
     { id: "comm-pr", name: "Public Relations and Fund Raising" },
     { id: "comm-logistics", name: "Organizing and Logistics" },
   ],
+  availableTracks = [
+    { id: "technical", name: "Technical" },
+    { id: "creative", name: "Creative" },
+    { id: "operations", name: "Operations" },
+  ],
   onAssignRole,
   onAssignCommittee,
+  onAssignDirectorTrack,
   onResetPassword,
   onAddMember,
   onBulkImport,
@@ -133,6 +154,7 @@ export function RosterManagerView({
   const [addEmail, setAddEmail] = useState("");
   const [addRole, setAddRole] = useState<MembershipRole>("member");
   const [addCommitteeId, setAddCommitteeId] = useState("");
+  const [addManagedTrackId, setAddManagedTrackId] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -174,7 +196,8 @@ export function RosterManagerView({
       (m) =>
         m.fullName.toLowerCase().includes(q) ||
         m.email.toLowerCase().includes(q) ||
-        m.committeeName.toLowerCase().includes(q)
+        m.committeeName.toLowerCase().includes(q) ||
+        (m.managedTrackName ?? "").toLowerCase().includes(q)
     );
   }, [members, search]);
 
@@ -233,24 +256,103 @@ export function RosterManagerView({
     if (!previous) return;
     setActionError(null);
     setMembers((prev) =>
-      prev.map((m) => (m.id === memberId ? { ...m, role: newRole } : m))
+      prev.map((m) =>
+        m.id === memberId
+          ? {
+              ...m,
+              role: newRole,
+              ...(newRole !== "director"
+                ? { managedTrackId: null, managedTrackName: null }
+                : {}),
+            }
+          : m
+      )
     );
     try {
       const res = await onAssignRole?.(memberId, newRole);
       if (res && !res.ok) {
         setMembers((prev) =>
           prev.map((m) =>
-            m.id === memberId ? { ...m, role: previous.role } : m
+            m.id === memberId
+              ? {
+                  ...m,
+                  role: previous.role,
+                  managedTrackId: previous.managedTrackId,
+                  managedTrackName: previous.managedTrackName,
+                }
+              : m
           )
         );
         setActionError(res.error ?? "Failed to update member role.");
       }
     } catch (err: unknown) {
       setMembers((prev) =>
-        prev.map((m) => (m.id === memberId ? { ...m, role: previous.role } : m))
+        prev.map((m) =>
+          m.id === memberId
+            ? {
+                ...m,
+                role: previous.role,
+                managedTrackId: previous.managedTrackId,
+                managedTrackName: previous.managedTrackName,
+              }
+            : m
+        )
       );
       setActionError(
         err instanceof Error ? err.message : "Failed to update member role."
+      );
+    }
+  };
+
+  const handleDirectorTrackChange = async (
+    memberId: string,
+    newTrackId: string
+  ) => {
+    const previous = members.find((m) => m.id === memberId);
+    if (!previous) return;
+    const found = availableTracks.find((t) => t.id === newTrackId);
+    setActionError(null);
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.id === memberId
+          ? {
+              ...m,
+              managedTrackId: newTrackId || null,
+              managedTrackName: found ? found.name : null,
+            }
+          : m
+      )
+    );
+    try {
+      const res = await onAssignDirectorTrack?.(memberId, newTrackId || null);
+      if (res && !res.ok) {
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.id === memberId
+              ? {
+                  ...m,
+                  managedTrackId: previous.managedTrackId,
+                  managedTrackName: previous.managedTrackName,
+                }
+              : m
+          )
+        );
+        setActionError(res.error ?? "Failed to assign director track.");
+      }
+    } catch (err: unknown) {
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.id === memberId
+            ? {
+                ...m,
+                managedTrackId: previous.managedTrackId,
+                managedTrackName: previous.managedTrackName,
+              }
+            : m
+        )
+      );
+      setActionError(
+        err instanceof Error ? err.message : "Failed to assign director track."
       );
     }
   };
@@ -374,12 +476,17 @@ export function RosterManagerView({
     setAddError("");
     try {
       let createdId = `new-${Date.now()}`;
+      const isDirectorRole = addRole === "director";
+      const submittedCommitteeId = isDirectorRole ? null : addCommitteeId || null;
+      const submittedTrackId = isDirectorRole ? addManagedTrackId || null : null;
+
       if (onAddMember) {
         const res = await onAddMember({
           fullName: addFullName.trim(),
           email: addEmail.trim(),
           role: addRole,
-          committeeId: addCommitteeId || null,
+          committeeId: submittedCommitteeId,
+          ...(isDirectorRole ? { managedTrackId: submittedTrackId } : {}),
         });
         if (res && !res.ok) {
           setAddError(res.error ?? "Failed to add member to roster.");
@@ -395,14 +502,17 @@ export function RosterManagerView({
           });
         }
       }
-      const comm = availableCommittees.find((c) => c.id === addCommitteeId);
+      const comm = availableCommittees.find((c) => c.id === submittedCommitteeId);
+      const track = availableTracks.find((t) => t.id === submittedTrackId);
       const newMember: RosterMemberItem = {
         id: createdId,
         fullName: addFullName.trim(),
         email: addEmail.trim().toLowerCase(),
         role: addRole,
-        committeeId: addCommitteeId || null,
+        committeeId: submittedCommitteeId,
         committeeName: comm?.name ?? "Unassigned",
+        managedTrackId: submittedTrackId,
+        managedTrackName: track?.name ?? null,
         isActive: true,
       };
       setMembers((prev) => [newMember, ...prev]);
@@ -411,6 +521,7 @@ export function RosterManagerView({
       setAddEmail("");
       setAddRole("member");
       setAddCommitteeId("");
+      setAddManagedTrackId("");
     } catch (err: unknown) {
       setAddError(err instanceof Error ? err.message : "Error adding member.");
     } finally {
@@ -452,6 +563,13 @@ export function RosterManagerView({
       {importNotice && (
         <div className="rounded-lg border border-[#78be20]/40 bg-[#78be20]/10 p-3 text-xs font-semibold text-[#1e6b0a]">
           {importNotice}
+        </div>
+      )}
+
+      {scopedTrackName && (
+        <div className="rounded-lg border border-[#772583]/25 bg-[#f5edf7] p-3 text-xs text-[#5a1b63]">
+          <strong>Director Track Scope:</strong> Showing members across all
+          committees in your assigned <strong>{scopedTrackName}</strong> track.
         </div>
       )}
 
@@ -536,7 +654,7 @@ export function RosterManagerView({
                   Email (Whitelist)
                 </TableHead>
                 <TableHead className="font-heading text-xs font-bold text-[#002855]">
-                  Committee
+                  Committee / Track
                 </TableHead>
                 <TableHead className="font-heading text-xs font-bold text-[#002855]">
                   Role
@@ -570,7 +688,31 @@ export function RosterManagerView({
                       {m.email}
                     </TableCell>
                     <TableCell className="text-xs font-medium">
-                      {canAssignThisCommittee ? (
+                      {m.role === "director" ? (
+                        isMaster ? (
+                          <select
+                            aria-label={`Assign director track for ${m.fullName}`}
+                            value={m.managedTrackId ?? ""}
+                            onChange={(e) =>
+                              handleDirectorTrackChange(m.id, e.target.value)
+                            }
+                            className="h-8 rounded border border-[#772583]/30 bg-[#f5edf7]/60 px-2 text-xs font-semibold text-[#5a1b63] focus:outline-2 focus:outline-[#772583]"
+                          >
+                            <option value="">All Tracks (Chapter-wide)</option>
+                            {availableTracks.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.name} Track
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Badge className="bg-[#f5edf7] text-[#5a1b63] text-[11px] font-semibold">
+                            {m.managedTrackName
+                              ? `${m.managedTrackName} Track`
+                              : "All Tracks"}
+                          </Badge>
+                        )
+                      ) : canAssignThisCommittee ? (
                         <select
                           aria-label={`Assign committee for ${m.fullName}`}
                           value={m.committeeId ?? ""}
@@ -772,10 +914,14 @@ export function RosterManagerView({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-foreground/85">
-                    Role
+                  <label
+                    htmlFor="add-member-role"
+                    className="block text-xs font-semibold text-foreground/85"
+                  >
+                    Member Role
                   </label>
                   <select
+                    id="add-member-role"
                     value={addRole}
                     onChange={(e) =>
                       setAddRole(e.target.value as MembershipRole)
@@ -792,23 +938,51 @@ export function RosterManagerView({
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-foreground/85">
-                    Committee
-                  </label>
-                  <select
-                    value={addCommitteeId}
-                    onChange={(e) => setAddCommitteeId(e.target.value)}
-                    className="mt-1 h-9 w-full rounded-md border border-border bg-white px-2 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
-                  >
-                    <option value="">None / Branch-wide</option>
-                    {availableCommittees.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {addRole === "director" ? (
+                  <div>
+                    <label
+                      htmlFor="add-member-track"
+                      className="block text-xs font-semibold text-foreground/85"
+                    >
+                      Managed Committee Track
+                    </label>
+                    <select
+                      id="add-member-track"
+                      value={addManagedTrackId}
+                      onChange={(e) => setAddManagedTrackId(e.target.value)}
+                      className="mt-1 h-9 w-full rounded-md border border-[#772583]/30 bg-[#f5edf7]/50 px-2 text-xs font-semibold text-[#5a1b63] focus:outline-2 focus:outline-[#772583]"
+                    >
+                      <option value="">All Tracks (Chapter-wide)</option>
+                      {availableTracks.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} Track
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label
+                      htmlFor="add-member-committee"
+                      className="block text-xs font-semibold text-foreground/85"
+                    >
+                      Committee
+                    </label>
+                    <select
+                      id="add-member-committee"
+                      value={addCommitteeId}
+                      onChange={(e) => setAddCommitteeId(e.target.value)}
+                      className="mt-1 h-9 w-full rounded-md border border-border bg-white px-2 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                    >
+                      <option value="">None / Branch-wide</option>
+                      {availableCommittees.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-md border border-border bg-[#f8f9fb] p-3 text-xs text-muted-foreground">

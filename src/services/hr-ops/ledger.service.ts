@@ -6,6 +6,7 @@ import { canAwardBonus } from "@/lib/permissions";
 import type { HrActor } from "./helpers";
 import {
   assertMonthNotPublished,
+  getDirectorTrackCommitteeIds,
   isValidMonthKey,
   resolveActiveSeason,
   sanitizeDbError,
@@ -72,6 +73,22 @@ export async function addManualLedgerEntryAsActor(
 
     const seasonRes = await resolveActiveSeason(member.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
+
+    const directorTrackCommitteeIds = await getDirectorTrackCommitteeIds(
+      seasonRes.season.id,
+      actor.profile.role,
+      actor.profile.managedTrackId
+    );
+    if (
+      directorTrackCommitteeIds &&
+      (!member.committeeId || !directorTrackCommitteeIds.has(member.committeeId))
+    ) {
+      return {
+        ok: false,
+        error:
+          "Unauthorized: Track Directors can only award points to members in their assigned committee track.",
+      };
+    }
 
     const monthGuard = await assertMonthNotPublished(
       seasonRes.season.id,

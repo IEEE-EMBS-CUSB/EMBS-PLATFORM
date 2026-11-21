@@ -24,6 +24,8 @@ export default async function HrFeedbackPage() {
     profile.role === "director" ||
     profile.role === "hr_admin";
   const isCommitteeHead = profile.role === "committee_head";
+  const isTrackDirector =
+    profile.role === "director" && Boolean(profile.managedTrackId);
 
   try {
     const [activeSeason] = await db
@@ -49,6 +51,13 @@ export default async function HrFeedbackPage() {
       const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
       const memberMap = new Map(allSeasonMembers.map((m) => [m.id, m]));
       const authorMap = new Map(allSeasonMembers.map((m) => [m.id, m.fullName]));
+      const directorTrackCommitteeIds = isTrackDirector
+        ? new Set(
+            dbCommittees
+              .filter((c) => c.trackId === profile.managedTrackId)
+              .map((c) => c.id)
+          )
+        : null;
 
       const targetableMembers = allSeasonMembers.filter((m) => {
         if (!m.isActive) return false;
@@ -56,6 +65,13 @@ export default async function HrFeedbackPage() {
           return (
             profile.committeeId !== null &&
             m.committeeId === profile.committeeId &&
+            m.id !== profile.id
+          );
+        }
+        if (directorTrackCommitteeIds) {
+          return (
+            m.committeeId !== null &&
+            directorTrackCommitteeIds.has(m.committeeId) &&
             m.id !== profile.id
           );
         }
@@ -74,16 +90,33 @@ export default async function HrFeedbackPage() {
       // Data-layer privacy: committee heads NEVER receive private HR warnings or notes about themselves
       let dbFeedback: (typeof schema.hrFeedback.$inferSelect)[] = [];
       if (canViewAndCreateWarnings) {
-        dbFeedback = await db
-          .select()
-          .from(schema.hrFeedback)
-          .where(
-            and(
-              eq(schema.hrFeedback.seasonId, seasonId),
-              ne(schema.hrFeedback.membershipId, profile.id)
+        if (directorTrackCommitteeIds) {
+          const trackMemberIds = targetableMembers.map((m) => m.id);
+          if (trackMemberIds.length > 0) {
+            dbFeedback = await db
+              .select()
+              .from(schema.hrFeedback)
+              .where(
+                and(
+                  eq(schema.hrFeedback.seasonId, seasonId),
+                  ne(schema.hrFeedback.membershipId, profile.id),
+                  inArray(schema.hrFeedback.membershipId, trackMemberIds)
+                )
+              )
+              .orderBy(desc(schema.hrFeedback.createdAt));
+          }
+        } else {
+          dbFeedback = await db
+            .select()
+            .from(schema.hrFeedback)
+            .where(
+              and(
+                eq(schema.hrFeedback.seasonId, seasonId),
+                ne(schema.hrFeedback.membershipId, profile.id)
+              )
             )
-          )
-          .orderBy(desc(schema.hrFeedback.createdAt));
+            .orderBy(desc(schema.hrFeedback.createdAt));
+        }
       } else if (isCommitteeHead && targetableMembers.length > 0) {
         const commMemberIds = targetableMembers.map((m) => m.id);
         dbFeedback = await db

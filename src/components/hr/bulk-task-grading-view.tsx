@@ -13,6 +13,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  calculateRubricPoints,
+  DEFAULT_SEASON_SETTINGS,
+  type SeasonGradingSettings,
+} from "@/lib/season-settings";
 
 export interface TaskHeaderRef {
   id: string;
@@ -36,6 +41,7 @@ export interface SubmissionGradingItem {
 interface BulkTaskGradingViewProps {
   task: TaskHeaderRef;
   submissions: SubmissionGradingItem[];
+  gradingWeights?: SeasonGradingSettings;
   onGrade?: (input: {
     submissionId: string;
     effortScore: number;
@@ -48,6 +54,7 @@ interface BulkTaskGradingViewProps {
 export function BulkTaskGradingView({
   task,
   submissions: initialSubmissions,
+  gradingWeights = DEFAULT_SEASON_SETTINGS.grading,
   onGrade,
 }: BulkTaskGradingViewProps) {
   const [submissions, setSubmissions] = useState(initialSubmissions);
@@ -75,14 +82,13 @@ export function BulkTaskGradingView({
         item.qualityScore !== null &&
         item.timelinessScore !== null
       ) {
-        item.totalPoints = Math.min(
-          task.maxPoints,
-          Math.round(
-            item.effortScore * 10 +
-              item.qualityScore * 8 +
-              item.timelinessScore * 2
-          )
-        );
+        item.totalPoints = calculateRubricPoints({
+          effortScore: item.effortScore,
+          qualityScore: item.qualityScore,
+          timelinessScore: item.timelinessScore,
+          maxPoints: task.maxPoints,
+          grading: gradingWeights,
+        });
       } else {
         item.totalPoints = null;
       }
@@ -177,7 +183,10 @@ export function BulkTaskGradingView({
             </span>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {task.title} · {task.committeeName} (Max {task.maxPoints} pts). Tab across rows to grade.
+            {task.title} · {task.committeeName} (Max {task.maxPoints} pts ·
+            Effort ×{gradingWeights.effortWeight}, Quality ×
+            {gradingWeights.qualityWeight}, Timeliness ×
+            {gradingWeights.timelinessWeight}). Tab across rows to grade.
           </p>
         </div>
 

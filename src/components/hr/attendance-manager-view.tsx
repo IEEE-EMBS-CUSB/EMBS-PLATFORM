@@ -11,6 +11,10 @@ import QRCode from "qrcode";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import { buildCheckinQrUrl } from "@/lib/checkin-url";
 import {
+  DEFAULT_SEASON_SETTINGS,
+  type SeasonAttendanceSettings,
+} from "@/lib/season-settings";
+import {
   createSessionAction,
   toggleSessionCheckinAction,
   rotateSessionCheckinCodeAction,
@@ -42,6 +46,7 @@ interface AttendanceManagerViewProps {
   currentUserCommitteeId?: string | null;
   currentUserCommitteeName?: string | null;
   committees?: CommitteeRef[];
+  attendanceDefaults?: SeasonAttendanceSettings;
   onCreateSession?: (input: CreateSessionInput) => Promise<unknown>;
   onToggleCheckin?: (
     sessionId: string,
@@ -56,6 +61,7 @@ export function AttendanceManagerView({
   currentUserCommitteeId = null,
   currentUserCommitteeName = null,
   committees = [],
+  attendanceDefaults = DEFAULT_SEASON_SETTINGS.attendance,
   onCreateSession,
   onToggleCheckin,
 }: AttendanceManagerViewProps) {
@@ -78,10 +84,18 @@ export function AttendanceManagerView({
   const [newCommitteeId, setNewCommitteeId] = useState<string>(
     currentUserCommitteeId ?? ""
   );
-  const [newWindowMinutes, setNewWindowMinutes] = useState(30);
-  const [newPunctualityCutoff, setNewPunctualityCutoff] = useState(15);
-  const [newBasePoints, setNewBasePoints] = useState(10);
-  const [newPunctualityBonus, setNewPunctualityBonus] = useState(5);
+  const [newWindowMinutes, setNewWindowMinutes] = useState(
+    attendanceDefaults.defaultCheckinWindowMinutes
+  );
+  const [newPunctualityCutoff, setNewPunctualityCutoff] = useState(
+    attendanceDefaults.punctualityCutoffMinutes
+  );
+  const [newBasePoints, setNewBasePoints] = useState(
+    attendanceDefaults.defaultBasePoints
+  );
+  const [newPunctualityBonus, setNewPunctualityBonus] = useState(
+    attendanceDefaults.defaultPunctualityBonus
+  );
   const [newOpenImmediately, setNewOpenImmediately] = useState(true);
 
   useEffect(() => {
@@ -127,11 +141,12 @@ export function AttendanceManagerView({
 
   useEffect(() => {
     if (!liveCheckinSession?.checkinOpen) return;
+    const rotationMs = Math.max(15, attendanceDefaults.qrRotationSeconds) * 1000;
     const interval = setInterval(async () => {
       try {
         const res = await rotateSessionCheckinCodeAction(
           liveCheckinSession.id,
-          30
+          attendanceDefaults.defaultCheckinWindowMinutes
         );
         if (res.ok && res.checkinCode) {
           setLiveCheckinSession((prev) =>
@@ -148,9 +163,14 @@ export function AttendanceManagerView({
       } catch {
         // Keep current code visible if rotation request transiently fails
       }
-    }, 60_000);
+    }, rotationMs);
     return () => clearInterval(interval);
-  }, [liveCheckinSession?.id, liveCheckinSession?.checkinOpen]);
+  }, [
+    liveCheckinSession?.id,
+    liveCheckinSession?.checkinOpen,
+    attendanceDefaults.qrRotationSeconds,
+    attendanceDefaults.defaultCheckinWindowMinutes,
+  ]);
 
   const isCommitteeScoped =
     currentUserRole === "committee_head" || currentUserRole === "hr_member";

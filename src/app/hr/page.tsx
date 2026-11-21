@@ -80,7 +80,10 @@ export default async function HrOverviewPage() {
             )
           ),
         db
-          .select({ id: schema.committees.id })
+          .select({
+            id: schema.committees.id,
+            trackId: schema.committees.trackId,
+          })
           .from(schema.committees)
           .where(
             and(
@@ -154,29 +157,65 @@ export default async function HrOverviewPage() {
 
       const isCommitteeScoped =
         profile.role === "committee_head" || profile.role === "hr_member";
+      const isTrackDirector =
+        profile.role === "director" && Boolean(profile.managedTrackId);
+      const directorTrackCommitteeIds = isTrackDirector
+        ? new Set(
+            dbCommittees
+              .filter((c) => c.trackId === profile.managedTrackId)
+              .map((c) => c.id)
+          )
+        : null;
+
       const scopedMembers = isCommitteeScoped
         ? dbMembers.filter((m) => m.committeeId === profile.committeeId)
-        : dbMembers;
+        : directorTrackCommitteeIds
+          ? dbMembers.filter(
+              (m) =>
+                m.committeeId !== null &&
+                directorTrackCommitteeIds.has(m.committeeId)
+            )
+          : dbMembers;
       const scopedMemberIds = new Set(scopedMembers.map((m) => m.id));
 
       const scopedTasks = isCommitteeScoped
         ? dbTasks.filter((t) => t.committeeId === profile.committeeId)
-        : dbTasks;
+        : directorTrackCommitteeIds
+          ? dbTasks.filter(
+              (t) =>
+                t.committeeId !== null &&
+                directorTrackCommitteeIds.has(t.committeeId)
+            )
+          : dbTasks;
       const scopedSubmissions = isCommitteeScoped
         ? dbAllTaskSubmissions.filter(
             (s) => s.committeeId === profile.committeeId
           )
-        : dbAllTaskSubmissions;
+        : directorTrackCommitteeIds
+          ? dbAllTaskSubmissions.filter(
+              (s) =>
+                s.committeeId !== null &&
+                directorTrackCommitteeIds.has(s.committeeId)
+            )
+          : dbAllTaskSubmissions;
       const scopedSessions = isCommitteeScoped
         ? dbSessions.filter((s) => s.committeeId === profile.committeeId)
-        : dbSessions;
+        : directorTrackCommitteeIds
+          ? dbSessions.filter(
+              (s) =>
+                s.committeeId !== null &&
+                directorTrackCommitteeIds.has(s.committeeId)
+            )
+          : dbSessions;
 
       const totalScopedPoints = dbLedger
         .filter((l) => scopedMemberIds.has(l.membershipId))
         .reduce((sum, l) => sum + l.points, 0);
 
       kpis.activeMembers = scopedMembers.length;
-      kpis.committeeCount = dbCommittees.length;
+      kpis.committeeCount = directorTrackCommitteeIds
+        ? directorTrackCommitteeIds.size
+        : dbCommittees.length;
       kpis.hrOfficers = dbMembers.filter(
         (m) => m.role === "hr_member" || m.role === "hr_admin"
       ).length;
@@ -199,7 +238,10 @@ export default async function HrOverviewPage() {
     <RoleOperationalDashboard
       currentUserRole={profile.role}
       userName={profile.fullName}
-      committeeName={profile.committeeName}
+      committeeName={
+        profile.committeeName ??
+        (profile.managedTrackName ? `${profile.managedTrackName} Track` : undefined)
+      }
       assignedTasks={assignedTasks}
       kpis={kpis}
     />

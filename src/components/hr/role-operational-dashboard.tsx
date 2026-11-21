@@ -347,7 +347,7 @@ export function RoleOperationalDashboard({
                   Committees & Rubrics Review
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Review technical and non-technical tracks and scoring rubrics for the active season.
+                  Review Technical, Creative, Operations, and custom committee tracks along with scoring rubrics for the active season.
                 </p>
                 <Link
                   href="/hr/committees"

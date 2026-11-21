@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { FolderPlus, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Check,
+  FolderPlus,
+  Layers,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,12 +24,25 @@ import {
 } from "@/components/ui/table";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import { canManageCommittees, canManageRubrics } from "@/lib/permissions";
+import {
+  DEFAULT_COMMITTEE_TRACKS,
+  inferDefaultTrackSlug,
+} from "@/lib/season-settings";
+
+export interface CommitteeTrackItem {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  directorNames?: string[];
+}
 
 export interface CommitteeViewItem {
   id: string;
   name: string;
   slug: string;
   category: "technical" | "non_technical";
+  trackId?: string | null;
   isActive: boolean;
   memberCount: number;
 }
@@ -35,14 +56,35 @@ export interface RubricViewItem {
 }
 
 interface CommitteesRubricsViewProps {
+  tracks?: CommitteeTrackItem[];
   committees: CommitteeViewItem[];
   rubrics: RubricViewItem[];
   currentUserRole?: MembershipRole;
+  scopedTrackName?: string | null;
+  onAddTrack?: (data: {
+    name: string;
+    description?: string;
+  }) => Promise<{ ok: boolean; trackId?: string; slug?: string; error?: string } | void>;
+  onRenameTrack?: (data: {
+    trackId: string;
+    name: string;
+    description?: string;
+  }) => Promise<{ ok: boolean; error?: string } | void>;
+  onDeleteTrack?: (
+    trackId: string
+  ) => Promise<{ ok: boolean; error?: string } | void>;
+  onAssignCommitteeTrack?: (
+    committeeId: string,
+    trackId: string
+  ) => Promise<{ ok: boolean; error?: string } | void>;
   onAddCommittee?: (data: {
     name: string;
+    trackId?: string | null;
     category: "technical" | "non_technical";
     slug?: string;
-  }) => Promise<{ ok: boolean; committeeId?: string; slug?: string; error?: string } | void>;
+  }) => Promise<
+    { ok: boolean; committeeId?: string; slug?: string; error?: string } | void
+  >;
   onRemoveCommittee?: (
     committeeId: string
   ) => Promise<{ ok: boolean; error?: string } | void>;
@@ -57,32 +99,86 @@ interface CommitteesRubricsViewProps {
   ) => Promise<{ ok: boolean; error?: string } | void>;
 }
 
+const TRACK_ACCENTS = [
+  { heading: "text-[#007377]", badge: "bg-[#ebf3f8] text-[#002855]" },
+  { heading: "text-[#772583]", badge: "bg-[#f5edf7] text-[#5a1b63]" },
+  { heading: "text-[#00629b]", badge: "bg-[#e6f2f8] text-[#004b78]" },
+  { heading: "text-[#002855]", badge: "bg-[#eef1f6] text-[#002855]" },
+];
+
+function buildFallbackTracks(): CommitteeTrackItem[] {
+  return DEFAULT_COMMITTEE_TRACKS.map((t) => ({
+    id: t.slug,
+    name: t.name,
+    slug: t.slug,
+    description: t.description,
+    directorNames: [],
+  }));
+}
+
 export function CommitteesRubricsView({
+  tracks: initialTracks,
   committees: initialCommittees,
   rubrics: initialRubrics,
   currentUserRole = "master_admin",
+  scopedTrackName = null,
+  onAddTrack,
+  onRenameTrack,
+  onDeleteTrack,
+  onAssignCommitteeTrack,
   onAddCommittee,
   onRemoveCommittee,
   onAddRubric,
   onRemoveRubric,
 }: CommitteesRubricsViewProps) {
-  const [committees, setCommittees] = useState(initialCommittees);
+  const [tracks, setTracks] = useState<CommitteeTrackItem[]>(() =>
+    initialTracks && initialTracks.length > 0
+      ? initialTracks
+      : buildFallbackTracks()
+  );
+  const [committees, setCommittees] = useState<CommitteeViewItem[]>(() => {
+    const baseTracks =
+      initialTracks && initialTracks.length > 0
+        ? initialTracks
+        : buildFallbackTracks();
+    const bySlug = new Map(baseTracks.map((t) => [t.slug, t.id]));
+    const fallbackTrackId = baseTracks[0]?.id ?? null;
+    return initialCommittees.map((c) => ({
+      ...c,
+      trackId:
+        c.trackId ?? bySlug.get(inferDefaultTrackSlug(c)) ?? fallbackTrackId,
+    }));
+  });
   const [rubrics, setRubrics] = useState(initialRubrics);
   const [activeTab, setActiveTab] = useState<"committees" | "rubrics">(
     "committees"
   );
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Add Track Modal state
+  const [trackModalOpen, setTrackModalOpen] = useState(false);
+  const [newTrackTitle, setNewTrackTitle] = useState("");
+  const [newTrackDesc, setNewTrackDesc] = useState("");
+  const [trackModalError, setTrackModalError] = useState("");
+  const [isAddingTrack, setIsAddingTrack] = useState(false);
+
+  // Inline Rename Track state
+  const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
+  const [editTrackTitle, setEditTrackTitle] = useState("");
+  const [editTrackDesc, setEditTrackDesc] = useState("");
+  const [savingTrackId, setSavingTrackId] = useState<string | null>(null);
+
   // Add Committee Modal state
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [commName, setCommName] = useState("");
-  const [commCategory, setCommCategory] = useState<
-    "technical" | "non_technical"
-  >("technical");
+  const [commTrackId, setCommTrackId] = useState<string>(
+    () => tracks[0]?.id ?? ""
+  );
   const [commSlug, setCommSlug] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState("");
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [movingCommId, setMovingCommId] = useState<string | null>(null);
 
   // Add Rubric Modal state
   const [rubricModalOpen, setRubricModalOpen] = useState(false);
@@ -102,11 +198,200 @@ export function CommitteesRubricsView({
       if (e.key === "Escape") {
         setAddModalOpen(false);
         setRubricModalOpen(false);
+        setTrackModalOpen(false);
+        setEditingTrackId(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  const committeesByTrack = useMemo(() => {
+    const map = new Map<string, CommitteeViewItem[]>();
+    for (const t of tracks) {
+      map.set(t.id, []);
+    }
+    const fallbackId = tracks[0]?.id;
+    for (const c of committees) {
+      const targetId =
+        c.trackId && map.has(c.trackId) ? c.trackId : fallbackId;
+      if (targetId) {
+        map.get(targetId)!.push(c);
+      }
+    }
+    return map;
+  }, [tracks, committees]);
+
+  const handleAddTrackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTrackTitle.trim()) {
+      setTrackModalError("Track title is required.");
+      return;
+    }
+    setIsAddingTrack(true);
+    setTrackModalError("");
+    try {
+      let createdId = `trk-${Date.now()}`;
+      let createdSlug = newTrackTitle
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
+
+      if (onAddTrack) {
+        const res = await onAddTrack({
+          name: newTrackTitle.trim(),
+          description: newTrackDesc.trim() || undefined,
+        });
+        if (res && !res.ok) {
+          setTrackModalError(res.error ?? "Failed to create committee track.");
+          return;
+        }
+        if (res && res.trackId) createdId = res.trackId;
+        if (res && res.slug) createdSlug = res.slug;
+      }
+
+      setTracks((prev) => [
+        ...prev,
+        {
+          id: createdId,
+          name: newTrackTitle.trim(),
+          slug: createdSlug,
+          description: newTrackDesc.trim() || null,
+          directorNames: [],
+        },
+      ]);
+      setTrackModalOpen(false);
+      setNewTrackTitle("");
+      setNewTrackDesc("");
+    } catch (err: unknown) {
+      setTrackModalError(
+        err instanceof Error ? err.message : "Error creating committee track."
+      );
+    } finally {
+      setIsAddingTrack(false);
+    }
+  };
+
+  const handleSaveRenameTrack = async (trackId: string) => {
+    if (!editTrackTitle.trim()) {
+      setActionError("Track title cannot be empty.");
+      return;
+    }
+    setSavingTrackId(trackId);
+    setActionError(null);
+    try {
+      if (onRenameTrack) {
+        const res = await onRenameTrack({
+          trackId,
+          name: editTrackTitle.trim(),
+          description: editTrackDesc.trim(),
+        });
+        if (res && !res.ok) {
+          setActionError(res.error ?? "Failed to rename track.");
+          return;
+        }
+      }
+      setTracks((prev) =>
+        prev.map((t) =>
+          t.id === trackId
+            ? {
+                ...t,
+                name: editTrackTitle.trim(),
+                description: editTrackDesc.trim() || null,
+              }
+            : t
+        )
+      );
+      setEditingTrackId(null);
+    } catch (err: unknown) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to rename track."
+      );
+    } finally {
+      setSavingTrackId(null);
+    }
+  };
+
+  const handleDeleteTrack = async (track: CommitteeTrackItem) => {
+    const count = committeesByTrack.get(track.id)?.length ?? 0;
+    if (count > 0) {
+      setActionError(
+        `Move or remove the ${count} committee(s) in "${track.name}" before deleting this track.`
+      );
+      return;
+    }
+    if (!window.confirm(`Delete the "${track.name}" committee track?`)) {
+      return;
+    }
+    setSavingTrackId(track.id);
+    setActionError(null);
+    try {
+      if (onDeleteTrack) {
+        const res = await onDeleteTrack(track.id);
+        if (res && !res.ok) {
+          setActionError(res.error ?? "Failed to delete track.");
+          return;
+        }
+      }
+      setTracks((prev) => prev.filter((t) => t.id !== track.id));
+    } catch (err: unknown) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to delete track."
+      );
+    } finally {
+      setSavingTrackId(null);
+    }
+  };
+
+  const handleMoveCommitteeTrack = async (
+    comm: CommitteeViewItem,
+    newTrackId: string
+  ) => {
+    if (!newTrackId || newTrackId === comm.trackId) return;
+    const previousTrackId = comm.trackId;
+    const targetTrack = tracks.find((t) => t.id === newTrackId);
+    setMovingCommId(comm.id);
+    setActionError(null);
+    setCommittees((prev) =>
+      prev.map((c) =>
+        c.id === comm.id
+          ? {
+              ...c,
+              trackId: newTrackId,
+              category:
+                targetTrack?.slug === "technical"
+                  ? "technical"
+                  : "non_technical",
+            }
+          : c
+      )
+    );
+    try {
+      if (onAssignCommitteeTrack) {
+        const res = await onAssignCommitteeTrack(comm.id, newTrackId);
+        if (res && !res.ok) {
+          setCommittees((prev) =>
+            prev.map((c) =>
+              c.id === comm.id ? { ...c, trackId: previousTrackId } : c
+            )
+          );
+          setActionError(res.error ?? "Failed to reassign committee track.");
+        }
+      }
+    } catch (err: unknown) {
+      setCommittees((prev) =>
+        prev.map((c) =>
+          c.id === comm.id ? { ...c, trackId: previousTrackId } : c
+        )
+      );
+      setActionError(
+        err instanceof Error ? err.message : "Failed to reassign track."
+      );
+    } finally {
+      setMovingCommId(null);
+    }
+  };
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,13 +410,19 @@ export function CommitteesRubricsView({
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/(^-|-$)/g, "");
 
+      const selectedTrack =
+        tracks.find((t) => t.id === commTrackId) ?? tracks[0];
+      const derivedCategory: "technical" | "non_technical" =
+        selectedTrack?.slug === "technical" ? "technical" : "non_technical";
+
       let createdId = `comm-${Date.now()}`;
       let createdSlug = slug;
 
       if (onAddCommittee) {
         const res = await onAddCommittee({
           name: commName.trim(),
-          category: commCategory,
+          trackId: selectedTrack?.id ?? null,
+          category: derivedCategory,
           slug,
         });
         if (res && !res.ok) {
@@ -146,7 +437,8 @@ export function CommitteesRubricsView({
         id: createdId,
         name: commName.trim(),
         slug: createdSlug,
-        category: commCategory,
+        category: derivedCategory,
+        trackId: selectedTrack?.id ?? null,
         isActive: true,
         memberCount: 0,
       };
@@ -155,7 +447,7 @@ export function CommitteesRubricsView({
       setAddModalOpen(false);
       setCommName("");
       setCommSlug("");
-      setCommCategory("technical");
+      setCommTrackId(tracks[0]?.id ?? "");
     } catch (err: unknown) {
       setAddError(
         err instanceof Error ? err.message : "Error adding committee."
@@ -266,13 +558,6 @@ export function CommitteesRubricsView({
     }
   };
 
-  const technicalCommittees = committees.filter(
-    (c) => c.category === "technical"
-  );
-  const nonTechnicalCommittees = committees.filter(
-    (c) => c.category === "non_technical"
-  );
-
   return (
     <div className="space-y-8">
       {actionError && (
@@ -284,29 +569,53 @@ export function CommitteesRubricsView({
         </div>
       )}
 
+      {scopedTrackName && (
+        <div className="rounded-lg border border-[#772583]/25 bg-[#f5edf7] p-3 text-xs text-[#5a1b63]">
+          <strong>Director Track Scope:</strong> Showing committees in your
+          assigned <strong>{scopedTrackName}</strong> track.
+        </div>
+      )}
+
       <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
-            Committees & Scoring Rubrics
+            Committees, Tracks & Rubrics
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Configure chapter tracks, committee slugs, and seasonal grading weights for the active season.
+            Organize committees into editable tracks (Technical, Creative,
+            Operations, or custom sets). Directors assigned to a track
+            automatically oversee all committees inside it.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {isMaster && activeTab === "committees" && (
-            <Button
-              type="button"
-              onClick={() => {
-                setAddError("");
-                setAddModalOpen(true);
-              }}
-              className="h-9 gap-1.5 bg-[#002855] px-3.5 text-xs font-semibold text-white hover:bg-[#001c3d]"
-            >
-              <FolderPlus className="h-4 w-4" aria-hidden="true" />
-              <span>Add Committee</span>
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setTrackModalError("");
+                  setTrackModalOpen(true);
+                }}
+                className="h-9 gap-1.5 border-border px-3.5 text-xs font-semibold text-[#002855] hover:bg-[#ebf3f8]"
+              >
+                <Layers className="h-4 w-4" aria-hidden="true" />
+                <span>New Track</span>
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setAddError("");
+                  setCommTrackId(tracks[0]?.id ?? "");
+                  setAddModalOpen(true);
+                }}
+                className="h-9 gap-1.5 bg-[#002855] px-3.5 text-xs font-semibold text-white hover:bg-[#001c3d]"
+              >
+                <FolderPlus className="h-4 w-4" aria-hidden="true" />
+                <span>Add Committee</span>
+              </Button>
+            </>
           )}
           <div className="flex items-center gap-2 rounded-lg border border-border bg-white p-1">
             <button
@@ -353,99 +662,203 @@ export function CommitteesRubricsView({
 
       {activeTab === "committees" ? (
         <div className="space-y-8">
-          <div className="space-y-3">
-            <h2 className="font-heading text-sm font-bold tracking-wide text-[#007377] uppercase">
-              Technical Committees ({technicalCommittees.length})
-            </h2>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {technicalCommittees.map((comm) => (
-                <Card key={comm.id} className="border-border bg-white shadow-xs">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <Badge className="bg-[#ebf3f8] text-[#002855] font-semibold text-[11px]">
-                        Technical
-                      </Badge>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-[#1e6b0a]">
-                          Active
-                        </span>
-                        {isMaster && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemove(comm)}
-                            disabled={removingId === comm.id}
-                            aria-label={`Remove committee ${comm.name}`}
-                            className="h-6 w-6 text-muted-foreground hover:bg-[#ba0c2f]/10 hover:text-[#ba0c2f]"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    <CardTitle className="mt-2 font-heading text-base font-bold text-[#002855]">
-                      {comm.name}
-                    </CardTitle>
-                    <code className="text-[11px] text-muted-foreground">
-                      /{comm.slug}
-                    </code>
-                  </CardHeader>
-                  <CardContent className="pt-2 text-xs text-muted-foreground">
-                    <strong className="text-foreground">{comm.memberCount}</strong>{" "}
-                    members enrolled
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
+          {tracks.map((track, idx) => {
+            const trackComms = committeesByTrack.get(track.id) ?? [];
+            const accent = TRACK_ACCENTS[idx % TRACK_ACCENTS.length];
+            const isEditing = editingTrackId === track.id;
 
-          <div className="space-y-3">
-            <h2 className="font-heading text-sm font-bold tracking-wide text-[#00629b] uppercase">
-              Non-Technical Committees ({nonTechnicalCommittees.length})
-            </h2>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {nonTechnicalCommittees.map((comm) => (
-                <Card key={comm.id} className="border-border bg-white shadow-xs">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <Badge className="bg-[#f5edf7] text-[#5a1b63] font-semibold text-[11px]">
-                        Non-Technical
-                      </Badge>
+            return (
+              <section key={track.id} className="space-y-3">
+                <div className="flex flex-col gap-2 border-b border-border/70 pb-2.5 sm:flex-row sm:items-center sm:justify-between">
+                  {isEditing ? (
+                    <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+                      <Input
+                        aria-label={`Track title for ${track.name}`}
+                        value={editTrackTitle}
+                        onChange={(e) => setEditTrackTitle(e.target.value)}
+                        className="h-8 text-xs font-semibold sm:w-52"
+                      />
+                      <Input
+                        aria-label={`Track description for ${track.name}`}
+                        value={editTrackDesc}
+                        onChange={(e) => setEditTrackDesc(e.target.value)}
+                        placeholder="Short description..."
+                        className="h-8 flex-1 text-xs"
+                      />
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-[#1e6b0a]">
-                          Active
-                        </span>
-                        {isMaster && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemove(comm)}
-                            disabled={removingId === comm.id}
-                            aria-label={`Remove committee ${comm.name}`}
-                            className="h-6 w-6 text-muted-foreground hover:bg-[#ba0c2f]/10 hover:text-[#ba0c2f]"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          </Button>
-                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={savingTrackId === track.id}
+                          onClick={() => handleSaveRenameTrack(track.id)}
+                          className="h-8 gap-1 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
+                        >
+                          <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                          <span>Save Track Title</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setEditingTrackId(null)}
+                          className="h-8 text-xs"
+                        >
+                          Cancel
+                        </Button>
                       </div>
                     </div>
-                    <CardTitle className="mt-2 font-heading text-base font-bold text-[#002855]">
-                      {comm.name}
-                    </CardTitle>
-                    <code className="text-[11px] text-muted-foreground">
-                      /{comm.slug}
-                    </code>
-                  </CardHeader>
-                  <CardContent className="pt-2 text-xs text-muted-foreground">
-                    <strong className="text-foreground">{comm.memberCount}</strong>{" "}
-                    members enrolled
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
+                  ) : (
+                    <>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2
+                            className={`font-heading text-sm font-bold tracking-wide uppercase ${accent.heading}`}
+                          >
+                            {track.name} ({trackComms.length})
+                          </h2>
+                          {track.directorNames &&
+                          track.directorNames.length > 0 ? (
+                            track.directorNames.map((dir) => (
+                              <Badge
+                                key={dir}
+                                className="bg-[#f5edf7] text-[#5a1b63] text-[11px] font-semibold"
+                              >
+                                Director: {dir}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">
+                              No director assigned
+                            </span>
+                          )}
+                        </div>
+                        {track.description && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {track.description}
+                          </p>
+                        )}
+                      </div>
+
+                      {isMaster && (
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            aria-label={`Rename track ${track.name}`}
+                            onClick={() => {
+                              setEditingTrackId(track.id);
+                              setEditTrackTitle(track.name);
+                              setEditTrackDesc(track.description ?? "");
+                              setActionError(null);
+                            }}
+                            className="h-7 gap-1 px-2.5 text-[11px] font-semibold text-[#002855]"
+                          >
+                            <Pencil className="h-3 w-3" aria-hidden="true" />
+                            <span>Rename</span>
+                          </Button>
+                          {trackComms.length === 0 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Delete track ${track.name}`}
+                              disabled={savingTrackId === track.id}
+                              onClick={() => handleDeleteTrack(track)}
+                              className="h-7 w-7 text-muted-foreground hover:bg-[#ba0c2f]/10 hover:text-[#ba0c2f]"
+                            >
+                              <Trash2
+                                className="h-3.5 w-3.5"
+                                aria-hidden="true"
+                              />
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {trackComms.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border bg-[#f8f9fb] px-4 py-5 text-xs text-muted-foreground">
+                    No committees in <strong>{track.name}</strong> yet. Add a
+                    committee or move an existing one here.
+                  </div>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {trackComms.map((comm) => (
+                      <Card
+                        key={comm.id}
+                        className="border-border bg-white shadow-xs"
+                      >
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <Badge
+                              className={`${accent.badge} font-semibold text-[11px]`}
+                            >
+                              {track.name}
+                            </Badge>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-semibold text-[#1e6b0a]">
+                                Active
+                              </span>
+                              {isMaster && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRemove(comm)}
+                                  disabled={removingId === comm.id}
+                                  aria-label={`Remove committee ${comm.name}`}
+                                  className="h-6 w-6 text-muted-foreground hover:bg-[#ba0c2f]/10 hover:text-[#ba0c2f]"
+                                >
+                                  <Trash2
+                                    className="h-3.5 w-3.5"
+                                    aria-hidden="true"
+                                  />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          <CardTitle className="mt-2 font-heading text-base font-bold text-[#002855]">
+                            {comm.name}
+                          </CardTitle>
+                          <code className="text-[11px] text-muted-foreground">
+                            /{comm.slug}
+                          </code>
+                        </CardHeader>
+                        <CardContent className="flex items-center justify-between gap-2 pt-2 text-xs text-muted-foreground">
+                          <span>
+                            <strong className="text-foreground tabular-nums">
+                              {comm.memberCount}
+                            </strong>{" "}
+                            members enrolled
+                          </span>
+                          {isMaster && tracks.length > 1 && (
+                            <select
+                              aria-label={`Assign track for ${comm.name}`}
+                              value={comm.trackId ?? track.id}
+                              disabled={movingCommId === comm.id}
+                              onChange={(e) =>
+                                handleMoveCommitteeTrack(comm, e.target.value)
+                              }
+                              className="h-7 max-w-[140px] rounded border border-border bg-white px-2 text-[11px] font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                            >
+                              {tracks.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       ) : (
         <Card className="border-border bg-white shadow-xs">
@@ -454,7 +867,8 @@ export function CommitteesRubricsView({
               Active Seasonal Evaluation Rubrics
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Rubrics configure seasonal grading parameters. Point weights and maximums are derived deterministically.
+              Rubrics configure seasonal grading parameters. Point weights and
+              maximums are derived deterministically.
             </p>
           </CardHeader>
           <CardContent className="p-0">
@@ -489,7 +903,10 @@ export function CommitteesRubricsView({
                             onClick={() => handleRemoveRubric(r)}
                             className="rounded p-1 text-muted-foreground hover:bg-[#ba0c2f]/10 hover:text-[#ba0c2f]"
                           >
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                            <Trash2
+                              className="h-3.5 w-3.5"
+                              aria-hidden="true"
+                            />
                           </button>
                         )}
                       </div>
@@ -529,6 +946,109 @@ export function CommitteesRubricsView({
         </Card>
       )}
 
+      {/* Add Committee Track Modal */}
+      {trackModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Create Committee Track"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setTrackModalOpen(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+        >
+          <div className="relative w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl">
+            <button
+              type="button"
+              aria-label="Close new track modal"
+              onClick={() => setTrackModalOpen(false)}
+              className="absolute right-4 top-4 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </button>
+
+            <div className="flex items-center gap-3 text-[#772583]">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#f5edf7]">
+                <Layers className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div>
+                <h2 className="font-heading text-lg font-bold text-[#002855]">
+                  New Committee Track
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Create a new committee set that Directors can oversee.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleAddTrackSubmit} className="mt-5 space-y-4">
+              {trackModalError && (
+                <div
+                  role="alert"
+                  className="rounded-md bg-[#ba0c2f]/10 p-2.5 text-xs font-semibold text-[#ba0c2f]"
+                >
+                  {trackModalError}
+                </div>
+              )}
+
+              <div>
+                <label
+                  htmlFor="new-track-title"
+                  className="block text-xs font-semibold text-foreground/85"
+                >
+                  Track Title
+                </label>
+                <Input
+                  id="new-track-title"
+                  type="text"
+                  required
+                  placeholder="e.g. Biomedical Outreach"
+                  value={newTrackTitle}
+                  onChange={(e) => setNewTrackTitle(e.target.value)}
+                  className="mt-1 h-9 text-xs"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="new-track-desc"
+                  className="block text-xs font-semibold text-foreground/85"
+                >
+                  Description (Optional)
+                </label>
+                <Input
+                  id="new-track-desc"
+                  type="text"
+                  placeholder="e.g. Community engagement, workshops, and partnerships"
+                  value={newTrackDesc}
+                  onChange={(e) => setNewTrackDesc(e.target.value)}
+                  className="mt-1 h-9 text-xs"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-border pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setTrackModalOpen(false)}
+                  className="h-9 text-xs font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isAddingTrack}
+                  className="h-9 gap-1.5 bg-[#772583] px-4 text-xs font-bold text-white hover:bg-[#5a1b63]"
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{isAddingTrack ? "Creating..." : "Create Track"}</span>
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Add Committee Modal */}
       {addModalOpen && (
         <div
@@ -552,14 +1072,18 @@ export function CommitteesRubricsView({
 
             <div className="flex items-center gap-3 text-[#002855]">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#ebf3f8]">
-                <FolderPlus className="h-5 w-5 text-[#002855]" aria-hidden="true" />
+                <FolderPlus
+                  className="h-5 w-5 text-[#002855]"
+                  aria-hidden="true"
+                />
               </div>
               <div>
                 <h2 className="font-heading text-lg font-bold text-[#002855]">
                   Add New Committee
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Create a chapter committee for the active season.
+                  Create a chapter committee inside one of this season&apos;s
+                  tracks.
                 </p>
               </div>
             </div>
@@ -594,23 +1118,22 @@ export function CommitteesRubricsView({
 
               <div>
                 <label
-                  htmlFor="comm-category-select"
+                  htmlFor="comm-track-select"
                   className="block text-xs font-semibold text-foreground/85"
                 >
-                  Track Category
+                  Committee Track
                 </label>
                 <select
-                  id="comm-category-select"
-                  value={commCategory}
-                  onChange={(e) =>
-                    setCommCategory(
-                      e.target.value as "technical" | "non_technical"
-                    )
-                  }
+                  id="comm-track-select"
+                  value={commTrackId}
+                  onChange={(e) => setCommTrackId(e.target.value)}
                   className="mt-1 h-9 w-full rounded-md border border-border bg-white px-2 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                 >
-                  <option value="technical">Technical Track</option>
-                  <option value="non_technical">Non-Technical Track</option>
+                  {tracks.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -631,7 +1154,7 @@ export function CommitteesRubricsView({
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <div className="flex items-center justify-end gap-2 border-t border-border pt-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -762,7 +1285,7 @@ export function CommitteesRubricsView({
                 <span>Leaders only (Committee Heads & Officers)</span>
               </label>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <div className="flex items-center justify-end gap-2 border-t border-border pt-2">
                 <Button
                   type="button"
                   variant="outline"

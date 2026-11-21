@@ -5,6 +5,11 @@ import {
   type EligibleAssignee,
 } from "@/components/hr/task-delegation-view";
 import { requireHrModule } from "@/lib/portal-guards";
+import {
+  DEFAULT_SEASON_SETTINGS,
+  normalizeSeasonSettings,
+  type SeasonGradingSettings,
+} from "@/lib/season-settings";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
@@ -15,6 +20,7 @@ export default async function HrTasksPage() {
   let eligibleMembers: EligibleAssignee[] = [];
   let dbCommitteesList: Array<{ id: string; name: string }> = [];
   let assignedToMe: AssignedTaskItem[] = [];
+  let gradingWeights: SeasonGradingSettings = DEFAULT_SEASON_SETTINGS.grading;
 
   type BulkTask = {
     id: string;
@@ -37,6 +43,8 @@ export default async function HrTasksPage() {
 
   const isCommitteeScoped =
     profile.role === "committee_head" || profile.role === "hr_member";
+  const isTrackDirector =
+    profile.role === "director" && Boolean(profile.managedTrackId);
 
   try {
     const [activeSeason] = await db
@@ -47,6 +55,8 @@ export default async function HrTasksPage() {
 
     if (activeSeason) {
       const seasonId = activeSeason.id;
+      const seasonSettings = normalizeSeasonSettings(activeSeason.settingsJson);
+      gradingWeights = seasonSettings.grading;
 
       const memberFilter =
         isCommitteeScoped && profile.committeeId
@@ -112,13 +122,33 @@ export default async function HrTasksPage() {
         ]);
 
       const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
+      const directorTrackCommitteeIds = isTrackDirector
+        ? new Set(
+            dbCommittees
+              .filter((c) => c.trackId === profile.managedTrackId)
+              .map((c) => c.id)
+          )
+        : null;
+
       dbCommitteesList = isCommitteeScoped
         ? dbCommittees
             .filter((c) => c.id === profile.committeeId)
             .map((c) => ({ id: c.id, name: c.name }))
-        : dbCommittees.map((c) => ({ id: c.id, name: c.name }));
+        : directorTrackCommitteeIds
+          ? dbCommittees
+              .filter((c) => directorTrackCommitteeIds.has(c.id))
+              .map((c) => ({ id: c.id, name: c.name }))
+          : dbCommittees.map((c) => ({ id: c.id, name: c.name }));
 
-      eligibleMembers = dbMembers.map((m) => ({
+      const scopedMembers = directorTrackCommitteeIds
+        ? dbMembers.filter(
+            (m) =>
+              m.committeeId !== null &&
+              directorTrackCommitteeIds.has(m.committeeId)
+          )
+        : dbMembers;
+
+      eligibleMembers = scopedMembers.map((m) => ({
         id: m.id,
         fullName: m.fullName,
         role: m.role,
@@ -159,6 +189,13 @@ export default async function HrTasksPage() {
 
         const subsByTask = new Map<string, BulkSubmission[]>();
         for (const { sub, member } of allSubs) {
+          if (
+            directorTrackCommitteeIds &&
+            (!member.committeeId ||
+              !directorTrackCommitteeIds.has(member.committeeId))
+          ) {
+            continue;
+          }
           const list = subsByTask.get(sub.taskId) ?? [];
           list.push({
             submissionId: sub.id,
@@ -173,7 +210,16 @@ export default async function HrTasksPage() {
           subsByTask.set(sub.taskId, list);
         }
 
-        for (const t of dbTasks) {
+        const visibleTasks = directorTrackCommitteeIds
+          ? dbTasks.filter(
+              (t) =>
+                (t.committeeId !== null &&
+                  directorTrackCommitteeIds.has(t.committeeId)) ||
+                (subsByTask.get(t.id)?.length ?? 0) > 0
+            )
+          : dbTasks;
+
+        for (const t of visibleTasks) {
           bulkTasks.push({
             task: {
               id: t.id,
@@ -199,6 +245,7 @@ export default async function HrTasksPage() {
         currentUserRole={profile.role}
         currentUserId={profile.id}
         currentUserCommitteeId={profile.committeeId}
+        defaultMaxPoints={gradingWeights.defaultMaxPoints}
         assignedToMe={assignedToMe}
         eligibleMembers={eligibleMembers}
         committees={dbCommitteesList}
@@ -211,6 +258,7 @@ export default async function HrTasksPage() {
               key={task.id}
               task={task}
               submissions={submissions}
+              gradingWeights={gradingWeights}
               onGrade={gradeTaskSubmissionAction}
             />
           ))}

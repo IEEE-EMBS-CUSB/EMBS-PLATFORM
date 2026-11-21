@@ -8,9 +8,37 @@ export interface HrActor {
     id: string;
     role: MembershipRole;
     committeeId: string | null;
+    managedTrackId?: string | null;
     email?: string;
     fullName?: string;
   };
+}
+
+/**
+ * Returns the set of committee IDs overseen by a Track Director (`director` with `managedTrackId`).
+ * Returns `null` when the actor is not track-scoped (e.g. chapter-wide Executive Director).
+ */
+export async function getDirectorTrackCommitteeIds(
+  seasonId: string,
+  role: MembershipRole,
+  managedTrackId?: string | null
+): Promise<Set<string> | null> {
+  if (role !== "director" || !managedTrackId) {
+    return null;
+  }
+
+  const rows = await db
+    .select({ id: schema.committees.id })
+    .from(schema.committees)
+    .where(
+      and(
+        eq(schema.committees.seasonId, seasonId),
+        eq(schema.committees.trackId, managedTrackId),
+        eq(schema.committees.isActive, true)
+      )
+    );
+
+  return new Set(rows.map((r) => r.id));
 }
 
 export const MONTH_KEY_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
