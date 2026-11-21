@@ -63,7 +63,7 @@ describe("TaskDelegationView Component", () => {
     expect(screen.getByText(/Assigned by Director Khaled Mansour/i)).toBeInTheDocument();
   });
 
-  it("allows a Director to assign tasks to Committee Heads and HR Admins", async () => {
+  it("allows a Director to create assignments for Committee Heads and HR Admins without type toggle", async () => {
     const user = userEvent.setup();
     const handleCreateTask = vi.fn();
 
@@ -77,9 +77,10 @@ describe("TaskDelegationView Component", () => {
       />
     );
 
-    expect(screen.getByText(/Delegate Tasks to Heads/i)).toBeInTheDocument();
+    expect(screen.getByText(/Delegate Assignments to Heads/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^task$/i })).not.toBeInTheDocument();
 
-    const titleInput = screen.getByLabelText(/task title/i);
+    const titleInput = screen.getByLabelText(/assignment title/i);
     await user.type(titleInput, "Finalize Midterm Curriculum");
 
     const assigneeSelect = screen.getByLabelText(/assign to/i);
@@ -90,18 +91,20 @@ describe("TaskDelegationView Component", () => {
 
     await user.selectOptions(assigneeSelect, "m-head-1");
 
-    const submitBtn = screen.getByRole("button", { name: /assign task/i });
+    const submitBtn = screen.getByRole("button", { name: /create assignment/i });
     await user.click(submitBtn);
 
     expect(handleCreateTask).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Finalize Midterm Curriculum",
         assignedToMembershipId: "m-head-1",
+        workType: "assignment",
       })
     );
   });
 
-  it("allows an HR Admin to assign tasks to HR members", () => {
+  it("allows HR Admin and Master Admin to switch between Assignment and Task types", async () => {
+    const user = userEvent.setup();
     const handleCreateTask = vi.fn();
 
     render(
@@ -114,16 +117,63 @@ describe("TaskDelegationView Component", () => {
       />
     );
 
-    // HR Admin can receive tasks from Director
+    // HR Admin can receive assignments from Director
     expect(screen.getByText("Draft Q2 Committee Roadmap & Milestones")).toBeInTheDocument();
+
+    // HR Admin sees both Assignment and Task type buttons
+    const assignmentBtn = screen.getByRole("button", { name: /^assignment$/i });
+    const taskBtn = screen.getByRole("button", { name: /^task$/i });
+    expect(assignmentBtn).toBeInTheDocument();
+    expect(taskBtn).toBeInTheDocument();
 
     // HR Admin assigns to HR Member
     expect(screen.getByRole("option", { name: /Laila Amr \(HR Member\)/i })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Salma El-Sayed/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: /Omar Tarek \(Member\)/i })).not.toBeInTheDocument();
+
+    await user.click(assignmentBtn);
+    await user.type(screen.getByLabelText(/assignment title/i), "Audit Sheet Review");
+    await user.selectOptions(screen.getByLabelText(/assign to/i), "m-hr-mem");
+    await user.click(screen.getByRole("button", { name: /create assignment/i }));
+
+    expect(handleCreateTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Audit Sheet Review",
+        assignedToMembershipId: "m-hr-mem",
+        workType: "assignment",
+      })
+    );
   });
 
-  it("allows assigning tasks to a group (e.g. all heads across chapter)", async () => {
+  it("allows an HR Member to create committee tasks (locked to Task type)", async () => {
+    const user = userEvent.setup();
+    const handleCreateTask = vi.fn();
+
+    render(
+      <TaskDelegationView
+        currentUserRole="hr_member"
+        currentUserId="m-hr-mem"
+        currentUserCommitteeId="comm-ai"
+        assignedToMe={[]}
+        eligibleMembers={sampleMembers}
+        onCreateTask={handleCreateTask}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: /^assignment$/i })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/task title/i), "Submit Monthly Report");
+    await user.selectOptions(screen.getByLabelText(/assign to/i), "m-mem-1");
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+
+    expect(handleCreateTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Submit Monthly Report",
+        assignedToMembershipId: "m-mem-1",
+        workType: "task",
+      })
+    );
+  });
+
+  it("allows assigning group assignments (e.g. all heads across chapter)", async () => {
     const user = userEvent.setup();
     const handleCreateTask = vi.fn();
 
@@ -138,16 +188,16 @@ describe("TaskDelegationView Component", () => {
     );
 
     // Switch to Group mode
-    const groupTabBtn = screen.getByRole("button", { name: /group assignment/i });
+    const groupTabBtn = screen.getByRole("button", { name: /group/i });
     await user.click(groupTabBtn);
 
-    const titleInput = screen.getByLabelText(/task title/i);
+    const titleInput = screen.getByLabelText(/assignment title/i);
     await user.type(titleInput, "Quarterly OKR Planning");
 
     const groupSelect = screen.getByLabelText(/target group/i);
     await user.selectOptions(groupSelect, "all_heads");
 
-    const submitBtn = screen.getByRole("button", { name: /assign task/i });
+    const submitBtn = screen.getByRole("button", { name: /create group assignment/i });
     await user.click(submitBtn);
 
     expect(handleCreateTask).toHaveBeenCalledWith(
@@ -155,6 +205,7 @@ describe("TaskDelegationView Component", () => {
         title: "Quarterly OKR Planning",
         targetType: "group",
         targetGroup: "all_heads",
+        workType: "assignment",
       })
     );
   });

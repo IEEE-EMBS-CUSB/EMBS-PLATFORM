@@ -50,6 +50,13 @@
       "when": 1795128462276,
       "tag": "0006_smart_blade",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795292108688,
+      "tag": "0007_smiling_nighthawk",
+      "breakpoints": true
     }
   ]
 }

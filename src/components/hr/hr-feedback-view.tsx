@@ -146,9 +146,9 @@ export function HrFeedbackView({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#002855] sm:text-3xl">
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
             Feedback & Warnings
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -163,7 +163,7 @@ export function HrFeedbackView({
             setFormError(null);
             setIsModalOpen(true);
           }}
-          className="inline-flex items-center gap-2 bg-[#772583] text-white hover:bg-[#5a1b63]"
+          className="inline-flex h-10 shrink-0 items-center gap-2 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
           <span>{canCreateWarning ? "Add Note / Warning" : "Add Feedback"}</span>
@@ -193,7 +193,7 @@ export function HrFeedbackView({
               />
             </div>
 
-            <div className="flex items-center gap-1.5 rounded-lg border border-input p-1 bg-[#fafafa]">
+            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-input bg-[#fafafa] p-1">
               <button
                 type="button"
                 onClick={() => setActiveFilter("all")}

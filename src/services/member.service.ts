@@ -364,6 +364,7 @@ export async function getMemberTasks(memberId: string): Promise<MemberTask[]> {
           ? task.dueAt.toISOString().slice(0, 7)
           : new Date().toISOString().slice(0, 7)) as MonthKey,
         title: task.title,
+        workType: task.workType === "task" ? ("task" as const) : ("assignment" as const),
         status: submission.gradedAt
           ? ("completed" as const)
           : submission.submittedAt

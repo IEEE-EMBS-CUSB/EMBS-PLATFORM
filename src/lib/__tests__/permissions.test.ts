@@ -16,6 +16,8 @@ import {
   canAssignTaskToRole,
   canReceiveTasksFromRole,
   canAssignTask,
+  getAllowedWorkTypesForRole,
+  canCreateWorkType,
   type UserPermissionContext,
 } from "@/lib/permissions";
 
@@ -150,10 +152,11 @@ describe("RBAC Permissions Engine", () => {
       expect(canManageCommitteeSessions(headAiUser, commAi)).toBe(true);
       expect(canManageCommitteeSessions(headAiUser, commWeb)).toBe(false);
 
-      // Tasks
+      // Tasks / Assignments
       expect(canManageCommitteeTasks(headAiUser, commAi)).toBe(true);
       expect(canManageCommitteeTasks(headAiUser, commWeb)).toBe(false);
-      expect(canManageCommitteeTasks(hrMemberAiUser, commAi)).toBe(false);
+      expect(canManageCommitteeTasks(hrMemberAiUser, commAi)).toBe(true);
+      expect(canManageCommitteeTasks(hrMemberAiUser, commWeb)).toBe(false);
 
       // Feedback
       expect(canGiveFeedback(headAiUser, commAi)).toBe(true);
@@ -201,12 +204,12 @@ describe("RBAC Permissions Engine", () => {
       expect(canAccessHrModule("committee_head", "attendance")).toBe(true);
       expect(canAccessHrModule("director", "attendance")).toBe(false);
 
-      // Tasks module
+      // Tasks & Assignments module
       expect(canAccessHrModule("master_admin", "tasks")).toBe(true);
       expect(canAccessHrModule("director", "tasks")).toBe(true);
       expect(canAccessHrModule("hr_admin", "tasks")).toBe(true);
       expect(canAccessHrModule("committee_head", "tasks")).toBe(true);
-      expect(canAccessHrModule("hr_member", "tasks")).toBe(false);
+      expect(canAccessHrModule("hr_member", "tasks")).toBe(true);
 
       // Ledger / Bonus module
       expect(canAccessHrModule("director", "ledger")).toBe(true);
@@ -276,6 +279,36 @@ describe("RBAC Permissions Engine", () => {
       expect(canAssignTaskToRole("master_admin", "hr_admin")).toBe(true);
       expect(canAssignTaskToRole("master_admin", "hr_member")).toBe(true);
       expect(canAssignTaskToRole("master_admin", "member")).toBe(true);
+    });
+
+    it("enforces Assignments vs Tasks role rules (only master_admin and hr_admin can give both)", () => {
+      expect(getAllowedWorkTypesForRole("director")).toEqual(["assignment"]);
+      expect(getAllowedWorkTypesForRole("committee_head")).toEqual(["assignment"]);
+      expect(getAllowedWorkTypesForRole("hr_member")).toEqual(["task"]);
+      expect(getAllowedWorkTypesForRole("hr_admin")).toEqual(["assignment", "task"]);
+      expect(getAllowedWorkTypesForRole("master_admin")).toEqual(["assignment", "task"]);
+
+      expect(canCreateWorkType("director", "assignment")).toBe(true);
+      expect(canCreateWorkType("director", "task")).toBe(false);
+      expect(canCreateWorkType("committee_head", "assignment")).toBe(true);
+      expect(canCreateWorkType("committee_head", "task")).toBe(false);
+      expect(canCreateWorkType("hr_member", "task")).toBe(true);
+      expect(canCreateWorkType("hr_member", "assignment")).toBe(false);
+      expect(canCreateWorkType("hr_admin", "assignment")).toBe(true);
+      expect(canCreateWorkType("hr_admin", "task")).toBe(true);
+      expect(canCreateWorkType("master_admin", "assignment")).toBe(true);
+      expect(canCreateWorkType("master_admin", "task")).toBe(true);
+
+      // HR member can assign tasks to members of their own committee only
+      expect(canAssignTask(hrMemberAiUser, memberAiUser)).toBe(true);
+      expect(
+        canAssignTask(hrMemberAiUser, {
+          id: "usr-web",
+          email: "web@cu.edu.eg",
+          role: "member",
+          committeeId: commWeb,
+        })
+      ).toBe(false);
     });
   });
 });

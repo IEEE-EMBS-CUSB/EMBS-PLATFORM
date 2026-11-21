@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { ActivityList } from "@/components/data-display/activity-list";
-import { PageLoadingState } from "@/components/states/loading-state";
+import { MemberListLoadingState } from "@/components/states/loading-state";
 import { requireMemberSession } from "@/lib/portal-guards";
 import { getMemberActivities } from "@/services/member.service";
 
@@ -30,7 +30,7 @@ async function MemberActivitiesContent() {
 
 export default function MemberActivitiesPage() {
   return (
-    <Suspense fallback={<PageLoadingState />}>
+    <Suspense fallback={<MemberListLoadingState />}>
       <MemberActivitiesContent />
     </Suspense>
   );

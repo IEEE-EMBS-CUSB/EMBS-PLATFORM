@@ -3,7 +3,6 @@ import {
   type CommitteeViewItem,
   type RubricViewItem,
 } from "@/components/hr/committees-rubrics-view";
-import { HrShell } from "@/components/hr/hr-shell";
 import { requireHrModule } from "@/lib/portal-guards";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
@@ -19,7 +18,6 @@ export default async function HrCommitteesPage() {
   const { profile } = await requireHrModule("committees");
   let committees: CommitteeViewItem[] = [];
   let rubrics: RubricViewItem[] = [];
-  let activeSeasonName = "Active Season";
 
   try {
     const [activeSeason] = await db
@@ -29,7 +27,6 @@ export default async function HrCommitteesPage() {
       .limit(1);
 
     if (activeSeason) {
-      activeSeasonName = activeSeason.name;
       const seasonId = activeSeason.id;
 
       const [dbCommittees, dbMembers, dbRubrics] = await Promise.all([
@@ -86,22 +83,14 @@ export default async function HrCommitteesPage() {
   }
 
   return (
-    <HrShell
-      activeTab="committees"
+    <CommitteesRubricsView
+      committees={committees}
+      rubrics={rubrics}
       currentUserRole={profile.role}
-      userName={profile.fullName}
-      userCommitteeName={profile.committeeName}
-      activeSeasonName={activeSeasonName}
-    >
-      <CommitteesRubricsView
-        committees={committees}
-        rubrics={rubrics}
-        currentUserRole={profile.role}
-        onAddCommittee={addCommitteeAction}
-        onRemoveCommittee={removeCommitteeAction}
-        onAddRubric={addRubricAction}
-        onRemoveRubric={removeRubricAction}
-      />
-    </HrShell>
+      onAddCommittee={addCommitteeAction}
+      onRemoveCommittee={removeCommitteeAction}
+      onAddRubric={addRubricAction}
+      onRemoveRubric={removeRubricAction}
+    />
   );
 }

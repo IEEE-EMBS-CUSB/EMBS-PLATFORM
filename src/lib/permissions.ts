@@ -15,8 +15,46 @@ export type HrModuleName =
   | "tasks"
   | "ledger"
   | "feedback"
-  | "publishing"
-  | "events";
+  | "publishing";
+
+export type WorkItemType = "assignment" | "task";
+
+/**
+ * Determines which work item types a role is allowed to create:
+ * - director & committee_head: Assignments only
+ * - hr_member: Tasks only
+ * - master_admin & hr_admin: Both Assignments and Tasks
+ */
+export function getAllowedWorkTypesForRole(
+  role: MembershipRole
+): WorkItemType[] {
+  switch (role) {
+    case "master_admin":
+    case "hr_admin":
+      return ["assignment", "task"];
+    case "director":
+    case "committee_head":
+      return ["assignment"];
+    case "hr_member":
+      return ["task"];
+    default:
+      return [];
+  }
+}
+
+export function canCreateWorkType(
+  role: MembershipRole,
+  workType: WorkItemType
+): boolean {
+  return getAllowedWorkTypesForRole(role).includes(workType);
+}
+
+export function getDefaultWorkTypeForRole(role: MembershipRole): WorkItemType {
+  if (role === "hr_member" || role === "hr_admin") {
+    return "task";
+  }
+  return "assignment";
+}
 
 /**
  * Exclusive power to manage the global email whitelist.
@@ -122,10 +160,9 @@ export function canManageCommitteeAttendance(
 }
 
 /**
- * Create tasks and submit grades for a committee.
+ * Create tasks/assignments and submit grades for a committee.
  * Master, Director, and HR Admin can manage across all committees.
- * Committee Head can manage only for their committee.
- * HR Members do NOT create committee member tasks.
+ * Committee Head (assignments) and HR Member (tasks) can manage only for their committee.
  */
 export function canManageCommitteeTasks(
   user: UserPermissionContext,
@@ -138,7 +175,7 @@ export function canManageCommitteeTasks(
   ) {
     return true;
   }
-  if (user.role === "committee_head") {
+  if (user.role === "committee_head" || user.role === "hr_member") {
     return user.committeeId !== null && user.committeeId === committeeId;
   }
   return false;
@@ -235,6 +272,7 @@ export function canAccessHrModule(
         role === "master_admin" ||
         role === "director" ||
         role === "hr_admin" ||
+        role === "hr_member" ||
         role === "committee_head"
       );
 
@@ -255,25 +293,19 @@ export function canAccessHrModule(
         role === "committee_head"
       );
 
-    case "events":
-      return (
-        role === "master_admin" ||
-        role === "hr_admin" ||
-        role === "hr_member" ||
-        role === "committee_head"
-      );
     default:
       return false;
   }
 }
 
 /**
- * Checks if a role is permitted to assign tasks to a target role.
+ * Checks if a role is permitted to assign tasks/assignments to a target role.
  * Hierarchy:
  * - master_admin: can assign to anyone (director, committee_head, hr_admin, hr_member, member)
- * - director: sits above heads, can assign tasks to committee_head and hr_admin (the heads under them)
- * - hr_admin: extends head, can assign tasks to hr_member
- * - committee_head: can assign tasks to members
+ * - director: sits above heads, can give assignments to committee_head and hr_admin
+ * - hr_admin: can give tasks/assignments to hr_member
+ * - committee_head: can give assignments to members in their committee
+ * - hr_member: can give tasks to members in their committee
  */
 export function canAssignTaskToRole(
   assignerRole: MembershipRole,
@@ -297,7 +329,7 @@ export function canAssignTaskToRole(
     return targetRole === "hr_member";
   }
 
-  if (assignerRole === "committee_head") {
+  if (assignerRole === "committee_head" || assignerRole === "hr_member") {
     return targetRole === "member";
   }
 
@@ -315,12 +347,12 @@ export function canReceiveTasksFromRole(
 }
 
 /**
- * Validates whether an assigner user can assign a task to a specific target user.
+ * Validates whether an assigner user can assign a task/assignment to a specific target user.
  * Enforces role hierarchy and committee boundaries:
  * - master_admin: branch-wide
  * - director: to heads and HR admins
  * - hr_admin: to HR members
- * - committee_head: to members in their committee
+ * - committee_head & hr_member: to members in their committee
  */
 export function canAssignTask(
   assigner: UserPermissionContext,
@@ -338,7 +370,7 @@ export function canAssignTask(
     return target.role === "hr_member";
   }
 
-  if (assigner.role === "committee_head") {
+  if (assigner.role === "committee_head" || assigner.role === "hr_member") {
     return (
       target.role === "member" &&
       assigner.committeeId !== null &&

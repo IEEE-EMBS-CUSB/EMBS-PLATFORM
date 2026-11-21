@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { AttendeeAssignmentTable } from "@/components/data-display/attendee-assignment-table";
 import { MetricCard } from "@/components/data-display/metric-card";
-import { PageLoadingState } from "@/components/states/loading-state";
+import { MemberTasksLoadingState } from "@/components/states/loading-state";
 import { requireAttendeeSession } from "@/lib/portal-guards";
 import { getAttendeeAssignments } from "@/services/attendee.service";
 
@@ -42,7 +42,7 @@ async function AttendeeAssignmentsContent() {
 
 export default function AttendeeAssignmentsPage() {
   return (
-    <Suspense fallback={<PageLoadingState />}>
+    <Suspense fallback={<MemberTasksLoadingState />}>
       <AttendeeAssignmentsContent />
     </Suspense>
   );

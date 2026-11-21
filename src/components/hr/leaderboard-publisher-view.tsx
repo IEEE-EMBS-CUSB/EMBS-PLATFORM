@@ -165,9 +165,9 @@ export function LeaderboardPublisherView({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#002855] sm:text-3xl">
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
             Monthly Leaderboard Publisher
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">

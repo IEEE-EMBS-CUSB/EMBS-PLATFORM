@@ -262,6 +262,7 @@ export const tasks = pgTable(
     description: text("description"),
     dueAt: timestamp("due_at", { withTimezone: true, mode: "date" }).notNull(),
     maxPoints: integer("max_points").notNull().default(100),
+    workType: text("work_type").notNull().default("assignment"), // assignment | task
     targetType: text("target_type"), // individual | group
     targetGroup: text("target_group"), // everyone | all_heads | all_members | committee_all | committee_heads | committee_members
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })

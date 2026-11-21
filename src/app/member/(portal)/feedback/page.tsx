@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { FeedbackList } from "@/components/data-display/feedback-list";
-import { PageLoadingState } from "@/components/states/loading-state";
+import { MemberListLoadingState } from "@/components/states/loading-state";
 import { requireMemberSession } from "@/lib/portal-guards";
 import { getMemberFeedback } from "@/services/member.service";
 
@@ -30,7 +30,7 @@ async function MemberFeedbackContent() {
 
 export default function MemberFeedbackPage() {
   return (
-    <Suspense fallback={<PageLoadingState />}>
+    <Suspense fallback={<MemberListLoadingState />}>
       <MemberFeedbackContent />
     </Suspense>
   );

@@ -46,10 +46,21 @@ export async function loginWithPasswordAction(
     role: result.member.role,
   });
 
+  let signedToken: string;
+  try {
+    signedToken = encodeSessionToken(sessionUser);
+  } catch (err) {
+    console.error("[loginWithPasswordAction] Session signing error:", err);
+    return {
+      ok: false,
+      error: "Authentication configuration error. Please contact your chapter administrator.",
+    };
+  }
+
   const cookieStore = await cookies();
   cookieStore.set(
     SESSION_COOKIE_NAME,
-    encodeSessionToken(sessionUser),
+    signedToken,
     buildSessionCookieOptions()
   );
 
@@ -75,6 +86,24 @@ export async function changePasswordOnFirstLoginAction(
     return { ok: false, error: "Invalid email or password." };
   }
 
+  // Verify session token signing works BEFORE mutating the password in PostgreSQL
+  const sessionUser = createSessionForMember({
+    id: member.id,
+    fullName: member.fullName,
+    role: member.role,
+  });
+
+  let signedToken: string;
+  try {
+    signedToken = encodeSessionToken(sessionUser);
+  } catch (err) {
+    console.error("[changePasswordOnFirstLoginAction] Session signing error:", err);
+    return {
+      ok: false,
+      error: "Authentication configuration error. Please contact your chapter administrator.",
+    };
+  }
+
   const changeRes = await changeFirstLoginPassword({
     currentPassword,
     newPassword,
@@ -90,16 +119,10 @@ export async function changePasswordOnFirstLoginAction(
     return { ok: false, error: changeRes.reason };
   }
 
-  const sessionUser = createSessionForMember({
-    id: member.id,
-    fullName: member.fullName,
-    role: member.role,
-  });
-
   const cookieStore = await cookies();
   cookieStore.set(
     SESSION_COOKIE_NAME,
-    encodeSessionToken(sessionUser),
+    signedToken,
     buildSessionCookieOptions()
   );
 

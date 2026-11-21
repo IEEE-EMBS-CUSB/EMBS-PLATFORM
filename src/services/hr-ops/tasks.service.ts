@@ -2,7 +2,13 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { and, eq, ne } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
-import { canAssignTask, canManageCommitteeTasks } from "@/lib/permissions";
+import {
+  canAssignTask,
+  canCreateWorkType,
+  canManageCommitteeTasks,
+  getDefaultWorkTypeForRole,
+  type WorkItemType,
+} from "@/lib/permissions";
 import { upsertScoreLedgerEntry } from "@/db/ledger";
 import {
   assertMonthNotPublished,
@@ -28,6 +34,7 @@ export interface CreateTaskInput {
   description?: string;
   dueAt: string;
   maxPoints?: number;
+  workType?: WorkItemType;
   targetType: TaskTargetType;
   assignedToMembershipId?: string;
   targetGroup?: TaskTargetGroup;
@@ -53,14 +60,34 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
     actorRole !== "master_admin" &&
     actorRole !== "director" &&
     actorRole !== "hr_admin" &&
+    actorRole !== "hr_member" &&
     actorRole !== "committee_head"
   ) {
     return {
       ok: false,
       error:
-        "Unauthorized: your role does not have permission to create or assign tasks.",
+        "Unauthorized: your role does not have permission to create or assign work items.",
     };
   }
+
+  const workType: WorkItemType =
+    input.workType ?? getDefaultWorkTypeForRole(actorRole);
+
+  if (workType !== "assignment" && workType !== "task") {
+    return { ok: false, error: "Invalid work item type." };
+  }
+
+  if (!canCreateWorkType(actorRole, workType)) {
+    const allowedLabel =
+      actorRole === "hr_member" ? "tasks" : "assignments";
+    return {
+      ok: false,
+      error: `Unauthorized: your role can only create ${allowedLabel}. Only Master Admin and HR Admin can create both assignments and tasks.`,
+    };
+  }
+
+  const isCommitteeScopedCreator =
+    actorRole === "committee_head" || actorRole === "hr_member";
 
   const trimmedTitle = input.title?.trim() ?? "";
   if (!trimmedTitle) {
@@ -135,7 +162,7 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
 
       // Role-level group broadcast restrictions
       if (
-        actorRole === "committee_head" &&
+        isCommitteeScopedCreator &&
         (input.targetGroup === "everyone" ||
           input.targetGroup === "all_heads" ||
           input.targetGroup === "all_members")
@@ -143,15 +170,15 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         return {
           ok: false,
           error:
-            "Unauthorized: Committee Heads cannot assign tasks across all committees.",
+            "Unauthorized: committee-scoped roles cannot assign items across all committees.",
         };
       }
 
-      if (actorRole === "committee_head" && input.targetGroup !== "committee_members") {
+      if (isCommitteeScopedCreator && input.targetGroup !== "committee_members") {
         return {
           ok: false,
           error:
-            "Unauthorized: Committee Heads can only assign group tasks to members of their own committee.",
+            "Unauthorized: you can only assign group items to members of your own committee.",
         };
       }
 
@@ -159,7 +186,7 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         return {
           ok: false,
           error:
-            "Unauthorized: Directors can only broadcast group tasks to Committee Heads.",
+            "Unauthorized: Directors can only broadcast group assignments to Committee Heads.",
         };
       }
 
@@ -172,7 +199,7 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         return {
           ok: false,
           error:
-            "Unauthorized: HR Admin cannot broadcast tasks to executive leadership or committee heads.",
+            "Unauthorized: HR Admin cannot broadcast to executive leadership or committee heads.",
         };
       }
 
@@ -189,11 +216,11 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
           };
         }
 
-        if (actorRole === "committee_head" && actorCommitteeId !== commId) {
+        if (isCommitteeScopedCreator && actorCommitteeId !== commId) {
           return {
             ok: false,
             error:
-              "Unauthorized: Committee Heads can only assign tasks within their own committee.",
+              "Unauthorized: you can only assign items within your own committee.",
           };
         }
 
@@ -277,6 +304,7 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         description: input.description?.trim() || null,
         dueAt: new Date(input.dueAt),
         maxPoints,
+        workType,
         targetType: input.targetType ?? null,
         targetGroup: input.targetGroup ?? null,
       })
@@ -390,6 +418,7 @@ export async function gradeTaskSubmissionAsActor(
       .where(eq(schema.taskSubmissions.id, input.submissionId));
 
     if (member.role !== "attendee") {
+      const workLabel = task.workType === "task" ? "Task" : "Assignment";
       await upsertScoreLedgerEntry(db, {
         seasonId: task.seasonId,
         membershipId: submission.membershipId,
@@ -397,7 +426,7 @@ export async function gradeTaskSubmissionAsActor(
         sourceType: "task",
         sourceId: submission.id,
         points: totalPoints,
-        reason: `Task: ${task.title}`,
+        reason: `${workLabel}: ${task.title}`,
         createdBy: actor.profile.id,
       });
     }

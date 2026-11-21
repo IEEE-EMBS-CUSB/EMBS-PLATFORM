@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,6 +17,7 @@ import {
 export interface TaskHeaderRef {
   id: string;
   title: string;
+  workType?: "assignment" | "task";
   committeeName: string;
   maxPoints: number;
 }
@@ -158,11 +160,22 @@ export function BulkTaskGradingView({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="font-heading text-2xl font-extrabold tracking-tight text-[#002855] sm:text-3xl">
-            Keyboard Bulk Task Grading
-          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-heading text-xl font-bold tracking-tight text-[#002855]">
+              Keyboard Bulk Grading
+            </h2>
+            <span
+              className={
+                task.workType === "task"
+                  ? "inline-flex rounded-full bg-[#f5edf7] px-2.5 py-0.5 text-[11px] font-semibold text-[#5a1b63]"
+                  : "inline-flex rounded-full bg-[#ebf3f8] px-2.5 py-0.5 text-[11px] font-semibold text-[#00629b]"
+              }
+            >
+              {task.workType === "task" ? "Task" : "Assignment"}
+            </span>
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {task.title} · {task.committeeName} (Max {task.maxPoints} pts). Tab across rows to grade.
           </p>
@@ -175,14 +188,14 @@ export function BulkTaskGradingView({
             </span>
           )}
           {onGrade && (
-            <button
+            <Button
               type="button"
               onClick={handleSaveAll}
               disabled={isSaving}
-              className="rounded-md bg-[#772583] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#5a1b63] disabled:opacity-50"
+              className="h-9 bg-[#772583] px-4 text-xs font-semibold text-white hover:bg-[#5a1b63]"
             >
               {isSaving ? "Saving..." : "Save Grades"}
-            </button>
+            </Button>
           )}
           {saveError && (
             <span role="alert" className="text-xs font-semibold text-[#ba0c2f]">

@@ -6,7 +6,7 @@ import { AttendeeAssignmentTable } from "@/components/data-display/attendee-assi
 import { AttendeeSessionTable } from "@/components/data-display/attendee-session-table";
 import { MetricCard } from "@/components/data-display/metric-card";
 import { EmptyState } from "@/components/states/empty-state";
-import { PageLoadingState } from "@/components/states/loading-state";
+import { AttendeeDashboardLoadingState } from "@/components/states/loading-state";
 import { Badge } from "@/components/ui/badge";
 import { requireAttendeeSession } from "@/lib/portal-guards";
 import { getAttendeeDashboard } from "@/services/attendee.service";
@@ -179,7 +179,7 @@ async function AttendeeDashboardContent() {
 
 export default function AttendeeDashboardPage() {
   return (
-    <Suspense fallback={<PageLoadingState />}>
+    <Suspense fallback={<AttendeeDashboardLoadingState />}>
       <AttendeeDashboardContent />
     </Suspense>
   );

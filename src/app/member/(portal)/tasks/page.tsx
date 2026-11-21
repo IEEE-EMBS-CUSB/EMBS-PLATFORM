@@ -4,7 +4,7 @@ import { CheckSquare } from "lucide-react";
 import { MetricCard } from "@/components/data-display/metric-card";
 import { MemberTaskStatusBadge } from "@/components/data-display/status-badge";
 import { EmptyState } from "@/components/states/empty-state";
-import { PageLoadingState } from "@/components/states/loading-state";
+import { MemberTasksLoadingState } from "@/components/states/loading-state";
 import {
   Table,
   TableBody,
@@ -19,8 +19,9 @@ import { getMemberTasks } from "@/services/member.service";
 import { TaskSubmitForm } from "@/components/member/task-submit-form";
 
 export const metadata: Metadata = {
-  title: "Tasks",
-  description: "Committee tasks, effort, quality ratings, and task points.",
+  title: "Tasks & Assignments",
+  description:
+    "Committee assignments from leadership and tasks from HR with ratings and points.",
 };
 
 async function MemberTasksContent() {
@@ -39,8 +40,11 @@ async function MemberTasksContent() {
     <div className="space-y-6">
       <div className="border-b border-border pb-4">
         <h1 className="font-heading text-2xl font-bold text-[#002855]">
-          Tasks
+          Tasks & Assignments
         </h1>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Assignments come from Directors and Committee Heads; Tasks come from HR.
+        </p>
       </div>
 
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
@@ -71,6 +75,15 @@ async function MemberTasksContent() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={
+                      task.workType === "task"
+                        ? "inline-flex rounded-full bg-[#f5edf7] px-2 py-0.5 text-[11px] font-semibold text-[#5a1b63]"
+                        : "inline-flex rounded-full bg-[#ebf3f8] px-2 py-0.5 text-[11px] font-semibold text-[#00629b]"
+                    }
+                  >
+                    {task.workType === "task" ? "Task" : "Assignment"}
+                  </span>
                   <MemberTaskStatusBadge status={task.status} />
                   {task.onTime !== null && (
                     <span
@@ -109,7 +122,7 @@ async function MemberTasksContent() {
               <TableHeader>
                 <TableRow className="bg-muted/45 hover:bg-muted/45">
                   <TableHead className="pl-4 font-semibold text-[#002855]">
-                    Task
+                    Deliverable
                   </TableHead>
                   <TableHead className="font-semibold text-[#002855]">
                     Deadline
@@ -129,9 +142,20 @@ async function MemberTasksContent() {
                 {tasks.map((task) => (
                   <TableRow key={task.id}>
                     <TableCell className="py-3.5 pl-4">
-                      <p className="font-semibold text-foreground">
-                        {task.title}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-foreground">
+                          {task.title}
+                        </p>
+                        <span
+                          className={
+                            task.workType === "task"
+                              ? "inline-flex rounded-full bg-[#f5edf7] px-2 py-0.5 text-[10px] font-semibold text-[#5a1b63]"
+                              : "inline-flex rounded-full bg-[#ebf3f8] px-2 py-0.5 text-[10px] font-semibold text-[#00629b]"
+                          }
+                        >
+                          {task.workType === "task" ? "Task" : "Assignment"}
+                        </span>
+                      </div>
                       {(task.completedDate || task.notes) && (
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           {task.completedDate
@@ -189,7 +213,7 @@ async function MemberTasksContent() {
 
 export default function MemberTasksPage() {
   return (
-    <Suspense fallback={<PageLoadingState />}>
+    <Suspense fallback={<MemberTasksLoadingState />}>
       <MemberTasksContent />
     </Suspense>
   );

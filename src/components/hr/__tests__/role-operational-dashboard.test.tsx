@@ -25,15 +25,15 @@ describe("RoleOperationalDashboard Component", () => {
       />
     );
 
-    // Section 1: Personal deliverables assigned by Director
-    expect(screen.getByText(/My Deliverables \(Assigned by Director\)/i)).toBeInTheDocument();
+    // Section 1: Personal assignments from Director
+    expect(screen.getByText(/My Assignments \(From Director\)/i)).toBeInTheDocument();
     expect(screen.getByText("Draft Q2 Committee Roadmap & Milestones")).toBeInTheDocument();
     expect(screen.getByText(/Assigned by Director Khaled Mansour/i)).toBeInTheDocument();
 
     // Section 2: Committee Management Console
     expect(screen.getByText(/Committee Leadership Console/i)).toBeInTheDocument();
     expect(screen.getByText("AI and Machine Learning")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /assign tasks to members/i })).toHaveAttribute("href", "/hr/tasks");
+    expect(screen.getByRole("link", { name: /create committee assignments/i })).toHaveAttribute("href", "/hr/tasks");
     expect(screen.getByRole("link", { name: /grade deliverables/i })).toHaveAttribute("href", "/hr/tasks");
     expect(screen.getByRole("link", { name: /award committee bonus/i })).toHaveAttribute("href", "/hr/ledger");
 
@@ -54,7 +54,7 @@ describe("RoleOperationalDashboard Component", () => {
 
     expect(screen.getByText(/Executive Directives & Roadmap/i)).toBeInTheDocument();
     expect(screen.getByText(/Committee Overseer & Heads Delegation/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /delegate tasks to heads/i })).toHaveAttribute("href", "/hr/tasks");
+    expect(screen.getByRole("link", { name: /delegate assignments to heads/i })).toHaveAttribute("href", "/hr/tasks");
 
     // Director cannot manage seasons or attendance
     expect(screen.queryByText(/season rollover/i)).not.toBeInTheDocument();
@@ -105,8 +105,9 @@ describe("RoleOperationalDashboard Component", () => {
       />
     );
 
-    expect(screen.getByText(/Committee Attendance Operations/i)).toBeInTheDocument();
+    expect(screen.getByText(/Committee HR Operations/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /live qr check-in/i })).toHaveAttribute("href", "/hr/attendance");
+    expect(screen.getByRole("link", { name: /manage tasks/i })).toHaveAttribute("href", "/hr/tasks");
     expect(screen.getByRole("link", { name: /award attendance points/i })).toHaveAttribute("href", "/hr/ledger");
 
     // HR Member cannot see tasks grading, seasons, or publishing

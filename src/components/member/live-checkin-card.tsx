@@ -61,8 +61,11 @@ export function LiveCheckinCard({
         setErrorMessage(res.error || "Failed to log check-in.");
       }
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
       setErrorMessage(
-        err instanceof Error ? err.message : "Error submitting check-in code"
+        msg && !/minified react error|server components render/i.test(msg)
+          ? msg
+          : "Unable to submit check-in code right now. Please try again."
       );
     } finally {
       setIsSubmitting(false);
@@ -72,9 +75,9 @@ export function LiveCheckinCard({
   return (
     <Card className="border-border bg-white shadow-xs">
       <CardHeader className="border-b border-border/70 pb-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Radio className="h-4 w-4 animate-pulse text-[#772583]" />
+            <Radio className="h-4 w-4 text-[#772583]" aria-hidden="true" />
             <CardTitle className="font-heading text-lg font-bold text-[#002855]">
               Live Session Check-In
             </CardTitle>
@@ -92,12 +95,12 @@ export function LiveCheckinCard({
         {successInfo ? (
           <div className="rounded-xl border border-[#78be20]/40 bg-[#78be20]/10 p-4 text-center">
             <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#78be20] text-white">
-              <CheckCircle2 className="h-5 w-5" />
+              <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
             </div>
             <h3 className="mt-2 font-heading text-base font-bold text-[#1e6b0a]">
               Checked in to {successInfo.sessionTitle}!
             </h3>
-            <p className="mt-1 font-mono text-sm font-extrabold text-[#1e6b0a]">
+            <p className="mt-1 font-mono text-sm font-extrabold text-[#1e6b0a] tabular-nums">
               +{successInfo.pointsAwarded} pts awarded
               {successInfo.isPunctual ? " (Punctual bonus included)" : ""}
             </p>
@@ -128,24 +131,25 @@ export function LiveCheckinCard({
               >
                 Enter 6-digit Check-in Code
               </label>
-              <div className="mt-1 flex gap-2">
+              <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
                 <Input
                   id="checkin-code-input"
                   type="text"
+                  inputMode="numeric"
                   required
                   maxLength={10}
                   placeholder="e.g. 847291"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  className="h-11 font-mono text-lg font-bold tracking-widest text-[#002855] placeholder:tracking-normal placeholder:font-normal placeholder:text-muted-foreground"
+                  className="h-11 min-w-0 flex-1 font-mono text-lg font-bold tracking-widest text-[#002855] placeholder:font-normal placeholder:tracking-normal placeholder:text-muted-foreground"
                 />
                 <Button
                   type="submit"
                   disabled={isSubmitting || !code.trim()}
-                  className="h-11 gap-2 bg-[#772583] px-5 text-xs font-bold text-white hover:bg-[#5a1b63]"
+                  className="h-11 shrink-0 gap-2 bg-[#772583] px-5 text-xs font-bold text-white hover:bg-[#5a1b63]"
                 >
-                  <QrCode className="h-4 w-4" />
-                  <span>Check In</span>
+                  <QrCode className="h-4 w-4" aria-hidden="true" />
+                  <span>{isSubmitting ? "Checking in..." : "Check In"}</span>
                 </Button>
               </div>
             </div>

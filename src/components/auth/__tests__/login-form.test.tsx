@@ -99,4 +99,26 @@ describe("LoginForm (Pre-assigned Password & First-Login Reset)", () => {
 
     expect(screen.getByText(/invalid email or password/i)).toBeInTheDocument();
   });
+
+  it("replaces raw minified React server errors with a friendly alert message", async () => {
+    const user = userEvent.setup();
+    const handleLogin = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "Minified React error #441; visit https://react.dev/errors/441 for the full message"
+        )
+      );
+
+    render(<LoginForm onLogin={handleLogin} />);
+
+    await user.type(screen.getByLabelText(/email address/i), "master@cu.edu.eg");
+    await user.type(screen.getByLabelText(/^password/i), "SomePassword123!");
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+
+    expect(screen.queryByText(/minified react error/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /unable to complete sign-in/i
+    );
+  });
 });

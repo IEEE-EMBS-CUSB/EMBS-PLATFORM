@@ -2,7 +2,6 @@ import {
   AttendanceManagerView,
   type SessionItem,
 } from "@/components/hr/attendance-manager-view";
-import { HrShell } from "@/components/hr/hr-shell";
 import { requireHrModule } from "@/lib/portal-guards";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
@@ -13,7 +12,6 @@ export default async function HrAttendancePage() {
 
   let dbSessionsList: SessionItem[] = [];
   let dbCommitteesList: Array<{ id: string; name: string }> = [];
-  let activeSeasonName = "Active Season";
 
   const isCommitteeScoped =
     profile.role === "committee_head" || profile.role === "hr_member";
@@ -26,7 +24,6 @@ export default async function HrAttendancePage() {
       .limit(1);
 
     if (activeSeason) {
-      activeSeasonName = activeSeason.name;
       const seasonId = activeSeason.id;
 
       const sessionFilter =
@@ -102,20 +99,12 @@ export default async function HrAttendancePage() {
   }
 
   return (
-    <HrShell
-      activeTab="attendance"
+    <AttendanceManagerView
+      sessions={dbSessionsList}
       currentUserRole={profile.role}
-      userName={profile.fullName}
-      userCommitteeName={profile.committeeName}
-      activeSeasonName={activeSeasonName}
-    >
-      <AttendanceManagerView
-        sessions={dbSessionsList}
-        currentUserRole={profile.role}
-        currentUserCommitteeId={profile.committeeId}
-        currentUserCommitteeName={profile.committeeName}
-        committees={dbCommitteesList}
-      />
-    </HrShell>
+      currentUserCommitteeId={profile.committeeId}
+      currentUserCommitteeName={profile.committeeName}
+      committees={dbCommitteesList}
+    />
   );
 }

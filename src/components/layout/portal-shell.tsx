@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { EmbsMark } from "@/components/brand/embs-mark";
+import { NavLinkPendingIndicator } from "@/components/layout/nav-link-pending";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -162,6 +163,7 @@ export function PortalShell({
           >
             <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{item.label}</span>
+            <NavLinkPendingIndicator />
           </Link>
         );
       })}
@@ -203,10 +205,14 @@ export function PortalShell({
               currentUserRole !== "attendee" && (
                 <Link
                   href="/hr"
-                  className="hidden items-center gap-1.5 rounded-md bg-white/15 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-white/25 sm:inline-flex"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-white/25 bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/25"
                 >
                   <Shield className="h-3.5 w-3.5 text-[#ffc627]" aria-hidden="true" />
-                  <span>Management Console</span>
+                  <span>
+                    {currentUserRole === "committee_head"
+                      ? "Leader View"
+                      : "Management Console"}
+                  </span>
                 </Link>
               )}
 
@@ -250,6 +256,20 @@ export function PortalShell({
                   {navList(() => setMobileOpen(false))}
                 </div>
                 <div className="mt-6 space-y-2 border-t border-border pt-4">
+                  {currentUserRole &&
+                    currentUserRole !== "member" &&
+                    currentUserRole !== "attendee" && (
+                      <Link
+                        href="/hr"
+                        onClick={() => setMobileOpen(false)}
+                        className="flex min-h-11 items-center gap-2 rounded-md bg-[#f5edf7] px-3 py-2 text-sm font-semibold text-[#5a1b63] hover:bg-[#ead8ee]"
+                      >
+                        <Shield className="h-4 w-4" aria-hidden="true" />
+                        {currentUserRole === "committee_head"
+                          ? "Leader View"
+                          : "Management Console"}
+                      </Link>
+                    )}
                   <Link
                     href="/leaderboards"
                     onClick={() => setMobileOpen(false)}
@@ -279,6 +299,23 @@ export function PortalShell({
               </p>
             </div>
             {navList()}
+            {currentUserRole &&
+              currentUserRole !== "member" &&
+              currentUserRole !== "attendee" && (
+                <div className="border-t border-border pt-3">
+                  <Link
+                    href="/hr"
+                    className="flex min-h-9 items-center gap-2 rounded-md bg-[#f5edf7] px-3 py-2 text-xs font-semibold text-[#5a1b63] transition-colors hover:bg-[#ead8ee]"
+                  >
+                    <Shield className="h-4 w-4 text-[#772583]" aria-hidden="true" />
+                    <span>
+                      {currentUserRole === "committee_head"
+                        ? "Switch to Leader View"
+                        : "Management Console"}
+                    </span>
+                  </Link>
+                </div>
+              )}
           </div>
         </aside>
 
@@ -321,6 +358,7 @@ export function PortalShell({
                 )}
                 <Icon className="h-5 w-5" aria-hidden="true" />
                 <span>{item.mobileLabel}</span>
+                <NavLinkPendingIndicator className="absolute top-2 right-2 ml-0 h-1.5 w-1.5" />
               </Link>
             );
           })}

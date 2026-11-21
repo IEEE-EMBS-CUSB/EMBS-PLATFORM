@@ -1,4 +1,3 @@
-import { HrShell } from "@/components/hr/hr-shell";
 import { requireHrModule } from "@/lib/portal-guards";
 import {
   RosterManagerView,
@@ -21,7 +20,6 @@ export default async function HrRosterPage() {
   const { profile } = await requireHrModule("roster");
   let members: RosterMemberItem[] = [];
   let availableCommittees: CommitteeOption[] = [];
-  let activeSeasonName = "Active Season";
 
   try {
     const [activeSeason] = await db
@@ -31,7 +29,6 @@ export default async function HrRosterPage() {
       .limit(1);
 
     if (activeSeason) {
-      activeSeasonName = activeSeason.name;
       const seasonId = activeSeason.id;
 
       const [dbMembers, dbCommittees] = await Promise.all([
@@ -73,26 +70,18 @@ export default async function HrRosterPage() {
   }
 
   return (
-    <HrShell
-      activeTab="roster"
+    <RosterManagerView
+      members={members}
       currentUserRole={profile.role}
-      userName={profile.fullName}
-      userCommitteeName={profile.committeeName}
-      activeSeasonName={activeSeasonName}
-    >
-      <RosterManagerView
-        members={members}
-        currentUserRole={profile.role}
-        availableCommittees={
-          availableCommittees.length > 0 ? availableCommittees : undefined
-        }
-        onResetPassword={resetMemberPasswordAction}
-        onAssignRole={assignMemberRoleAction}
-        onAssignCommittee={assignMemberCommitteeAction}
-        onAddMember={addRosterMemberAction}
-        onBulkImport={bulkImportRosterAction}
-        onRemoveMember={removeRosterMemberAction}
-      />
-    </HrShell>
+      availableCommittees={
+        availableCommittees.length > 0 ? availableCommittees : undefined
+      }
+      onResetPassword={resetMemberPasswordAction}
+      onAssignRole={assignMemberRoleAction}
+      onAssignCommittee={assignMemberCommitteeAction}
+      onAddMember={addRosterMemberAction}
+      onBulkImport={bulkImportRosterAction}
+      onRemoveMember={removeRosterMemberAction}
+    />
   );
 }

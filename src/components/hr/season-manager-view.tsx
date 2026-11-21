@@ -268,9 +268,9 @@ export function SeasonManagerView({
         </div>
       )}
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#002855] sm:text-3xl">
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
             Season Lifecycle & Rollover
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -287,7 +287,7 @@ export function SeasonManagerView({
                 setCreateError(null);
                 setCreateModalOpen(true);
               }}
-              className="h-11 gap-2 border-border px-4 text-sm font-semibold text-[#002855] hover:bg-[#ebf3f8]"
+              className="h-10 gap-2 border-border px-4 text-xs font-semibold text-[#002855] hover:bg-[#ebf3f8]"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               <span>New Season</span>
@@ -296,7 +296,7 @@ export function SeasonManagerView({
               <Button
                 type="button"
                 onClick={() => handleOpenClone(activeSeason)}
-                className="h-11 gap-2 bg-[#772583] px-5 text-sm font-semibold text-white hover:bg-[#5a1b63]"
+                className="h-10 gap-2 bg-[#772583] px-4 text-xs font-semibold text-white hover:bg-[#5a1b63]"
               >
                 <Copy className="h-4 w-4" aria-hidden="true" />
                 <span>Clone Season</span>
@@ -307,7 +307,7 @@ export function SeasonManagerView({
       </div>
 
       {/* Season Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {seasons.map((season) => {
           const isActive = season.status === "active";
           const isArchived = season.status === "archived";

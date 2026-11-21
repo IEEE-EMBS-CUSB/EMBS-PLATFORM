@@ -4,7 +4,6 @@ import {
   type AssignedTaskItem,
   type EligibleAssignee,
 } from "@/components/hr/task-delegation-view";
-import { HrShell } from "@/components/hr/hr-shell";
 import { requireHrModule } from "@/lib/portal-guards";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
@@ -16,11 +15,11 @@ export default async function HrTasksPage() {
   let eligibleMembers: EligibleAssignee[] = [];
   let dbCommitteesList: Array<{ id: string; name: string }> = [];
   let assignedToMe: AssignedTaskItem[] = [];
-  let activeSeasonName = "Active Season";
 
   type BulkTask = {
     id: string;
     title: string;
+    workType: "assignment" | "task";
     committeeName: string;
     maxPoints: number;
   };
@@ -36,7 +35,8 @@ export default async function HrTasksPage() {
   };
   const bulkTasks: { task: BulkTask; submissions: BulkSubmission[] }[] = [];
 
-  const isCommitteeHead = profile.role === "committee_head";
+  const isCommitteeScoped =
+    profile.role === "committee_head" || profile.role === "hr_member";
 
   try {
     const [activeSeason] = await db
@@ -46,11 +46,10 @@ export default async function HrTasksPage() {
       .limit(1);
 
     if (activeSeason) {
-      activeSeasonName = activeSeason.name;
       const seasonId = activeSeason.id;
 
       const memberFilter =
-        isCommitteeHead && profile.committeeId
+        isCommitteeScoped && profile.committeeId
           ? and(
               eq(schema.rosterMemberships.seasonId, seasonId),
               eq(schema.rosterMemberships.committeeId, profile.committeeId),
@@ -64,7 +63,7 @@ export default async function HrTasksPage() {
             );
 
       const taskFilter =
-        isCommitteeHead && profile.committeeId
+        isCommitteeScoped && profile.committeeId
           ? and(
               eq(schema.tasks.seasonId, seasonId),
               eq(schema.tasks.committeeId, profile.committeeId)
@@ -87,6 +86,7 @@ export default async function HrTasksPage() {
             .select({
               taskId: schema.tasks.id,
               title: schema.tasks.title,
+              workType: schema.tasks.workType,
               dueAt: schema.tasks.dueAt,
               maxPoints: schema.tasks.maxPoints,
               totalPoints: schema.taskSubmissions.totalPoints,
@@ -112,7 +112,7 @@ export default async function HrTasksPage() {
         ]);
 
       const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
-      dbCommitteesList = isCommitteeHead
+      dbCommitteesList = isCommitteeScoped
         ? dbCommittees
             .filter((c) => c.id === profile.committeeId)
             .map((c) => ({ id: c.id, name: c.name }))
@@ -129,8 +129,9 @@ export default async function HrTasksPage() {
       assignedToMe = dbMySubmissions.map((s) => ({
         id: s.taskId,
         title: s.title,
+        workType: s.workType === "task" ? "task" : "assignment",
         assignedByName: "Leadership",
-        assignerRole: "director",
+        assignerRole: s.workType === "task" ? "hr_admin" : "director",
         dueAt: s.dueAt,
         maxPoints: s.maxPoints,
         status:
@@ -177,6 +178,7 @@ export default async function HrTasksPage() {
             task: {
               id: t.id,
               title: t.title,
+              workType: t.workType === "task" ? "task" : "assignment",
               committeeName: t.committeeId
                 ? commMap.get(t.committeeId) ?? "Committee"
                 : "Branch-wide",
@@ -192,24 +194,18 @@ export default async function HrTasksPage() {
   }
 
   return (
-    <HrShell
-      activeTab="tasks"
-      currentUserRole={profile.role}
-      userName={profile.fullName}
-      userCommitteeName={profile.committeeName}
-      activeSeasonName={activeSeasonName}
-    >
-      <div className="space-y-10">
-        <TaskDelegationView
-          currentUserRole={profile.role}
-          currentUserId={profile.id}
-          currentUserCommitteeId={profile.committeeId}
-          assignedToMe={assignedToMe}
-          eligibleMembers={eligibleMembers}
-          committees={dbCommitteesList}
-        />
+    <div className="space-y-10">
+      <TaskDelegationView
+        currentUserRole={profile.role}
+        currentUserId={profile.id}
+        currentUserCommitteeId={profile.committeeId}
+        assignedToMe={assignedToMe}
+        eligibleMembers={eligibleMembers}
+        committees={dbCommitteesList}
+      />
 
-        <div className="border-t border-border pt-8 space-y-10">
+      {bulkTasks.length > 0 && (
+        <div className="space-y-10 border-t border-border pt-8">
           {bulkTasks.map(({ task, submissions }) => (
             <BulkTaskGradingView
               key={task.id}
@@ -219,7 +215,7 @@ export default async function HrTasksPage() {
             />
           ))}
         </div>
-      </div>
-    </HrShell>
+      )}
+    </div>
   );
 }

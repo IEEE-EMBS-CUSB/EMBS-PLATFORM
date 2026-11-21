@@ -1,4 +1,3 @@
-import { HrShell } from "@/components/hr/hr-shell";
 import {
   PointsLedgerView,
   type LedgerEntryItem,
@@ -19,7 +18,6 @@ export default async function HrLedgerPage() {
     email: string;
   }> = [];
   let entries: LedgerEntryItem[] = [];
-  let activeSeasonName = "Active Season";
   const defaultMonth = new Date().toISOString().slice(0, 7);
 
   const isCommitteeScoped =
@@ -33,7 +31,6 @@ export default async function HrLedgerPage() {
       .limit(1);
 
     if (activeSeason) {
-      activeSeasonName = activeSeason.name;
       const seasonId = activeSeason.id;
 
       const [allSeasonMembers, dbCommittees] = await Promise.all([
@@ -111,20 +108,12 @@ export default async function HrLedgerPage() {
   }
 
   return (
-    <HrShell
-      activeTab="ledger"
-      currentUserRole={profile.role}
-      userName={profile.fullName}
-      userCommitteeName={profile.committeeName}
-      activeSeasonName={activeSeasonName}
-    >
-      <PointsLedgerView
-        entries={entries}
-        members={members}
-        currentUserName={profile.fullName}
-        defaultMonth={defaultMonth}
-        onAddEntry={addManualLedgerEntryAction}
-      />
-    </HrShell>
+    <PointsLedgerView
+      entries={entries}
+      members={members}
+      currentUserName={profile.fullName}
+      defaultMonth={defaultMonth}
+      onAddEntry={addManualLedgerEntryAction}
+    />
   );
 }

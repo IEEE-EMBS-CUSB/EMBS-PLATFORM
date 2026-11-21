@@ -14,7 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { MembershipRole } from "@/lib/auth-helpers";
-import { canAssignTask, canAssignTaskToRole } from "@/lib/permissions";
+import {
+  canAssignTask,
+  canAssignTaskToRole,
+  getAllowedWorkTypesForRole,
+  getDefaultWorkTypeForRole,
+  type WorkItemType,
+} from "@/lib/permissions";
 import {
   createTaskAction,
   type TaskTargetGroup,
@@ -24,6 +30,7 @@ import {
 export interface AssignedTaskItem {
   id: string;
   title: string;
+  workType?: WorkItemType;
   assignedByName: string;
   assignerRole: MembershipRole;
   dueAt: Date;
@@ -45,6 +52,7 @@ export interface CreateTaskPayload {
   assignedToMembershipId?: string;
   dueAt: string;
   maxPoints: number;
+  workType: WorkItemType;
   targetType?: TaskTargetType;
   targetGroup?: TaskTargetGroup;
   targetCommitteeId?: string | null;
@@ -74,12 +82,29 @@ export function TaskDelegationView({
   committees: initialCommittees,
   onCreateTask,
 }: TaskDelegationViewProps) {
+  const allowedWorkTypes = useMemo(
+    () => getAllowedWorkTypesForRole(currentUserRole),
+    [currentUserRole]
+  );
+  const canChooseWorkType = allowedWorkTypes.length > 1;
+  const [workType, setWorkType] = useState<WorkItemType>(() =>
+    getDefaultWorkTypeForRole(currentUserRole)
+  );
+  const effectiveWorkType: WorkItemType = canChooseWorkType
+    ? workType
+    : allowedWorkTypes[0] ?? getDefaultWorkTypeForRole(currentUserRole);
+
+  const isAssignment = effectiveWorkType === "assignment";
+  const singularLabel = isAssignment ? "Assignment" : "Task";
+  const isCommitteeScopedCreator =
+    currentUserRole === "committee_head" || currentUserRole === "hr_member";
+
   const [targetType, setTargetType] = useState<TaskTargetType>("specific_person");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [selectedAssignee, setSelectedAssignee] = useState("");
   const defaultTargetGroup: TaskTargetGroup =
-    currentUserRole === "committee_head"
+    currentUserRole === "committee_head" || currentUserRole === "hr_member"
       ? "committee_members"
       : currentUserRole === "director"
         ? "all_heads"
@@ -99,7 +124,7 @@ export function TaskDelegationView({
   });
   const [maxPoints, setMaxPoints] = useState(100);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [successNotice, setSuccessNotice] = useState(false);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const committees = useMemo(() => {
@@ -160,6 +185,23 @@ export function TaskDelegationView({
     targetGroup === "committee_heads" ||
     targetGroup === "committee_members";
 
+  const formHeading = (() => {
+    switch (currentUserRole) {
+      case "director":
+        return "Delegate Assignments to Heads & HR Admin";
+      case "committee_head":
+        return "Create Committee Assignments";
+      case "hr_member":
+        return "Assign Committee HR Tasks";
+      case "hr_admin":
+        return "Create Tasks & Assignments";
+      case "master_admin":
+        return "Create Chapter Tasks & Assignments";
+      default:
+        return "Create Deliverable";
+    }
+  })();
+
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -169,21 +211,22 @@ export function TaskDelegationView({
     if (
       targetType === "group" &&
       isCommitteeGroup &&
-      currentUserRole !== "committee_head" &&
+      !isCommitteeScopedCreator &&
       !targetCommitteeId
     ) {
-      setErrorMessage("Please select a target committee for this group assignment.");
+      setErrorMessage("Please select a target committee for this group.");
       return;
     }
 
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    const payload = {
+    const payload: CreateTaskPayload = {
       title: title.trim(),
       description: description.trim() || undefined,
       dueAt,
       maxPoints,
+      workType: effectiveWorkType,
       targetType,
       assignedToMembershipId:
         targetType === "specific_person" ? selectedAssignee : undefined,
@@ -198,19 +241,27 @@ export function TaskDelegationView({
       if (onCreateTask) {
         await onCreateTask(payload);
       } else {
-        const res = await createTaskAction(payload);
+        const res = await createTaskAction({
+          ...payload,
+          targetType,
+        });
         if (!res.ok) {
-          setErrorMessage(res.error || "Failed to create task");
+          setErrorMessage(res.error || `Failed to create ${singularLabel.toLowerCase()}.`);
           return;
         }
       }
       setTitle("");
       setDescription("");
       setSelectedAssignee("");
-      setSuccessNotice(true);
-      setTimeout(() => setSuccessNotice(false), 2500);
+      setSuccessNotice(`${singularLabel} created and assigned successfully.`);
+      setTimeout(() => setSuccessNotice(null), 2500);
     } catch (err: unknown) {
-      setErrorMessage(err instanceof Error ? err.message : "Error creating task");
+      const msg = err instanceof Error ? err.message : "";
+      setErrorMessage(
+        msg && !/minified react error|server components render/i.test(msg)
+          ? msg
+          : `Error creating ${singularLabel.toLowerCase()}.`
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -218,113 +269,178 @@ export function TaskDelegationView({
 
   return (
     <div className="space-y-8">
-      {/* 1. Tasks Assigned to Me */}
+      {/* 1. Items Assigned to Me */}
       {assignedToMe.length > 0 && (
         <div className="space-y-4">
-          <div className="border-b border-border pb-2">
+          <div className="border-b border-border pb-3">
             <h2 className="font-heading text-lg font-bold text-[#002855]">
-              Tasks Assigned to You
+              Assigned to You
             </h2>
             <p className="text-xs text-muted-foreground">
-              Directives and deliverables assigned to your role.
+              Assignments from leadership and tasks from HR assigned to your role.
             </p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            {assignedToMe.map((task) => (
-              <Card
-                key={task.id}
-                className="border-border bg-white shadow-xs transition-all hover:border-[#772583]"
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <Badge className="bg-[#772583] text-white text-[11px] font-semibold">
-                      {task.status.replace("_", " ")}
-                    </Badge>
-                    <span className="font-mono text-xs font-bold text-[#002855]">
-                      {task.maxPoints} pts
-                    </span>
-                  </div>
-                  <CardTitle className="mt-1 font-heading text-base font-bold text-[#002855]">
-                    {task.title}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 pt-0 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1.5 text-foreground/85">
-                    <UserCheck className="h-3.5 w-3.5 text-[#00629b]" />
-                    <span>
-                      Assigned by {roleLabels[task.assignerRole]} {task.assignedByName}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span>
-                      Due {new Date(task.dueAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {assignedToMe.map((item) => {
+              const itemIsTask = item.workType === "task";
+              return (
+                <Card
+                  key={item.id}
+                  className="border-border bg-white shadow-xs transition-all hover:border-[#772583]"
+                >
+                  <CardHeader className="pb-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Badge
+                          className={
+                            itemIsTask
+                              ? "bg-[#772583] text-white text-[11px] font-semibold"
+                              : "bg-[#00629b] text-white text-[11px] font-semibold"
+                          }
+                        >
+                          {itemIsTask ? "Task" : "Assignment"}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] font-semibold capitalize"
+                        >
+                          {item.status.replace("_", " ")}
+                        </Badge>
+                      </div>
+                      <span className="font-mono text-xs font-bold text-[#002855] tabular-nums">
+                        {item.maxPoints} pts
+                      </span>
+                    </div>
+                    <CardTitle className="mt-1 font-heading text-base font-bold text-[#002855]">
+                      {item.title}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 pt-0 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1.5 text-foreground/85">
+                      <UserCheck className="h-3.5 w-3.5 text-[#00629b]" aria-hidden="true" />
+                      <span>
+                        Assigned by {roleLabels[item.assignerRole]} {item.assignedByName}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                      <span>
+                        Due {new Date(item.dueAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* 2. Task Delegation Form */}
+      {/* 2. Creation & Delegation Form */}
       {canAssignAny && (
         <Card className="border-border bg-white shadow-xs">
-          <CardHeader className="border-b border-border/70 pb-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <CardHeader className="border-b border-border/70 pb-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <CardTitle className="font-heading text-lg font-bold text-[#002855]">
-                  {currentUserRole === "director"
-                    ? "Delegate Tasks to Heads & HR Admin"
-                    : currentUserRole === "hr_admin"
-                      ? "Assign Tasks to HR Members & Committees"
-                      : currentUserRole === "master_admin"
-                        ? "Create Chapter Tasks (Group or Individual)"
-                        : "Assign Tasks to Committee Members"}
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Assign deliverables to an individual or broadcast to a target group.
+                <div className="flex flex-wrap items-center gap-2">
+                  <CardTitle className="font-heading text-lg font-bold text-[#002855]">
+                    {formHeading}
+                  </CardTitle>
+                  {!canChooseWorkType && (
+                    <Badge
+                      className={
+                        isAssignment
+                          ? "bg-[#ebf3f8] text-[#00629b] text-[11px] font-semibold"
+                          : "bg-[#f5edf7] text-[#5a1b63] text-[11px] font-semibold"
+                      }
+                    >
+                      {singularLabel}s only
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {canChooseWorkType
+                    ? "Master Admin and HR Admin can issue both leadership Assignments and HR Tasks."
+                    : isAssignment
+                      ? "Director and Committee Head deliverables are recorded as Assignments."
+                      : "HR deliverables for your committee are recorded as Tasks."}
                 </p>
               </div>
 
-              {/* Segmented Toggle for Individual vs Group */}
-              <div className="inline-flex rounded-lg border border-border bg-[#002855]/5 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setTargetType("specific_person")}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all ${
-                    targetType === "specific_person"
-                      ? "bg-white text-[#772583] shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <User className="h-3.5 w-3.5" />
-                  Individual
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTargetType("group")}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all ${
-                    targetType === "group"
-                      ? "bg-[#772583] text-white shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Users className="h-3.5 w-3.5" />
-                  Group Assignment
-                </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {canChooseWorkType && (
+                  <div
+                    role="group"
+                    aria-label="Work item type"
+                    className="inline-flex rounded-lg border border-border bg-[#f8f9fb] p-0.5"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setWorkType("assignment")}
+                      className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
+                        effectiveWorkType === "assignment"
+                          ? "bg-[#00629b] text-white shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Assignment
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWorkType("task")}
+                      className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
+                        effectiveWorkType === "task"
+                          ? "bg-[#772583] text-white shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Task
+                    </button>
+                  </div>
+                )}
+
+                {/* Segmented Toggle for Individual vs Group */}
+                <div className="inline-flex rounded-lg border border-border bg-[#002855]/5 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setTargetType("specific_person")}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all ${
+                      targetType === "specific_person"
+                        ? "bg-white text-[#772583] shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <User className="h-3.5 w-3.5" aria-hidden="true" />
+                    Individual
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTargetType("group")}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all ${
+                      targetType === "group"
+                        ? "bg-[#772583] text-white shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                    Group
+                  </button>
+                </div>
               </div>
             </div>
 
             {successNotice && (
-              <div className="mt-2 inline-flex items-center gap-1 rounded bg-[#78be20]/15 px-2.5 py-1 text-xs font-semibold text-[#1e6b0a]">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Task Assigned Successfully
+              <div className="mt-2 inline-flex items-center gap-1.5 rounded bg-[#78be20]/15 px-2.5 py-1 text-xs font-semibold text-[#1e6b0a]">
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                {successNotice}
               </div>
             )}
             {errorMessage && (
-              <div className="mt-2 rounded bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive">
+              <div
+                role="alert"
+                className="mt-2 rounded bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive"
+              >
                 {errorMessage}
               </div>
             )}
@@ -338,13 +454,17 @@ export function TaskDelegationView({
                     htmlFor="task-title-input"
                     className="block font-heading text-xs font-bold text-[#002855]"
                   >
-                    Task Title
+                    {singularLabel} Title
                   </label>
                   <Input
                     id="task-title-input"
                     type="text"
                     required
-                    placeholder="e.g. Finalize Midterm Curriculum"
+                    placeholder={
+                      isAssignment
+                        ? "e.g. Finalize Midterm Curriculum"
+                        : "e.g. Submit Monthly Attendance Sheet"
+                    }
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     className="mt-1 h-10 text-sm"
@@ -433,21 +553,18 @@ export function TaskDelegationView({
                           </option>
                         </>
                       ) : (
-                        <>
-                          <option value="committee_members">
-                            All Members of My Committee
-                          </option>
-                        </>
+                        <option value="committee_members">
+                          All Members of My Committee
+                        </option>
                       )}
                     </select>
                   </div>
                 )}
               </div>
 
-              {/* If targetType === "group" and committee-scoped, show committee dropdown for non-heads */}
               {targetType === "group" &&
                 isCommitteeGroup &&
-                currentUserRole !== "committee_head" && (
+                !isCommitteeScopedCreator && (
                   <div>
                     <label
                       htmlFor="task-committee-select"
@@ -479,7 +596,7 @@ export function TaskDelegationView({
                     htmlFor="task-desc-input"
                     className="block font-heading text-xs font-bold text-[#002855]"
                   >
-                    Deliverable Details & Guidelines
+                    Details & Guidelines
                   </label>
                   <Input
                     id="task-desc-input"
@@ -537,14 +654,20 @@ export function TaskDelegationView({
                     (targetType === "specific_person" && !selectedAssignee) ||
                     (targetType === "group" &&
                       isCommitteeGroup &&
-                      currentUserRole !== "committee_head" &&
+                      !isCommitteeScopedCreator &&
                       !targetCommitteeId)
                   }
-                  className="h-10 gap-2 bg-[#772583] px-5 text-xs font-bold text-white hover:bg-[#5a1b63]"
+                  className={
+                    isAssignment
+                      ? "h-10 gap-2 bg-[#00629b] px-5 text-xs font-bold text-white hover:bg-[#002855]"
+                      : "h-10 gap-2 bg-[#772583] px-5 text-xs font-bold text-white hover:bg-[#5a1b63]"
+                  }
                 >
-                  <Send className="h-3.5 w-3.5" />
+                  <Send className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>
-                    {targetType === "group" ? "Assign Task to Group" : "Assign Task"}
+                    {targetType === "group"
+                      ? `Create Group ${singularLabel}`
+                      : `Create ${singularLabel}`}
                   </span>
                 </Button>
               </div>

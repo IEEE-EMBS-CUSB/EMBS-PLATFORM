@@ -5,7 +5,7 @@ import { ArrowRight, Info } from "lucide-react";
 import { ScoreBreakdown } from "@/components/data-display/score-breakdown";
 import { ScoreTrendChart } from "@/components/data-display/score-trend-chart";
 import { EmptyState } from "@/components/states/empty-state";
-import { PageLoadingState } from "@/components/states/loading-state";
+import { MemberPerformanceLoadingState } from "@/components/states/loading-state";
 import {
   Table,
   TableBody,
@@ -183,7 +183,7 @@ export default function MemberPerformancePage({
   searchParams,
 }: MemberPerformancePageProps) {
   return (
-    <Suspense fallback={<PageLoadingState />}>
+    <Suspense fallback={<MemberPerformanceLoadingState />}>
       <MemberPerformanceContent searchParams={searchParams} />
     </Suspense>
   );

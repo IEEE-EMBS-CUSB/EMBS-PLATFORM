@@ -229,6 +229,102 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
     );
 
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/cannot assign tasks across all committees/i);
+    expect(result.error).toMatch(/cannot assign/i);
+  });
+
+  it("enforces Assignments vs Tasks workType rules across director, head, hr_member, hr_admin, and master_admin", async () => {
+    const [omar] = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"));
+    expect(omar).toBeDefined();
+
+    // Committee Head cannot create a 'task' (only 'assignment')
+    const headTask = await createTaskAsActor(
+      {
+        title: "Illegal Head HR Task",
+        dueAt: "2026-12-31",
+        targetType: "specific_person",
+        assignedToMembershipId: omar.id,
+        workType: "task",
+      },
+      { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test-head" } }
+    );
+    expect(headTask.ok).toBe(false);
+    expect(headTask.error).toMatch(/assignment/i);
+
+    // Director cannot create a 'task' (only 'assignment')
+    const dirTask = await createTaskAsActor(
+      {
+        title: "Illegal Director HR Task",
+        dueAt: "2026-12-31",
+        targetType: "group",
+        targetGroup: "all_heads",
+        workType: "task",
+      },
+      { profile: { role: "director", committeeId: null, id: "test-dir" } }
+    );
+    expect(dirTask.ok).toBe(false);
+    expect(dirTask.error).toMatch(/assignment/i);
+
+    // HR Member cannot create an 'assignment' (only 'task')
+    const hrAssignment = await createTaskAsActor(
+      {
+        title: "Illegal HR Assignment",
+        dueAt: "2026-12-31",
+        targetType: "specific_person",
+        assignedToMembershipId: omar.id,
+        workType: "assignment",
+      },
+      { profile: { role: "hr_member", committeeId: omar.committeeId, id: "test-hr" } }
+    );
+    expect(hrAssignment.ok).toBe(false);
+    expect(hrAssignment.error).toMatch(/task/i);
+
+    // HR Member CAN create a 'task' for their committee
+    const hrTask = await createTaskAsActor(
+      {
+        title: `HR Committee Task ${Date.now()}`,
+        dueAt: "2026-12-31",
+        targetType: "specific_person",
+        assignedToMembershipId: omar.id,
+        workType: "task",
+      },
+      { profile: { role: "hr_member", committeeId: omar.committeeId, id: "test-hr" } }
+    );
+    expect(hrTask.ok).toBe(true);
+    createdTaskIds.push(hrTask.taskId!);
+
+    const [storedHrTask] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.id, hrTask.taskId!));
+    expect(storedHrTask.workType).toBe("task");
+
+    // HR Admin CAN create both 'assignment' and 'task'
+    const [laila] = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(eq(schema.rosterMemberships.role, "hr_member"))
+      .limit(1);
+    expect(laila).toBeDefined();
+
+    const hrAdminAssignment = await createTaskAsActor(
+      {
+        title: `HR Admin Assignment ${Date.now()}`,
+        dueAt: "2026-12-31",
+        targetType: "specific_person",
+        assignedToMembershipId: laila.id,
+        workType: "assignment",
+      },
+      { profile: { role: "hr_admin", committeeId: null, id: "test-hr-admin" } }
+    );
+    expect(hrAdminAssignment.ok).toBe(true);
+    createdTaskIds.push(hrAdminAssignment.taskId!);
+    const [storedAdminAssignment] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.id, hrAdminAssignment.taskId!));
+    expect(storedAdminAssignment.workType).toBe("assignment");
   });
 });

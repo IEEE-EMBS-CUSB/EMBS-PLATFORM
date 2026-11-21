@@ -5,7 +5,7 @@ import { Calendar, Trophy } from "lucide-react";
 import { LeaderboardNav } from "@/components/data-display/leaderboard-nav";
 import { RankingTable } from "@/components/data-display/ranking-table";
 import { EmptyState } from "@/components/states/empty-state";
-import { PageLoadingState } from "@/components/states/loading-state";
+import { LeaderboardLoadingState } from "@/components/states/loading-state";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDisplayDate } from "@/lib/format";
@@ -136,7 +136,7 @@ export default function LeaderboardsPage({
 }: LeaderboardsPageProps) {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-10">
-      <Suspense fallback={<PageLoadingState />}>
+      <Suspense fallback={<LeaderboardLoadingState />}>
         <LeaderboardsContent searchParams={searchParams} />
       </Suspense>
     </div>

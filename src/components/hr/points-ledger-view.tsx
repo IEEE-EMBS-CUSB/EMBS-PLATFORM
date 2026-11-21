@@ -199,9 +199,9 @@ export function PointsLedgerView({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#002855] sm:text-3xl">
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
             Point Override Ledger
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -216,7 +216,7 @@ export function PointsLedgerView({
             setFormError(null);
             setIsModalOpen(true);
           }}
-          className="inline-flex items-center gap-2 bg-[#772583] text-white hover:bg-[#5a1b63]"
+          className="inline-flex h-10 shrink-0 items-center gap-2 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
           <span>Adjust Points</span>
@@ -241,7 +241,7 @@ export function PointsLedgerView({
                 aria-label="Filter by type"
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
-                className="h-10 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b]"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b] sm:w-auto"
               >
                 <option value="all">All Types</option>
                 <option value="manual_override">Manual Overrides</option>

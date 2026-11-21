@@ -1,5 +1,5 @@
-import { PageLoadingState } from "@/components/states/loading-state";
+import { MemberDashboardLoadingState } from "@/components/states/loading-state";
 
 export default function MemberPortalLoading() {
-  return <PageLoadingState />;
+  return <MemberDashboardLoadingState />;
 }

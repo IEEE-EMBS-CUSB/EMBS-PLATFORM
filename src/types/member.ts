@@ -78,6 +78,7 @@ export interface MemberTask {
   submissionId?: string;
   month: MonthKey;
   title: string;
+  workType?: "assignment" | "task";
   assignedDate: string;
   dueDate: string;
   completedDate?: string;

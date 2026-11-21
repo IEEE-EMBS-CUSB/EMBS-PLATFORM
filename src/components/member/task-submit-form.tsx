@@ -45,12 +45,13 @@ export function TaskSubmitForm({ taskId }: { taskId: string }) {
         });
       }
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
       setStatus({
         type: "error",
         text:
-          err instanceof Error
-            ? err.message
-            : "Failed to submit deliverable.",
+          msg && !/minified react error|server components render/i.test(msg)
+            ? msg
+            : "Failed to submit deliverable. Please try again.",
       });
     } finally {
       setSaving(false);
@@ -58,40 +59,39 @@ export function TaskSubmitForm({ taskId }: { taskId: string }) {
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center"
-    >
-      <Input
-        aria-label="Submission notes"
-        placeholder="Submission notes"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        className="h-9 text-xs"
-      />
-      <Input
-        aria-label="Submission URL"
-        placeholder="https://... (optional)"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        className="h-9 text-xs"
-      />
-      <Button
-        type="submit"
-        disabled={saving}
-        className="h-9 shrink-0 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
-      >
-        {saving ? "Saving..." : "Submit"}
-      </Button>
+    <form onSubmit={handleSubmit} className="mt-2.5 space-y-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Input
+          aria-label="Submission notes"
+          placeholder="Submission notes"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          className="h-9 text-xs"
+        />
+        <Input
+          aria-label="Submission URL"
+          placeholder="https://... (optional)"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          className="h-9 text-xs"
+        />
+        <Button
+          type="submit"
+          disabled={saving}
+          className="h-9 shrink-0 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
+        >
+          {saving ? "Saving..." : "Submit"}
+        </Button>
+      </div>
       {status && (
-        <span
+        <p
           role={status.type === "error" ? "alert" : "status"}
           className={`text-xs font-semibold ${
             status.type === "error" ? "text-[#ba0c2f]" : "text-[#1e6b0a]"
           }`}
         >
           {status.text}
-        </span>
+        </p>
       )}
     </form>
   );

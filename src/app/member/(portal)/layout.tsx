@@ -22,9 +22,16 @@ export default async function MemberPortalLayout({
     redirect("/login?session=invalid");
   }
 
-  // Chapter leadership roles without committee assignments (Director, Master Admin)
-  // operate exclusively through the HR & Operations console at /hr.
-  if (opProfile && (opProfile.role === "master_admin" || opProfile.role === "director" || opProfile.role === "hr_admin" || opProfile.role === "hr_member" || opProfile.role === "committee_head")) {
+  // Chapter leadership and HR roles without committee member views operate through /hr.
+  // Committee heads can switch freely between Leader View (/hr) and Member View (/member)
+  // to view and submit assignments given to them by Directors.
+  if (
+    opProfile &&
+    (opProfile.role === "master_admin" ||
+      opProfile.role === "director" ||
+      opProfile.role === "hr_admin" ||
+      opProfile.role === "hr_member")
+  ) {
     redirect("/hr");
   }
 

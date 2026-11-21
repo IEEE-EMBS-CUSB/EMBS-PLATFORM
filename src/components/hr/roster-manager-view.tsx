@@ -455,10 +455,10 @@ export function RosterManagerView({
         </div>
       )}
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#002855] sm:text-3xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
               Roster & Whitelist Manager
             </h1>
             {isMaster ? (
@@ -478,7 +478,7 @@ export function RosterManagerView({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           {isMaster && (
             <>
               <Button
@@ -487,7 +487,7 @@ export function RosterManagerView({
                   setAddError("");
                   setAddModalOpen(true);
                 }}
-                className="h-11 gap-2 bg-[#002855] px-5 text-sm font-semibold text-white hover:bg-[#001c3d]"
+                className="h-10 gap-2 bg-[#002855] px-4 text-xs font-semibold text-white hover:bg-[#001c3d]"
               >
                 <UserPlus className="h-4 w-4" aria-hidden="true" />
                 <span>Add Member</span>
@@ -499,7 +499,7 @@ export function RosterManagerView({
                   setImportModalOpen(true);
                 }}
                 variant="outline"
-                className="h-11 gap-2 border-border px-5 text-sm font-semibold text-[#002855] hover:bg-[#f5edf7]"
+                className="h-10 gap-2 border-border px-4 text-xs font-semibold text-[#002855] hover:bg-[#f5edf7]"
               >
                 <Upload className="h-4 w-4" aria-hidden="true" />
                 <span>CSV Bulk Import</span>

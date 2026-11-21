@@ -31,6 +31,23 @@ export interface LoginFormProps {
   }>;
 }
 
+function toFriendlyAuthError(err: unknown, fallback: string): string {
+  if (err instanceof Error) {
+    const msg = err.message ?? "";
+    if (
+      /minified react error/i.test(msg) ||
+      /server components render/i.test(msg) ||
+      /digest/i.test(msg)
+    ) {
+      return fallback;
+    }
+    if (msg.trim().length > 0) {
+      return msg;
+    }
+  }
+  return fallback;
+}
+
 export function LoginForm({ onLogin, onChangePassword }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -75,11 +92,12 @@ export function LoginForm({ onLogin, onChangePassword }: LoginFormProps) {
         window.location.href = res.redirectTo;
       }
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setErrorMessage(err.message);
-      } else {
-        setErrorMessage("Unable to sign in. Please verify your credentials or contact HR.");
-      }
+      setErrorMessage(
+        toFriendlyAuthError(
+          err,
+          "Unable to complete sign-in right now. Please try again or contact your chapter administrator."
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -123,11 +141,12 @@ export function LoginForm({ onLogin, onChangePassword }: LoginFormProps) {
         window.location.href = res.redirectTo;
       }
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setErrorMessage(err.message);
-      } else {
-        setErrorMessage("Failed to set permanent password.");
-      }
+      setErrorMessage(
+        toFriendlyAuthError(
+          err,
+          "Unable to complete password setup right now. Please try signing in again or contact your chapter administrator."
+        )
+      );
     } finally {
       setLoading(false);
     }

@@ -25,7 +25,7 @@ describe("HrNav Component", () => {
       "href",
       "/hr/attendance"
     );
-    expect(screen.getByRole("link", { name: /tasks/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /tasks & assignments/i })).toHaveAttribute(
       "href",
       "/hr/tasks"
     );
@@ -41,54 +41,58 @@ describe("HrNav Component", () => {
       "href",
       "/hr/publishing"
     );
+    expect(screen.queryByRole("link", { name: /events/i })).not.toBeInTheDocument();
   });
 
   it("filters out seasons for hr_admin (only master can manage seasons)", () => {
     render(<HrNav activeTab="overview" currentUserRole="hr_admin" />);
 
     expect(screen.queryByRole("link", { name: /seasons/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /events/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /committees/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /roster/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /attendance/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /tasks/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /tasks & assignments/i })).toBeInTheDocument();
   });
 
-  it("filters navigation links for director (tasks, committees, roster, ledger, feedback, overview)", () => {
+  it("filters navigation links for director (assignments, committees, roster, ledger, feedback, overview)", () => {
     render(<HrNav activeTab="tasks" currentUserRole="director" />);
 
     expect(screen.getByRole("link", { name: /overview/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /tasks/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^assignments$/i })).toHaveAttribute("href", "/hr/tasks");
     expect(screen.getByRole("link", { name: /committees/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /roster/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /points ledger/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /feedback/i })).toBeInTheDocument();
 
-    // Director does NOT see seasons, attendance, or publishing
+    // Director does NOT see seasons, attendance, publishing, or removed events
     expect(screen.queryByRole("link", { name: /seasons/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /attendance/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /publishing/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /events/i })).not.toBeInTheDocument();
   });
 
-  it("filters navigation links for hr_member (attendance, ledger, overview only)", () => {
+  it("filters navigation links for hr_member (overview, attendance, tasks, ledger)", () => {
     render(<HrNav activeTab="attendance" currentUserRole="hr_member" />);
 
     expect(screen.getByRole("link", { name: /overview/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /attendance/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^tasks$/i })).toHaveAttribute("href", "/hr/tasks");
     expect(screen.getByRole("link", { name: /points ledger/i })).toBeInTheDocument();
 
     expect(screen.queryByRole("link", { name: /seasons/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /committees/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /roster/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /tasks/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /publishing/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /events/i })).not.toBeInTheDocument();
   });
 
-  it("filters navigation links for committee_head (sessions/attendance, tasks, ledger, feedback, overview)", () => {
+  it("filters navigation links for committee_head (sessions/attendance, assignments, ledger, feedback, overview)", () => {
     render(<HrNav activeTab="tasks" currentUserRole="committee_head" />);
 
     expect(screen.getByRole("link", { name: /overview/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /attendance/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /tasks/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^assignments$/i })).toHaveAttribute("href", "/hr/tasks");
     expect(screen.getByRole("link", { name: /points ledger/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /feedback/i })).toBeInTheDocument();
 
@@ -96,5 +100,6 @@ describe("HrNav Component", () => {
     expect(screen.queryByRole("link", { name: /committees/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /roster/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /publishing/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /events/i })).not.toBeInTheDocument();
   });
 });

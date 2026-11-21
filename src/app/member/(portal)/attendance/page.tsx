@@ -4,7 +4,7 @@ import { CalendarCheck } from "lucide-react";
 import { MetricCard } from "@/components/data-display/metric-card";
 import { AttendanceStatusBadge } from "@/components/data-display/status-badge";
 import { EmptyState } from "@/components/states/empty-state";
-import { PageLoadingState } from "@/components/states/loading-state";
+import { MemberAttendanceLoadingState } from "@/components/states/loading-state";
 import {
   Table,
   TableBody,
@@ -168,7 +168,7 @@ async function MemberAttendanceContent() {
 
 export default function MemberAttendancePage() {
   return (
-    <Suspense fallback={<PageLoadingState />}>
+    <Suspense fallback={<MemberAttendanceLoadingState showCheckin />}>
       <MemberAttendanceContent />
     </Suspense>
   );

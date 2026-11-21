@@ -7,7 +7,7 @@ import { FeedbackList } from "@/components/data-display/feedback-list";
 import { ScoreBreakdown } from "@/components/data-display/score-breakdown";
 import { MemberEngagementCard } from "@/components/data-display/member-engagement-card";
 import { EmptyState } from "@/components/states/empty-state";
-import { PageLoadingState } from "@/components/states/loading-state";
+import { MemberDashboardLoadingState } from "@/components/states/loading-state";
 import { requireMemberSession } from "@/lib/portal-guards";
 import { getMemberDashboard } from "@/services/member.service";
 
@@ -239,7 +239,7 @@ async function MemberDashboardContent() {
 
 export default function MemberDashboardPage() {
   return (
-    <Suspense fallback={<PageLoadingState />}>
+    <Suspense fallback={<MemberDashboardLoadingState />}>
       <MemberDashboardContent />
     </Suspense>
   );

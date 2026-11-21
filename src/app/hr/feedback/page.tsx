@@ -1,4 +1,3 @@
-import { HrShell } from "@/components/hr/hr-shell";
 import {
   HrFeedbackView,
   type FeedbackItem,
@@ -19,7 +18,6 @@ export default async function HrFeedbackPage() {
     email: string;
   }> = [];
   let feedbackList: FeedbackItem[] = [];
-  let activeSeasonName = "Active Season";
 
   const canViewAndCreateWarnings =
     profile.role === "master_admin" ||
@@ -35,7 +33,6 @@ export default async function HrFeedbackPage() {
       .limit(1);
 
     if (activeSeason) {
-      activeSeasonName = activeSeason.name;
       const seasonId = activeSeason.id;
 
       const [allSeasonMembers, dbCommittees] = await Promise.all([
@@ -123,20 +120,12 @@ export default async function HrFeedbackPage() {
   }
 
   return (
-    <HrShell
-      activeTab="feedback"
-      currentUserRole={profile.role}
-      userName={profile.fullName}
-      userCommitteeName={profile.committeeName}
-      activeSeasonName={activeSeasonName}
-    >
-      <HrFeedbackView
-        feedbackList={feedbackList}
-        members={members}
-        canCreateWarning={canViewAndCreateWarnings}
-        currentUserName={profile.fullName}
-        onAddFeedback={addHrFeedbackAction}
-      />
-    </HrShell>
+    <HrFeedbackView
+      feedbackList={feedbackList}
+      members={members}
+      canCreateWarning={canViewAndCreateWarnings}
+      currentUserName={profile.fullName}
+      onAddFeedback={addHrFeedbackAction}
+    />
   );
 }

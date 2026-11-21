@@ -134,8 +134,8 @@ export function RoleOperationalDashboard({
     return (
       <div className="space-y-10">
         {renderAssignedTasksSection(
-          "My Deliverables (Assigned by Director)",
-          "Specific milestones and curriculum tasks assigned to you by chapter directors."
+          "My Assignments (From Director)",
+          "Specific milestones and curriculum assignments given to you by chapter directors."
         )}
 
         <div className="space-y-6 border-t border-border pt-8">
@@ -157,9 +157,9 @@ export function RoleOperationalDashboard({
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5">
+              <CardContent className="p-4 sm:p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Active Members</p>
                 <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
                   {kpis.activeMembers}
@@ -198,17 +198,17 @@ export function RoleOperationalDashboard({
             </Card>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5 space-y-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
                   <CheckSquare className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Task Assignments & Bulk Grading
+                  Committee Assignments & Bulk Grading
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Create committee deliverables or tab across Effort, Quality, and Timeliness to grade members.
+                  Create committee assignments or tab across Effort, Quality, and Timeliness to grade members.
                 </p>
                 <div className="flex flex-col gap-2 pt-1">
                   <Link
@@ -218,7 +218,7 @@ export function RoleOperationalDashboard({
                       className: "w-full bg-[#00629b] text-xs font-semibold text-white hover:bg-[#002855]",
                     })}
                   >
-                    Assign Tasks to Members
+                    Create Committee Assignments
                   </Link>
                   <Link
                     href="/hr/tasks"
@@ -314,17 +314,17 @@ export function RoleOperationalDashboard({
             </p>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5 space-y-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#5a1b63]/10 text-[#5a1b63]">
                   <CheckSquare className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Heads Task Delegation
+                  Heads Assignment Delegation
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Assign deadlines, roadmaps, and requirements to Committee Heads and HR Administrators.
+                  Issue deadlines, roadmaps, and assignments to Committee Heads and HR Administrators.
                 </p>
                 <Link
                   href="/hr/tasks"
@@ -333,7 +333,7 @@ export function RoleOperationalDashboard({
                     className: "w-full bg-[#5a1b63] text-xs font-semibold text-white hover:bg-[#002855]",
                   })}
                 >
-                  Delegate Tasks to Heads
+                  Delegate Assignments to Heads
                 </Link>
               </CardContent>
             </Card>
@@ -415,9 +415,9 @@ export function RoleOperationalDashboard({
             </p>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5">
+              <CardContent className="p-4 sm:p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Tracked Members</p>
                 <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
                   {kpis.activeMembers}
@@ -456,7 +456,7 @@ export function RoleOperationalDashboard({
             </Card>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-5 space-y-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f5edf7] text-[#772583]">
@@ -537,9 +537,9 @@ export function RoleOperationalDashboard({
   if (currentUserRole === "master_admin") {
     return (
       <div className="space-y-8">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-heading text-2xl font-extrabold tracking-tight text-[#002855]">
+        <div className="border-b border-border pb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
               Master Authority & Chapter Governance
             </h1>
             <Badge className="bg-[#002855] text-[#ffc627] border border-[#ffc627]/40 text-xs font-bold gap-1">
@@ -551,9 +551,9 @@ export function RoleOperationalDashboard({
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card className="border-border bg-white shadow-xs">
-            <CardContent className="p-5">
+            <CardContent className="p-4 sm:p-5">
               <p className="text-xs font-semibold text-muted-foreground">Active Members</p>
               <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
                 {kpis.activeMembers}
@@ -590,7 +590,7 @@ export function RoleOperationalDashboard({
           </Card>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Card className="border-border bg-white shadow-xs">
             <CardContent className="p-5 space-y-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#002855]/10 text-[#002855]">
@@ -667,78 +667,101 @@ export function RoleOperationalDashboard({
 
   // 5. HR MEMBER VIEW
   return (
-    <div className="space-y-10">
-      {renderAssignedTasksSection(
-        "My Tasks (From HR Admin)",
-        "Directives and operational assignments from chapter HR administration."
-      )}
+    <div className="space-y-8">
+        {renderAssignedTasksSection(
+          "My Tasks (From HR Admin)",
+          "Operational tasks assigned to you by chapter HR administration."
+        )}
 
-      <div className="space-y-6 border-t border-border pt-8">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="font-heading text-xl font-bold text-[#002855]">
-              Committee Attendance Operations
-            </h2>
-            {committeeName && (
-              <Badge className="bg-[#007377] text-white text-xs font-semibold">
-                {committeeName}
-              </Badge>
-            )}
+        <div className="space-y-6 border-t border-border pt-8">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-heading text-xl font-bold text-[#002855]">
+                Committee HR Operations
+              </h2>
+              {committeeName && (
+                <Badge className="bg-[#007377] text-white text-xs font-semibold">
+                  {committeeName}
+                </Badge>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Welcome back, {userName}. Manage meeting check-ins, committee HR tasks, and points for your assigned committee.
+            </p>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Welcome back, {userName}. Manage meeting check-ins, rotating QR codes, and punctuality bonus points for your assigned committee.
-          </p>
-        </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card className="border-border bg-white shadow-xs">
-            <CardContent className="p-5 space-y-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#007377]/10 text-[#007377]">
-                <QrCode className="h-5 w-5" />
-              </div>
-              <h3 className="font-heading text-base font-bold text-[#002855]">
-                Live QR Session Check-in
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Open a session check-in with a full-screen rotating QR code and 6-digit numeric fallback for instant logging.
-              </p>
-              <Link
-                href="/hr/attendance"
-                className={buttonVariants({
-                  size: "sm",
-                  className: "w-full bg-[#007377] text-xs font-semibold text-white hover:bg-[#002855]",
-                })}
-              >
-                Live QR Check-in
-              </Link>
-            </CardContent>
-          </Card>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <Card className="border-border bg-white shadow-xs">
+              <CardContent className="p-5 space-y-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#007377]/10 text-[#007377]">
+                  <QrCode className="h-5 w-5" />
+                </div>
+                <h3 className="font-heading text-base font-bold text-[#002855]">
+                  Live QR Session Check-in
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Open a session check-in with a full-screen rotating QR code and 6-digit numeric fallback for instant logging.
+                </p>
+                <Link
+                  href="/hr/attendance"
+                  className={buttonVariants({
+                    size: "sm",
+                    className: "w-full bg-[#007377] text-xs font-semibold text-white hover:bg-[#002855]",
+                  })}
+                >
+                  Live QR Check-in
+                </Link>
+              </CardContent>
+            </Card>
 
-          <Card className="border-border bg-white shadow-xs">
-            <CardContent className="p-5 space-y-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
-                <FileSpreadsheet className="h-5 w-5" />
-              </div>
-              <h3 className="font-heading text-base font-bold text-[#002855]">
-                Points Ledger & Attendance Overrides
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Manually record or adjust attendance points and punctuality bonuses for committee members.
-              </p>
-              <Link
-                href="/hr/ledger"
-                className={buttonVariants({
-                  variant: "outline",
-                  size: "sm",
-                  className: "w-full text-xs font-semibold",
-                })}
-              >
-                Award Attendance Points
-              </Link>
-            </CardContent>
-          </Card>
+            <Card className="border-border bg-white shadow-xs">
+              <CardContent className="p-5 space-y-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f5edf7] text-[#772583]">
+                  <CheckSquare className="h-5 w-5" />
+                </div>
+                <h3 className="font-heading text-base font-bold text-[#002855]">
+                  Committee HR Tasks
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Create and grade HR tasks for members in your assigned committee.
+                </p>
+                <Link
+                  href="/hr/tasks"
+                  className={buttonVariants({
+                    size: "sm",
+                    className: "w-full bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]",
+                  })}
+                >
+                  Manage Tasks
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-white shadow-xs">
+              <CardContent className="p-5 space-y-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </div>
+                <h3 className="font-heading text-base font-bold text-[#002855]">
+                  Points Ledger & Attendance Overrides
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Manually record or adjust attendance points and punctuality bonuses for committee members.
+                </p>
+                <Link
+                  href="/hr/ledger"
+                  className={buttonVariants({
+                    variant: "outline",
+                    size: "sm",
+                    className: "w-full text-xs font-semibold",
+                  })}
+                >
+                  Award Attendance Points
+                </Link>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
-    </div>
   );
 }

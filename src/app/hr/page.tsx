@@ -1,5 +1,4 @@
 import { requireOperationalSession } from "@/lib/portal-guards";
-import { HrShell } from "@/components/hr/hr-shell";
 import {
   RoleOperationalDashboard,
   type DashboardKpis,
@@ -13,7 +12,6 @@ export default async function HrOverviewPage() {
   const { profile } = await requireOperationalSession();
 
   let assignedTasks: AssignedTaskItem[] = [];
-  let activeSeasonName = "Active Season";
   const kpis: DashboardKpis = {
     activeMembers: 0,
     committeeCount: 0,
@@ -33,7 +31,6 @@ export default async function HrOverviewPage() {
       .limit(1);
 
     if (activeSeason) {
-      activeSeasonName = activeSeason.name;
       const seasonId = activeSeason.id;
 
       const [
@@ -50,6 +47,7 @@ export default async function HrOverviewPage() {
           .select({
             taskId: schema.tasks.id,
             title: schema.tasks.title,
+            workType: schema.tasks.workType,
             dueAt: schema.tasks.dueAt,
             maxPoints: schema.tasks.maxPoints,
             totalPoints: schema.taskSubmissions.totalPoints,
@@ -140,8 +138,10 @@ export default async function HrOverviewPage() {
       assignedTasks = dbSubmissions.map((s) => ({
         id: s.taskId,
         title: s.title,
+        workType: s.workType === "task" ? "task" : "assignment",
         assignedByName: "Leadership",
-        assignerRole: defaultAssignerRole,
+        assignerRole:
+          s.workType === "task" ? "hr_admin" : defaultAssignerRole,
         dueAt: s.dueAt,
         maxPoints: s.maxPoints,
         status:
@@ -196,20 +196,12 @@ export default async function HrOverviewPage() {
   }
 
   return (
-    <HrShell
-      activeTab="overview"
+    <RoleOperationalDashboard
       currentUserRole={profile.role}
       userName={profile.fullName}
-      userCommitteeName={profile.committeeName}
-      activeSeasonName={activeSeasonName}
-    >
-      <RoleOperationalDashboard
-        currentUserRole={profile.role}
-        userName={profile.fullName}
-        committeeName={profile.committeeName}
-        assignedTasks={assignedTasks}
-        kpis={kpis}
-      />
-    </HrShell>
+      committeeName={profile.committeeName}
+      assignedTasks={assignedTasks}
+      kpis={kpis}
+    />
   );
 }

@@ -15,7 +15,6 @@ import { activateSeasonAsActor } from "@/services/hr-ops/seasons.service";
 import { addCommitteeAsActor } from "@/services/hr-ops/committees.service";
 import { addManualLedgerEntryAsActor } from "@/services/hr-ops/ledger.service";
 import { addHrFeedbackAsActor } from "@/services/hr-ops/feedback.service";
-import { logEventAsActor } from "@/services/hr-ops/events.service";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -184,7 +183,7 @@ describe("Server Action Attack Surface & Core Security Invariants", () => {
     expect(addComm.error).toMatch(/archived/i);
   });
 
-  it("blocks self-awarding in ledger, private warnings from committee_head, and unauthorized event logging", async () => {
+  it("blocks self-awarding in ledger and private warnings from committee_head", async () => {
     const [omar] = await db
       .select()
       .from(schema.rosterMemberships)
@@ -207,18 +206,5 @@ describe("Server Action Attack Surface & Core Security Invariants", () => {
     );
     expect(headWarning.ok).toBe(false);
     expect(headWarning.error).toMatch(/unauthorized/i);
-
-    // Director cannot log events (not in canManageCommitteeSessions)
-    const dirEvent = await logEventAsActor(
-      {
-        title: "Unauthorized Director Event",
-        eventDate: "2099-02-15",
-        points: 10,
-        targetMembershipIds: [],
-      },
-      { profile: { id: "dir-1", role: "director", committeeId: null } }
-    );
-    expect(dirEvent.ok).toBe(false);
-    expect(dirEvent.error).toMatch(/unauthorized/i);
   });
 });

@@ -1,4 +1,3 @@
-import { HrShell } from "@/components/hr/hr-shell";
 import {
   SeasonManagerView,
   type SeasonItem,
@@ -18,7 +17,6 @@ export default async function HrSeasonsPage() {
   const { profile } = await requireHrModule("seasons");
 
   let seasons: SeasonItem[] = [];
-  let activeSeasonName = "Seasons";
 
   try {
     const [dbSeasons, dbCommittees, dbMembers] = await Promise.all([
@@ -54,29 +52,18 @@ export default async function HrSeasonsPage() {
       committeeCount: committeeCounts.get(s.id) ?? 0,
       memberCount: memberCounts.get(s.id) ?? 0,
     }));
-
-    const active = dbSeasons.find((s) => s.status === "active");
-    if (active) activeSeasonName = active.name;
   } catch {
     // DB offline
   }
 
   return (
-    <HrShell
-      activeTab="seasons"
+    <SeasonManagerView
+      seasons={seasons}
       currentUserRole={profile.role}
-      userName={profile.fullName}
-      userCommitteeName={profile.committeeName}
-      activeSeasonName={activeSeasonName}
-    >
-      <SeasonManagerView
-        seasons={seasons}
-        currentUserRole={profile.role}
-        onCreateSeason={createSeasonAction}
-        onCloneSeason={cloneSeasonAction}
-        onActivateSeason={activateSeasonAction}
-        onArchiveSeason={archiveSeasonAction}
-      />
-    </HrShell>
+      onCreateSeason={createSeasonAction}
+      onCloneSeason={cloneSeasonAction}
+      onActivateSeason={activateSeasonAction}
+      onArchiveSeason={archiveSeasonAction}
+    />
   );
 }

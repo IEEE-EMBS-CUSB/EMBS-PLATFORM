@@ -193,10 +193,43 @@
   animation: embs-shake 260ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
+@keyframes embs-link-fade {
+  to {
+    opacity: 0.75;
+  }
+}
+
+@keyframes embs-link-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.embs-link-pending {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.embs-link-pending.is-pending {
+  visibility: visible;
+  animation-name: embs-link-fade, embs-link-pulse;
+  animation-duration: 180ms, 900ms;
+  animation-delay: 100ms, 100ms;
+  animation-timing-function: ease-out, ease-in-out;
+  animation-iteration-count: 1, infinite;
+  animation-fill-mode: forwards, none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .embs-bar-fill,
-  .embs-shake {
+  .embs-shake,
+  .embs-link-pending.is-pending {
     animation: none;
     transform: none;
+  }
+
+  .embs-link-pending.is-pending {
+    opacity: 0.65;
   }
 }

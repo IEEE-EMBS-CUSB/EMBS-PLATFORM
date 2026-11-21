@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Award, Calendar, Info } from "lucide-react";
 import { EmptyState } from "@/components/states/empty-state";
-import { PageLoadingState } from "@/components/states/loading-state";
+import { MemberListLoadingState } from "@/components/states/loading-state";
 import { Badge } from "@/components/ui/badge";
 import { formatDisplayDate } from "@/lib/format";
 import { requireMemberSession } from "@/lib/portal-guards";
@@ -140,7 +140,7 @@ async function MemberEvaluationsContent() {
 
 export default function MemberEvaluationsPage() {
   return (
-    <Suspense fallback={<PageLoadingState />}>
+    <Suspense fallback={<MemberListLoadingState />}>
       <MemberEvaluationsContent />
     </Suspense>
   );
