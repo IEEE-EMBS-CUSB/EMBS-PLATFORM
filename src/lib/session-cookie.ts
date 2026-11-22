@@ -5,11 +5,15 @@ import {
   decodeSessionToken,
   SESSION_DURATION_SECONDS,
 } from "@/services/session.service";
+import {
+  listEligibleContextsForPerson,
+  type EligibleContextOption,
+} from "@/services/context.service";
 import type { SessionUser } from "@/types";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 export const SESSION_COOKIE_NAME = "embs_portal_session";
 export const LAST_CONTEXT_COOKIE_NAME = "embs_last_context";
@@ -66,70 +70,95 @@ export function buildClearLastContextCookieOptions(
   };
 }
 
+export interface LivePersonRecord {
+  id: string;
+  fullName: string;
+  isActive: boolean;
+  mustChangePassword: boolean;
+  passwordChangedAt: Date | null;
+}
+
+/**
+ * Pure resolution of live session state from a person's DB record and eligible season contexts.
+ * - Revokes if person is inactive, mustChangePassword is true, password changed after issuedAt,
+ *   or zero eligible memberships remain.
+ * - Preserves the pinned `participantId` if still active & eligible; otherwise seamlessly
+ *   auto-falls back to the highest-precedence remaining active hat in the same eligible season.
+ */
+export function resolveLiveSessionFromPersonState(input: {
+  sessionUser: SessionUser;
+  person: LivePersonRecord | null;
+  eligibleContexts: readonly EligibleContextOption[];
+}): SessionUser | null {
+  const { sessionUser, person, eligibleContexts } = input;
+  if (!person || !person.isActive || person.mustChangePassword) {
+    return null;
+  }
+
+  const issuedAtMs = Date.parse(sessionUser.issuedAt);
+  if (
+    person.passwordChangedAt &&
+    !Number.isNaN(issuedAtMs) &&
+    person.passwordChangedAt.getTime() > issuedAtMs
+  ) {
+    return null;
+  }
+
+  if (eligibleContexts.length === 0) {
+    return null;
+  }
+
+  const activeContext =
+    eligibleContexts.find((c) => c.membershipId === sessionUser.participantId) ??
+    eligibleContexts[0];
+
+  const participantType =
+    activeContext.role === "attendee" ? "attendee" : "member";
+
+  return {
+    ...sessionUser,
+    personId: person.id,
+    participantId: activeContext.membershipId,
+    displayId: activeContext.membershipId.slice(0, 8),
+    fullName: person.fullName,
+    participantType,
+    membershipRole: activeContext.role as MembershipRole,
+  };
+}
+
 /**
  * Verifies a decoded session against live persons + roster_memberships + seasons state.
- * Revokes deactivated accounts/memberships, password-reset-pending, password-changed-after-issue,
- * mismatched person ownership, missing, or draft-season sessions,
- * and refreshes live role/name claims from PostgreSQL so demotions take effect immediately.
+ * Revokes deactivated accounts, password-reset-pending, password-changed-after-issue,
+ * or zero-active-membership sessions. Auto-falls back if only the pinned hat was deactivated
+ * while another active hat remains in the same eligible season.
  */
 export async function validateSessionAgainstDb(
   sessionUser: SessionUser
 ): Promise<SessionUser | null> {
   try {
-    const rows = await db
+    const [person] = await db
       .select({
-        id: schema.rosterMemberships.id,
-        personId: schema.persons.id,
+        id: schema.persons.id,
         fullName: schema.persons.fullName,
-        role: schema.rosterMemberships.role,
-        isActive: schema.rosterMemberships.isActive,
-        personIsActive: schema.persons.isActive,
+        isActive: schema.persons.isActive,
         mustChangePassword: schema.persons.mustChangePassword,
         passwordChangedAt: schema.persons.passwordChangedAt,
-        seasonStatus: schema.seasons.status,
       })
-      .from(schema.rosterMemberships)
-      .innerJoin(
-        schema.persons,
-        eq(schema.rosterMemberships.personId, schema.persons.id)
-      )
-      .innerJoin(
-        schema.seasons,
-        eq(schema.rosterMemberships.seasonId, schema.seasons.id)
-      )
-      .where(
-        and(
-          eq(schema.rosterMemberships.id, sessionUser.participantId),
-          eq(schema.rosterMemberships.personId, sessionUser.personId),
-          eq(schema.rosterMemberships.isActive, true),
-          eq(schema.persons.isActive, true),
-          eq(schema.persons.mustChangePassword, false),
-          ne(schema.seasons.status, "draft")
-        )
-      )
+      .from(schema.persons)
+      .where(eq(schema.persons.id, sessionUser.personId))
       .limit(1);
 
-    if (rows.length === 0) return null;
-
-    const member = rows[0];
-    const issuedAtMs = Date.parse(sessionUser.issuedAt);
-    if (
-      member.passwordChangedAt &&
-      !Number.isNaN(issuedAtMs) &&
-      member.passwordChangedAt.getTime() > issuedAtMs
-    ) {
+    if (!person || !person.isActive || person.mustChangePassword) {
       return null;
     }
 
-    const participantType = member.role === "attendee" ? "attendee" : "member";
+    const eligibleContexts = await listEligibleContextsForPerson(person.id);
 
-    return {
-      ...sessionUser,
-      personId: member.personId,
-      fullName: member.fullName,
-      participantType,
-      membershipRole: member.role as MembershipRole,
-    };
+    return resolveLiveSessionFromPersonState({
+      sessionUser,
+      person,
+      eligibleContexts,
+    });
   } catch {
     return null;
   }

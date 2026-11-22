@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  buildClearLastContextCookieOptions,
   buildClearSessionCookieOptions,
   buildSessionCookieOptions,
+  LAST_CONTEXT_COOKIE_NAME,
   SESSION_COOKIE_NAME,
   validateSessionAgainstDb,
 } from "@/lib/session-cookie";
@@ -39,6 +41,8 @@ export async function GET(request: NextRequest) {
         displayId: renewed.displayId,
         fullName: renewed.fullName,
         participantType: renewed.participantType,
+        activeMembershipId: renewed.participantId,
+        membershipRole: renewed.membershipRole,
       },
     },
     { status: 200 }
@@ -55,5 +59,10 @@ export async function GET(request: NextRequest) {
 export async function DELETE() {
   const response = NextResponse.json({ ok: true }, { status: 200 });
   response.cookies.set(SESSION_COOKIE_NAME, "", buildClearSessionCookieOptions());
+  response.cookies.set(
+    LAST_CONTEXT_COOKIE_NAME,
+    "",
+    buildClearLastContextCookieOptions()
+  );
   return response;
 }
