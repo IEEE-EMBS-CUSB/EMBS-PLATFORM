@@ -121,4 +121,35 @@ describe("LeaderboardPublisherView", () => {
     expect(screen.getByText("AI & Machine Learning")).toBeInTheDocument();
     expect(screen.getByText("Web Development")).toBeInTheDocument();
   });
+
+  it("switches to Committee Heads preview tab and renders head standings", async () => {
+    const user = userEvent.setup();
+    render(
+      <LeaderboardPublisherView
+        snapshot={{
+          ...mockSnapshot,
+          headsEntries: [
+            {
+              rank: 1,
+              previousRank: 2,
+              memberId: "mem-head-1",
+              memberName: "Omar Multi-Role",
+              committeeSlug: "public-relations",
+              committeeName: "Public Relations",
+              role: "committee_head",
+              monthlyScore: 95,
+            },
+          ],
+        }}
+        availableMonths={["2026-10", "2026-09"]}
+      />
+    );
+
+    const headsTab = screen.getByRole("button", { name: /committee heads/i });
+    await user.click(headsTab);
+
+    expect(screen.getByText("Omar Multi-Role")).toBeInTheDocument();
+    expect(screen.getByText("Public Relations")).toBeInTheDocument();
+    expect(screen.getByText("95 pts")).toBeInTheDocument();
+  });
 });

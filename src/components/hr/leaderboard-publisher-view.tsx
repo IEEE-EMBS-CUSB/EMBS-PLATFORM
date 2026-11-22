@@ -21,6 +21,7 @@ export interface SnapshotDisplayData {
   publishedByName?: string;
   overallEntries: CalculatedSnapshotEntry[];
   committeeEntries: Record<string, CalculatedSnapshotEntry[]>;
+  headsEntries?: CalculatedSnapshotEntry[];
 }
 
 interface LeaderboardPublisherViewProps {
@@ -45,7 +46,7 @@ export function LeaderboardPublisherView({
 }: LeaderboardPublisherViewProps) {
   const [snapshot, setSnapshot] = useState<SnapshotDisplayData>(initialSnapshot);
   const [selectedMonth, setSelectedMonth] = useState(initialSnapshot.month);
-  const [activeTab, setActiveTab] = useState<"overall" | "committees">(
+  const [activeTab, setActiveTab] = useState<"overall" | "committees" | "heads">(
     "overall"
   );
   const [isLoadingMonth, setIsLoadingMonth] = useState(false);
@@ -277,6 +278,17 @@ export function LeaderboardPublisherView({
         >
           By Committee
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("heads")}
+          className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+            activeTab === "heads"
+              ? "border-[#772583] text-[#772583]"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Committee Heads
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -328,6 +340,56 @@ export function LeaderboardPublisherView({
                       className="py-8 text-center text-sm text-muted-foreground"
                     >
                       No scored members recorded for {snapshot.month} yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : activeTab === "heads" ? (
+        <Card className="border-border">
+          <CardHeader className="border-b bg-[#fafafa] px-6 py-4">
+            <CardTitle className="text-base font-semibold text-[#002855]">
+              Committee Heads Rankings ({(snapshot.headsEntries ?? []).length} Heads)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[60px]">Rank</TableHead>
+                  <TableHead className="w-[80px]">Trend</TableHead>
+                  <TableHead>Committee Head</TableHead>
+                  <TableHead>Committee</TableHead>
+                  <TableHead className="text-right">Monthly Score</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(snapshot.headsEntries ?? []).map((entry) => (
+                  <TableRow key={entry.memberId}>
+                    <TableCell>{getRankBadge(entry.rank)}</TableCell>
+                    <TableCell>
+                      {renderTrend(entry.rank, entry.previousRank)}
+                    </TableCell>
+                    <TableCell className="font-semibold text-foreground">
+                      {entry.memberName}
+                    </TableCell>
+                    <TableCell className="text-xs font-medium text-foreground">
+                      {entry.committeeName}
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-bold text-[#00629b]">
+                      {entry.monthlyScore} pts
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {(snapshot.headsEntries ?? []).length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="py-8 text-center text-sm text-muted-foreground"
+                    >
+                      No scored Committee Heads recorded for {snapshot.month} yet.
                     </TableCell>
                   </TableRow>
                 )}
