@@ -7,6 +7,8 @@ import {
   createTaskAsActor,
   gradeTaskSubmissionAsActor,
   submitMemberTask,
+  toggleMemberTaskCompletion,
+  toggleTaskCompletionAsActor,
   type CreateTaskInput,
   type TaskTargetGroup,
   type TaskTargetType,
@@ -61,6 +63,30 @@ export async function submitTaskAction(input: {
     return { ok: false, error: "Unauthorized: please sign in to submit deliverables." };
   }
   const res = await submitMemberTask(input, session.participantId);
+  if (res.ok) safeRevalidateTasks();
+  return res;
+}
+
+export async function toggleTaskCompletionAction(input: {
+  taskId: string;
+  completed: boolean;
+}) {
+  const session = await getServerSession();
+  if (!session) {
+    return { ok: false, error: "Unauthorized: please sign in to update tasks." };
+  }
+  const res = await toggleMemberTaskCompletion(input, session.participantId);
+  if (res.ok) safeRevalidateTasks();
+  return res;
+}
+
+export async function hrToggleTaskCompletionAction(input: {
+  submissionId: string;
+  completed: boolean;
+}) {
+  const actor = await getActorContext();
+  if (!actor) return unauthorizedResult();
+  const res = await toggleTaskCompletionAsActor(input, actor);
   if (res.ok) safeRevalidateTasks();
   return res;
 }

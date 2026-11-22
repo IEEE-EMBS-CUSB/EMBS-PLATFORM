@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { ExternalLink } from "lucide-react";
 import { MetricCard } from "@/components/data-display/metric-card";
 import { MemberTaskStatusBadge } from "@/components/data-display/status-badge";
 import { EmptyState } from "@/components/states/empty-state";
+import { TaskCheckToggle } from "@/components/member/task-check-toggle";
 import { TaskSubmitForm } from "@/components/member/task-submit-form";
 import {
   Table,
@@ -26,6 +28,16 @@ interface MemberDeliverablesViewProps {
   accent?: "blue" | "purple";
 }
 
+function isSafeHttpUrl(url: string | null | undefined): url is string {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function MemberDeliverablesView({
   title,
   subtitle,
@@ -40,6 +52,11 @@ export function MemberDeliverablesView({
   const completedCount = items.filter((t) => t.status === "completed").length;
   const inProgressCount = items.filter((t) => t.status === "in_progress").length;
   const notStartedCount = items.filter((t) => t.status === "not_started").length;
+  const isCheckableTaskList =
+    items.length > 0 && items.every((item) => item.workType === "task");
+  const submittableAssignments = items.filter(
+    (item) => item.workType !== "task" && item.status !== "completed"
+  );
 
   return (
     <div className="space-y-6">
@@ -66,48 +83,88 @@ export function MemberDeliverablesView({
         <div className="overflow-hidden rounded-lg border border-border bg-white">
           {/* Mobile stacked cards */}
           <ul className="divide-y divide-border md:hidden">
-            {items.map((item) => (
-              <li key={item.id} className="space-y-2.5 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm font-semibold text-foreground">
-                    {item.title}
-                  </p>
-                  <span className="shrink-0 font-heading text-sm font-bold text-[#002855] tabular-nums">
-                    {item.taskPoints !== null ? `${item.taskPoints} pts` : "—"}
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <MemberTaskStatusBadge status={item.status} />
-                  {item.onTime !== null && (
-                    <span
-                      className={
-                        item.onTime
-                          ? "text-xs font-semibold text-[#2f600b]"
-                          : "text-xs font-semibold text-[#9b0b27]"
-                      }
-                    >
-                      {item.onTime ? "On time" : "Late"}
+            {items.map((item) => {
+              const isTask = item.workType === "task";
+              const safeUrl = isSafeHttpUrl(item.submissionUrl)
+                ? item.submissionUrl
+                : null;
+              return (
+                <li key={item.id} className="space-y-2.5 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-semibold text-foreground">
+                      {item.title}
+                    </p>
+                    <span className="shrink-0 font-heading text-sm font-bold text-[#002855] tabular-nums">
+                      {item.taskPoints !== null
+                        ? `${item.taskPoints} pts`
+                        : isTask && item.maxPoints
+                          ? `0 / ${item.maxPoints} pts`
+                          : "—"}
                     </span>
-                  )}
-                </div>
+                  </div>
 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground tabular-nums">
-                  <span>Deadline {formatDisplayDate(item.dueDate)}</span>
-                  <span>Effort {item.effort}/5</span>
-                  {item.quality !== null && (
-                    <span>Quality {item.quality}/5</span>
-                  )}
-                </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <MemberTaskStatusBadge status={item.status} />
+                    {!isTask && item.onTime !== null && (
+                      <span
+                        className={
+                          item.onTime
+                            ? "text-xs font-semibold text-[#2f600b]"
+                            : "text-xs font-semibold text-[#9b0b27]"
+                        }
+                      >
+                        {item.onTime ? "On time" : "Late"}
+                      </span>
+                    )}
+                    {!isTask && safeUrl && (
+                      <a
+                        href={safeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#00629b] underline-offset-2 hover:underline"
+                      >
+                        <span>Submitted link</span>
+                        <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                      </a>
+                    )}
+                  </div>
 
-                {item.notes && (
-                  <p className="text-xs text-muted-foreground">{item.notes}</p>
-                )}
-                {item.status !== "completed" && (
-                  <TaskSubmitForm taskId={item.id} />
-                )}
-              </li>
-            ))}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground tabular-nums">
+                    <span>Deadline {formatDisplayDate(item.dueDate)}</span>
+                    {!isTask && (
+                      <>
+                        <span>Effort {item.effort}/5</span>
+                        {item.quality !== null && (
+                          <span>Quality {item.quality}/5</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {item.notes && (
+                    <p className="text-xs text-muted-foreground">{item.notes}</p>
+                  )}
+
+                  {isTask ? (
+                    <TaskCheckToggle
+                      taskId={item.id}
+                      title={item.title}
+                      maxPoints={item.maxPoints}
+                      initialCompleted={item.status === "completed"}
+                    />
+                  ) : (
+                    item.status !== "completed" && (
+                      <TaskSubmitForm
+                        taskId={item.id}
+                        requireUrl
+                        initialUrl={item.submissionUrl}
+                        initialText={item.submissionText}
+                      />
+                    )
+                  )}
+                </li>
+              );
+            })}
           </ul>
 
           {/* Desktop table */}
@@ -122,7 +179,7 @@ export function MemberDeliverablesView({
                     Deadline
                   </TableHead>
                   <TableHead className="font-semibold text-[#002855]">
-                    Effort / Quality
+                    {isCheckableTaskList ? "Completion" : "Effort / Quality"}
                   </TableHead>
                   <TableHead className="font-semibold text-[#002855]">
                     Status
@@ -133,70 +190,109 @@ export function MemberDeliverablesView({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="py-3.5 pl-4">
-                      <p className="font-semibold text-foreground">
-                        {item.title}
-                      </p>
-                      {(item.completedDate || item.notes) && (
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {item.completedDate
-                            ? `Completed ${formatDisplayDate(item.completedDate)}`
-                            : ""}
-                          {item.completedDate && item.notes ? " · " : ""}
-                          {item.notes ?? ""}
+                {items.map((item) => {
+                  const isTask = item.workType === "task";
+                  const safeUrl = isSafeHttpUrl(item.submissionUrl)
+                    ? item.submissionUrl
+                    : null;
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell className="py-3.5 pl-4">
+                        <p className="font-semibold text-foreground">
+                          {item.title}
                         </p>
-                      )}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap py-3.5 text-sm text-muted-foreground tabular-nums">
-                      {formatDisplayDate(item.dueDate)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap py-3.5 text-sm text-muted-foreground tabular-nums">
-                      Effort {item.effort}/5
-                      {item.quality !== null
-                        ? ` · Quality ${item.quality}/5`
-                        : ""}
-                    </TableCell>
-                    <TableCell className="py-3.5">
-                      <div className="flex items-center gap-2">
-                        <MemberTaskStatusBadge status={item.status} />
-                        {item.onTime === false && (
-                          <span className="text-xs font-semibold text-[#9b0b27]">
-                            Late
-                          </span>
+                        {(item.completedDate || item.notes || (!isTask && safeUrl)) && (
+                          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            {item.completedDate && (
+                              <span>
+                                Completed {formatDisplayDate(item.completedDate)}
+                              </span>
+                            )}
+                            {item.notes && <span>{item.notes}</span>}
+                            {!isTask && safeUrl && (
+                              <a
+                                href={safeUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 font-semibold text-[#00629b] underline-offset-2 hover:underline"
+                              >
+                                <span>Submitted link</span>
+                                <ExternalLink
+                                  className="h-3 w-3"
+                                  aria-hidden="true"
+                                />
+                              </a>
+                            )}
+                          </div>
                         )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap py-3.5 pr-4 text-right font-heading text-sm font-bold text-[#002855] tabular-nums">
-                      {item.taskPoints !== null ? item.taskPoints : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap py-3.5 text-sm text-muted-foreground tabular-nums">
+                        {formatDisplayDate(item.dueDate)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap py-3.5 text-sm text-muted-foreground tabular-nums">
+                        {isTask ? (
+                          <TaskCheckToggle
+                            taskId={item.id}
+                            title={item.title}
+                            maxPoints={item.maxPoints}
+                            initialCompleted={item.status === "completed"}
+                          />
+                        ) : (
+                          <>
+                            Effort {item.effort}/5
+                            {item.quality !== null
+                              ? ` · Quality ${item.quality}/5`
+                              : ""}
+                          </>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-3.5">
+                        <div className="flex items-center gap-2">
+                          <MemberTaskStatusBadge status={item.status} />
+                          {!isTask && item.onTime === false && (
+                            <span className="text-xs font-semibold text-[#9b0b27]">
+                              Late
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap py-3.5 pr-4 text-right font-heading text-sm font-bold text-[#002855] tabular-nums">
+                        {item.taskPoints !== null
+                          ? item.taskPoints
+                          : isTask && item.maxPoints
+                            ? `0 / ${item.maxPoints}`
+                            : "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
         </div>
       )}
 
-      {items.some((t) => t.status !== "completed") && (
+      {submittableAssignments.length > 0 && (
         <section className="hidden space-y-3 md:block">
           <h2 className="font-heading text-lg font-bold text-[#002855]">
             Submit {title.toLowerCase()}
           </h2>
-          {items
-            .filter((t) => t.status !== "completed")
-            .map((item) => (
-              <div
-                key={item.id}
-                className="rounded-lg border border-border bg-white p-4"
-              >
-                <p className="text-sm font-semibold text-foreground">
-                  {item.title}
-                </p>
-                <TaskSubmitForm taskId={item.id} />
-              </div>
-            ))}
+          {submittableAssignments.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-lg border border-border bg-white p-4"
+            >
+              <p className="text-sm font-semibold text-foreground">
+                {item.title}
+              </p>
+              <TaskSubmitForm
+                taskId={item.id}
+                requireUrl
+                initialUrl={item.submissionUrl}
+                initialText={item.submissionText}
+              />
+            </div>
+          ))}
         </section>
       )}
     </div>

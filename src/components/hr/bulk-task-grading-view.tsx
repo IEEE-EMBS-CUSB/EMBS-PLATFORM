@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,9 @@ export interface SubmissionGradingItem {
   timelinessScore: number | null;
   totalPoints: number | null;
   notes: string;
+  submissionUrl?: string | null;
+  submissionText?: string | null;
+  completed?: boolean;
 }
 
 interface BulkTaskGradingViewProps {
@@ -49,6 +52,23 @@ interface BulkTaskGradingViewProps {
     timelinessScore: number;
     notes?: string;
   }) => Promise<{ ok: boolean; error?: string } | void>;
+  onToggleTask?: (input: {
+    submissionId: string;
+    completed: boolean;
+  }) => Promise<
+    | { ok: boolean; completed?: boolean; totalPoints?: number; error?: string }
+    | void
+  >;
+}
+
+function isSafeHttpUrl(url: string | null | undefined): url is string {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 export function BulkTaskGradingView({
@@ -56,12 +76,16 @@ export function BulkTaskGradingView({
   submissions: initialSubmissions,
   gradingWeights = DEFAULT_SEASON_SETTINGS.grading,
   onGrade,
+  onToggleTask,
 }: BulkTaskGradingViewProps) {
   const [submissions, setSubmissions] = useState(initialSubmissions);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [savedNotification, setSavedNotification] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const isCheckableTask = task.workType === "task";
 
   const handleScoreChange = (
     idx: number,
@@ -108,6 +132,62 @@ export function BulkTaskGradingView({
     });
     setHasUnsavedChanges(true);
     setSavedNotification(false);
+  };
+
+  const handleToggleChecklist = async (idx: number, nextCompleted: boolean) => {
+    const sub = submissions[idx];
+    if (!sub?.submissionId) return;
+
+    setSaveError(null);
+    setTogglingId(sub.submissionId);
+
+    setSubmissions((prev) => {
+      const copy = [...prev];
+      copy[idx] = {
+        ...copy[idx],
+        completed: nextCompleted,
+        totalPoints: nextCompleted ? task.maxPoints : null,
+      };
+      return copy;
+    });
+
+    try {
+      if (onToggleTask) {
+        const res = await onToggleTask({
+          submissionId: sub.submissionId,
+          completed: nextCompleted,
+        });
+        if (res && !res.ok) {
+          setSubmissions((prev) => {
+            const copy = [...prev];
+            copy[idx] = {
+              ...copy[idx],
+              completed: !nextCompleted,
+              totalPoints: !nextCompleted ? task.maxPoints : null,
+            };
+            return copy;
+          });
+          setSaveError(
+            res.error ?? `Failed to update task for ${sub.memberName}.`
+          );
+        }
+      }
+    } catch (err: unknown) {
+      setSubmissions((prev) => {
+        const copy = [...prev];
+        copy[idx] = {
+          ...copy[idx],
+          completed: !nextCompleted,
+          totalPoints: !nextCompleted ? task.maxPoints : null,
+        };
+        return copy;
+      });
+      setSaveError(
+        err instanceof Error ? err.message : "Failed to update task completion."
+      );
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   const handleSaveAll = async () => {
@@ -164,6 +244,98 @@ export function BulkTaskGradingView({
     );
   }
 
+  if (isCheckableTask) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-heading text-xl font-bold tracking-tight text-[#002855]">
+                Task Completion Checklist
+              </h2>
+              <span className="inline-flex rounded-full bg-[#f5edf7] px-2.5 py-0.5 text-[11px] font-semibold text-[#5a1b63]">
+                Task
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {task.title} · {task.committeeName} ({task.maxPoints} pts on
+              completion). Members can self-check on their portal, or HR can
+              toggle below.
+            </p>
+          </div>
+          {saveError && (
+            <span role="alert" className="text-xs font-semibold text-[#ba0c2f]">
+              {saveError}
+            </span>
+          )}
+        </div>
+
+        <Card className="border-border bg-white shadow-xs">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader className="bg-[#f8f9fb]">
+                <TableRow>
+                  <TableHead className="font-heading text-xs font-bold text-[#002855]">
+                    Member
+                  </TableHead>
+                  <TableHead className="w-40 font-heading text-xs font-bold text-[#002855]">
+                    Completed
+                  </TableHead>
+                  <TableHead className="w-36 font-heading text-xs font-bold text-[#002855]">
+                    Status
+                  </TableHead>
+                  <TableHead className="w-32 text-right font-heading text-xs font-bold text-[#002855]">
+                    Points
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {submissions.map((sub, idx) => {
+                  const isDone = Boolean(
+                    sub.completed ?? (sub.totalPoints !== null && sub.totalPoints > 0)
+                  );
+                  return (
+                    <TableRow key={sub.membershipId}>
+                      <TableCell className="font-heading text-sm font-bold text-[#002855]">
+                        {sub.memberName}
+                      </TableCell>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={isDone}
+                          disabled={!sub.submissionId || togglingId === sub.submissionId}
+                          onChange={(e) =>
+                            handleToggleChecklist(idx, e.target.checked)
+                          }
+                          aria-label={`Mark ${task.title} completed for ${sub.memberName}`}
+                          className="h-4 w-4 cursor-pointer rounded border-border accent-[#772583]"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={
+                            isDone
+                              ? "inline-flex rounded-full bg-[#eef8e0] px-2.5 py-0.5 text-xs font-semibold text-[#2f600b]"
+                              : "inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground"
+                          }
+                        >
+                          {isDone ? "Completed" : "Pending"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right font-heading text-sm font-bold text-[#002855] tabular-nums">
+                        {isDone ? `${sub.totalPoints ?? task.maxPoints} pts` : `0 / ${task.maxPoints} pts`}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -172,14 +344,8 @@ export function BulkTaskGradingView({
             <h2 className="font-heading text-xl font-bold tracking-tight text-[#002855]">
               Keyboard Bulk Grading
             </h2>
-            <span
-              className={
-                task.workType === "task"
-                  ? "inline-flex rounded-full bg-[#f5edf7] px-2.5 py-0.5 text-[11px] font-semibold text-[#5a1b63]"
-                  : "inline-flex rounded-full bg-[#ebf3f8] px-2.5 py-0.5 text-[11px] font-semibold text-[#00629b]"
-              }
-            >
-              {task.workType === "task" ? "Task" : "Assignment"}
+            <span className="inline-flex rounded-full bg-[#ebf3f8] px-2.5 py-0.5 text-[11px] font-semibold text-[#00629b]">
+              Assignment
             </span>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -228,6 +394,9 @@ export function BulkTaskGradingView({
                 <TableHead className="font-heading text-xs font-bold text-[#002855]">
                   Member
                 </TableHead>
+                <TableHead className="font-heading text-xs font-bold text-[#002855]">
+                  Submission
+                </TableHead>
                 <TableHead className="w-28 font-heading text-xs font-bold text-[#002855]">
                   Effort (1-5)
                 </TableHead>
@@ -246,69 +415,98 @@ export function BulkTaskGradingView({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {submissions.map((sub, idx) => (
-                <TableRow key={sub.membershipId}>
-                  <TableCell className="font-heading text-sm font-bold text-[#002855]">
-                    {sub.memberName}
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={5}
-                      aria-label={`Effort score for ${sub.memberName}`}
-                      value={sub.effortScore ?? ""}
-                      onChange={(e) =>
-                        handleScoreChange(idx, "effortScore", e.target.value)
-                      }
-                      className="h-9 w-20 text-center font-heading font-bold tabular-nums"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={5}
-                      aria-label={`Quality score for ${sub.memberName}`}
-                      value={sub.qualityScore ?? ""}
-                      onChange={(e) =>
-                        handleScoreChange(idx, "qualityScore", e.target.value)
-                      }
-                      className="h-9 w-20 text-center font-heading font-bold tabular-nums"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={5}
-                      aria-label={`Timeliness score for ${sub.memberName}`}
-                      value={sub.timelinessScore ?? ""}
-                      onChange={(e) =>
-                        handleScoreChange(
-                          idx,
-                          "timelinessScore",
-                          e.target.value
-                        )
-                      }
-                      className="h-9 w-20 text-center font-heading font-bold tabular-nums"
-                    />
-                  </TableCell>
-                  <TableCell className="font-heading font-bold text-sm text-[#002855] tabular-nums">
-                    {sub.totalPoints ?? "—"} pts
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="text"
-                      aria-label={`Feedback notes for ${sub.memberName}`}
-                      placeholder="Optional note..."
-                      value={sub.notes}
-                      onChange={(e) => handleNotesChange(idx, e.target.value)}
-                      className="h-9 text-xs"
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
+              {submissions.map((sub, idx) => {
+                const safeUrl = isSafeHttpUrl(sub.submissionUrl)
+                  ? sub.submissionUrl
+                  : null;
+                return (
+                  <TableRow key={sub.membershipId}>
+                    <TableCell className="font-heading text-sm font-bold text-[#002855]">
+                      {sub.memberName}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {safeUrl ? (
+                        <div className="space-y-0.5">
+                          <a
+                            href={safeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-semibold text-[#00629b] underline-offset-2 hover:underline"
+                          >
+                            <span>Open link</span>
+                            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                          </a>
+                          {sub.submissionText && (
+                            <p className="max-w-[180px] truncate text-[11px] text-muted-foreground">
+                              {sub.submissionText}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          Not submitted
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={5}
+                        aria-label={`Effort score for ${sub.memberName}`}
+                        value={sub.effortScore ?? ""}
+                        onChange={(e) =>
+                          handleScoreChange(idx, "effortScore", e.target.value)
+                        }
+                        className="h-9 w-20 text-center font-heading font-bold tabular-nums"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={5}
+                        aria-label={`Quality score for ${sub.memberName}`}
+                        value={sub.qualityScore ?? ""}
+                        onChange={(e) =>
+                          handleScoreChange(idx, "qualityScore", e.target.value)
+                        }
+                        className="h-9 w-20 text-center font-heading font-bold tabular-nums"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={5}
+                        aria-label={`Timeliness score for ${sub.memberName}`}
+                        value={sub.timelinessScore ?? ""}
+                        onChange={(e) =>
+                          handleScoreChange(
+                            idx,
+                            "timelinessScore",
+                            e.target.value
+                          )
+                        }
+                        className="h-9 w-20 text-center font-heading font-bold tabular-nums"
+                      />
+                    </TableCell>
+                    <TableCell className="font-heading text-sm font-bold text-[#002855] tabular-nums">
+                      {sub.totalPoints ?? "—"} pts
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="text"
+                        aria-label={`Feedback notes for ${sub.memberName}`}
+                        placeholder="Optional note..."
+                        value={sub.notes}
+                        onChange={(e) => handleNotesChange(idx, e.target.value)}
+                        className="h-9 text-xs"
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>

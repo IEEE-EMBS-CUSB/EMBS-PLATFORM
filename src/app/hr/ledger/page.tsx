@@ -143,6 +143,9 @@ export default async function HrLedgerPage() {
       members={members}
       currentUserName={profile.fullName}
       defaultMonth={defaultMonth}
+      canChooseOpenScope={
+        profile.role === "master_admin" || profile.role === "hr_admin"
+      }
       onAddEntry={addManualLedgerEntryAction}
     />
   );

@@ -8,6 +8,7 @@ import {
   getOperationalCommitteeScope,
 } from "@/lib/permissions";
 import { normalizeSeasonSettings } from "@/lib/season-settings";
+import { upsertScoreLedgerEntry } from "@/db/ledger";
 import {
   assertMonthNotPublished,
   formatMonthInCairo,
@@ -492,12 +493,14 @@ export async function recordMemberCheckin(
       .returning();
 
     if (!isAttendee && pointsAwarded > 0) {
-      await db.insert(schema.scoreLedger).values({
+      await upsertScoreLedgerEntry(db, {
         seasonId: sessionRow.seasonId,
         membershipId: member.id,
         month: monthKey,
         sourceType: "attendance",
         sourceId: record.id,
+        postingScope: sessionRow.committeeId ? "committee" : "open",
+        committeeId: sessionRow.committeeId,
         points: pointsAwarded,
         reason: `Attendance: ${sessionRow.title}${isPunctual ? " (Punctual)" : ""}`,
       });

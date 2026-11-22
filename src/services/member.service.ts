@@ -577,6 +577,9 @@ export async function getMemberTasks(memberId: string): Promise<MemberTask[]> {
             ? submission.timelinessScore >= 3
             : null,
         taskPoints: submission.totalPoints,
+        maxPoints: task.maxPoints,
+        submissionUrl: submission.submissionUrl,
+        submissionText: submission.submissionText,
         notes: submission.notes ?? undefined,
       }));
     }

@@ -7,9 +7,13 @@ import {
   canCreateWorkType,
   canManageCommitteeTasks,
   getDefaultWorkTypeForRole,
+  getOperationalCommitteeScope,
   type WorkItemType,
 } from "@/lib/permissions";
-import { upsertScoreLedgerEntry } from "@/db/ledger";
+import {
+  upsertScoreLedgerEntry,
+  type LedgerPostingScope,
+} from "@/db/ledger";
 import {
   calculateRubricPoints,
   normalizeSeasonSettings,
@@ -52,15 +56,104 @@ export interface TaskActor {
     id: string;
     role: MembershipRole;
     committeeId: string | null;
+    trackedCommitteeId?: string | null;
     managedTrackId?: string | null;
     email?: string;
     fullName?: string;
   };
 }
 
+const BROADCAST_ROLE_PRIORITY: Record<MembershipRole, number> = {
+  committee_head: 1,
+  hr_member: 2,
+  member: 3,
+  director: 4,
+  hr_admin: 5,
+  master_admin: 6,
+  attendee: 7,
+};
+
+/**
+ * Deduplicates global broadcast recipients by personId so a multi-hat member
+ * receives and earns a global work item at most once.
+ */
+export function deduplicateRecipientsByPerson(
+  memberships: readonly {
+    id: string;
+    personId: string;
+    role: MembershipRole;
+  }[]
+): string[] {
+  const bestByPerson = new Map<
+    string,
+    { id: string; personId: string; role: MembershipRole }
+  >();
+
+  for (const m of memberships) {
+    const existing = bestByPerson.get(m.personId);
+    if (!existing) {
+      bestByPerson.set(m.personId, m);
+      continue;
+    }
+    const curRank = BROADCAST_ROLE_PRIORITY[m.role] ?? 99;
+    const prevRank = BROADCAST_ROLE_PRIORITY[existing.role] ?? 99;
+    if (
+      curRank < prevRank ||
+      (curRank === prevRank && m.id.localeCompare(existing.id) < 0)
+    ) {
+      bestByPerson.set(m.personId, m);
+    }
+  }
+
+  return Array.from(bestByPerson.values()).map((m) => m.id);
+}
+
+export function resolveLedgerSourceTypeForWorkItem(
+  workType: string
+): "task" | "assignment" {
+  return workType === "task" ? "task" : "assignment";
+}
+
+export function resolveLedgerPostingScopeForWorkItem(
+  taskCommitteeId: string | null
+): { postingScope: LedgerPostingScope; committeeId: string | null } {
+  return taskCommitteeId
+    ? { postingScope: "committee", committeeId: taskCommitteeId }
+    : { postingScope: "open", committeeId: null };
+}
+
+export function validateDeliverableSubmission(input: {
+  workType: string;
+  submissionText?: string;
+  submissionUrl?: string;
+}):
+  | { ok: true; url: string; text: string | null }
+  | { ok: false; error: string } {
+  if (input.workType === "task") {
+    return {
+      ok: false,
+      error:
+        "Tasks are completed directly by checking them off rather than submitting a link.",
+    };
+  }
+
+  const url = input.submissionUrl?.trim() || null;
+  const text = input.submissionText?.trim() || null;
+
+  if (!url || !isValidHttpUrl(url)) {
+    return {
+      ok: false,
+      error:
+        "Assignments require a valid http:// or https:// deliverable link.",
+    };
+  }
+
+  return { ok: true, url, text };
+}
+
 export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor) {
   const actorRole = actor.profile.role;
-  const actorCommitteeId = actor.profile.committeeId;
+  const actorCommitteeId = getOperationalCommitteeScope(actor.profile);
 
   if (
     actorRole !== "master_admin" &&
@@ -157,7 +250,8 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
           id: actor.profile.id,
           email: actor.profile.email ?? "",
           role: actorRole,
-          committeeId: actorCommitteeId,
+          committeeId: actor.profile.committeeId,
+          trackedCommitteeId: actor.profile.trackedCommitteeId,
         },
         {
           id: member.id,
@@ -301,7 +395,13 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
               ne(schema.rosterMemberships.role, "attendee")
             )
           );
-        targetMembershipIds = allMembers.map((m) => m.id);
+        targetMembershipIds = deduplicateRecipientsByPerson(
+          allMembers.map((m) => ({
+            id: m.id,
+            personId: m.personId,
+            role: m.role as MembershipRole,
+          }))
+        );
       } else if (input.targetGroup === "all_heads") {
         const allHeads = await db
           .select()
@@ -318,7 +418,13 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
               (h) => h.committeeId && directorTrackCommitteeIds.has(h.committeeId)
             )
           : allHeads;
-        targetMembershipIds = scopedHeads.map((m) => m.id);
+        targetMembershipIds = deduplicateRecipientsByPerson(
+          scopedHeads.map((m) => ({
+            id: m.id,
+            personId: m.personId,
+            role: m.role as MembershipRole,
+          }))
+        );
       } else if (input.targetGroup === "all_members") {
         const allRegular = await db
           .select()
@@ -330,7 +436,13 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
               eq(schema.rosterMemberships.isActive, true)
             )
           );
-        targetMembershipIds = allRegular.map((m) => m.id);
+        targetMembershipIds = deduplicateRecipientsByPerson(
+          allRegular.map((m) => ({
+            id: m.id,
+            personId: m.personId,
+            role: m.role as MembershipRole,
+          }))
+        );
       }
     }
 
@@ -425,6 +537,7 @@ export async function gradeTaskSubmissionAsActor(
       email: actor.profile.email ?? "",
       role: actor.profile.role,
       committeeId: actor.profile.committeeId,
+      trackedCommitteeId: actor.profile.trackedCommitteeId,
     };
     if (!canManageCommitteeTasks(permCtx, scopeCommitteeId)) {
       return {
@@ -481,12 +594,16 @@ export async function gradeTaskSubmissionAsActor(
 
     if (member.role !== "attendee") {
       const workLabel = task.workType === "task" ? "Task" : "Assignment";
+      const sourceType = resolveLedgerSourceTypeForWorkItem(task.workType);
+      const scope = resolveLedgerPostingScopeForWorkItem(task.committeeId);
       await upsertScoreLedgerEntry(db, {
         seasonId: task.seasonId,
         membershipId: submission.membershipId,
         month: monthKey,
-        sourceType: "task",
+        sourceType,
         sourceId: submission.id,
+        postingScope: scope.postingScope,
+        committeeId: scope.committeeId,
         points: totalPoints,
         reason: `${workLabel}: ${task.title}`,
         createdBy: actor.profile.id,
@@ -502,18 +619,157 @@ export async function gradeTaskSubmissionAsActor(
   }
 }
 
+export async function toggleTaskCompletionAsActor(
+  input: { submissionId: string; completed: boolean },
+  actor: TaskActor
+) {
+  try {
+    const [submission] = await db
+      .select()
+      .from(schema.taskSubmissions)
+      .where(eq(schema.taskSubmissions.id, input.submissionId))
+      .limit(1);
+    if (!submission) return { ok: false, error: "Submission not found." };
+
+    const [task] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.id, submission.taskId))
+      .limit(1);
+    if (!task) return { ok: false, error: "Task not found." };
+
+    if (task.workType !== "task") {
+      return {
+        ok: false,
+        error:
+          "Assignments must be graded with the rubric rather than checked off.",
+      };
+    }
+
+    const seasonRes = await resolveActiveSeason(task.seasonId);
+    if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
+
+    const [member] = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(eq(schema.rosterMemberships.id, submission.membershipId))
+      .limit(1);
+    if (!member) return { ok: false, error: "Assignee record not found." };
+
+    const scopeCommitteeId = task.committeeId ?? member.committeeId;
+    const permCtx = {
+      id: actor.profile.id,
+      email: actor.profile.email ?? "",
+      role: actor.profile.role,
+      committeeId: actor.profile.committeeId,
+      trackedCommitteeId: actor.profile.trackedCommitteeId,
+    };
+    if (!canManageCommitteeTasks(permCtx, scopeCommitteeId)) {
+      return {
+        ok: false,
+        error: "Unauthorized: you can only manage tasks for your assigned committee.",
+      };
+    }
+
+    const directorTrackCommitteeIds = await getDirectorTrackCommitteeIds(
+      task.seasonId,
+      actor.profile.role,
+      actor.profile.managedTrackId
+    );
+    if (
+      directorTrackCommitteeIds &&
+      (!scopeCommitteeId || !directorTrackCommitteeIds.has(scopeCommitteeId))
+    ) {
+      return {
+        ok: false,
+        error:
+          "Unauthorized: Track Directors can only manage deliverables within their assigned track.",
+      };
+    }
+
+    const monthKey = formatMonthInCairo(
+      submission.gradedAt ?? task.dueAt ?? new Date()
+    );
+    if (member.role !== "attendee") {
+      const monthGuard = await assertMonthNotPublished(task.seasonId, monthKey);
+      if (!monthGuard.ok) return { ok: false, error: monthGuard.error };
+    }
+
+    const now = new Date();
+    const totalPoints = input.completed ? task.maxPoints : 0;
+
+    await db
+      .update(schema.taskSubmissions)
+      .set({
+        submittedAt: input.completed ? submission.submittedAt ?? now : null,
+        gradedAt: input.completed ? submission.gradedAt ?? now : null,
+        gradedBy: input.completed ? actor.profile.id : null,
+        totalPoints: input.completed ? task.maxPoints : null,
+      })
+      .where(eq(schema.taskSubmissions.id, submission.id));
+
+    if (member.role !== "attendee") {
+      const scope = resolveLedgerPostingScopeForWorkItem(task.committeeId);
+      await upsertScoreLedgerEntry(db, {
+        seasonId: task.seasonId,
+        membershipId: submission.membershipId,
+        month: monthKey,
+        sourceType: "task",
+        sourceId: submission.id,
+        postingScope: scope.postingScope,
+        committeeId: scope.committeeId,
+        points: totalPoints,
+        reason: input.completed
+          ? `Task: ${task.title}`
+          : `Task unchecked: ${task.title}`,
+        createdBy: actor.profile.id,
+      });
+    }
+
+    return { ok: true, completed: input.completed, totalPoints };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to update task completion."),
+    };
+  }
+}
+
 export interface SubmissionMembershipCandidate {
   id: string;
   role: MembershipRole;
   committeeId: string | null;
 }
 
+function isMembershipEligibleForTaskTarget(
+  membership: SubmissionMembershipCandidate,
+  taskCommitteeId: string | null,
+  taskTargetGroup?: string | null
+): boolean {
+  if (taskCommitteeId !== null && membership.committeeId !== taskCommitteeId) {
+    return false;
+  }
+  switch (taskTargetGroup) {
+    case "all_heads":
+    case "committee_heads":
+      return membership.role === "committee_head";
+    case "all_members":
+    case "committee_members":
+      return membership.role === "member";
+    case "everyone":
+    case "committee_all":
+      return membership.role !== "attendee";
+    default:
+      return true;
+  }
+}
+
 /**
  * Resolves which active membership of a person owns a task submission:
  * 1. If a submission row already exists for the active hat, use it.
  * 2. Else if a submission row already exists for another active hat of this person, use that assigned hat.
- * 3. Else for a global task (taskCommitteeId === null), stamp the active hat.
- * 4. Else for a committee task, stamp the active hat if it matches, or another active hat in that committee.
+ * 3. Else if the task is a `specific_person` assignment, return null (never let an unassigned person claim it).
+ * 4. Else check committee + targetGroup eligibility on the active hat first, then other active hats.
  * 5. Otherwise return null (unauthorized).
  */
 export function selectSubmissionMembershipForTask(input: {
@@ -521,12 +777,16 @@ export function selectSubmissionMembershipForTask(input: {
   allPersonSeasonMemberships: readonly SubmissionMembershipCandidate[];
   existingSubmissionMembershipIds: readonly string[];
   taskCommitteeId: string | null;
+  taskTargetType?: string | null;
+  taskTargetGroup?: string | null;
 }): string | null {
   const {
     activeMembership,
     allPersonSeasonMemberships,
     existingSubmissionMembershipIds,
     taskCommitteeId,
+    taskTargetType,
+    taskTargetGroup,
   } = input;
 
   if (existingSubmissionMembershipIds.includes(activeMembership.id)) {
@@ -540,34 +800,32 @@ export function selectSubmissionMembershipForTask(input: {
     return assignedOtherHat.id;
   }
 
-  if (taskCommitteeId === null) {
+  if (taskTargetType === "specific_person") {
+    return null;
+  }
+
+  if (
+    isMembershipEligibleForTaskTarget(
+      activeMembership,
+      taskCommitteeId,
+      taskTargetGroup
+    )
+  ) {
     return activeMembership.id;
   }
 
-  if (activeMembership.committeeId === taskCommitteeId) {
-    return activeMembership.id;
-  }
-
-  const matchingCommitteeHat = allPersonSeasonMemberships.find(
-    (m) => m.committeeId === taskCommitteeId
+  const matchingEligibleHat = allPersonSeasonMemberships.find((m) =>
+    isMembershipEligibleForTaskTarget(m, taskCommitteeId, taskTargetGroup)
   );
-  return matchingCommitteeHat?.id ?? null;
+  return matchingEligibleHat?.id ?? null;
 }
 
 export async function submitMemberTask(
   input: { taskId: string; submissionText?: string; submissionUrl?: string },
   membershipId: string
 ) {
-  const text = input.submissionText?.trim() || null;
-  const url = input.submissionUrl?.trim() || null;
-
-  if (!text && !url) {
-    return {
-      ok: false,
-      error: "Please provide a submission summary or a deliverable link.",
-    };
-  }
-  if (url && !isValidHttpUrl(url)) {
+  const rawUrl = input.submissionUrl?.trim() || null;
+  if (rawUrl && !isValidHttpUrl(rawUrl)) {
     return {
       ok: false,
       error: "Submission link must be a valid http:// or https:// URL.",
@@ -581,6 +839,16 @@ export async function submitMemberTask(
       .where(eq(schema.tasks.id, input.taskId))
       .limit(1);
     if (!task) return { ok: false, error: "Task not found." };
+
+    const validation = validateDeliverableSubmission({
+      workType: task.workType,
+      submissionText: input.submissionText,
+      submissionUrl: input.submissionUrl,
+    });
+    if (!validation.ok) {
+      return { ok: false, error: validation.error };
+    }
+    const { text, url } = validation;
 
     const seasonRes = await resolveActiveSeason(task.seasonId);
     if (!seasonRes.ok) {
@@ -639,6 +907,8 @@ export async function submitMemberTask(
         (s) => s.membershipId
       ),
       taskCommitteeId: task.committeeId,
+      taskTargetType: task.targetType,
+      taskTargetGroup: task.targetGroup,
     });
 
     if (!targetMembershipId) {
@@ -682,6 +952,176 @@ export async function submitMemberTask(
     return {
       ok: false,
       error: sanitizeDbError(err, "Failed to submit deliverable."),
+    };
+  }
+}
+
+export async function toggleMemberTaskCompletion(
+  input: { taskId: string; completed: boolean },
+  membershipId: string
+): Promise<{
+  ok: boolean;
+  error?: string;
+  completed?: boolean;
+  totalPoints?: number;
+}> {
+  try {
+    const [task] = await db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.id, input.taskId))
+      .limit(1);
+    if (!task) return { ok: false, error: "Task not found." };
+
+    if (task.workType !== "task") {
+      return {
+        ok: false,
+        error:
+          "Assignments require submitting a link for grading and cannot be checked off directly.",
+      };
+    }
+
+    const seasonRes = await resolveActiveSeason(task.seasonId);
+    if (!seasonRes.ok) {
+      return {
+        ok: false,
+        error: "Task check-offs are closed for archived or draft seasons.",
+      };
+    }
+
+    const [activeMembership] = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(
+        and(
+          eq(schema.rosterMemberships.id, membershipId),
+          eq(schema.rosterMemberships.seasonId, task.seasonId),
+          eq(schema.rosterMemberships.isActive, true)
+        )
+      )
+      .limit(1);
+    if (!activeMembership) {
+      return {
+        ok: false,
+        error: "You are not an active member of this task's season.",
+      };
+    }
+
+    const personSeasonMemberships = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(
+        and(
+          eq(schema.rosterMemberships.personId, activeMembership.personId),
+          eq(schema.rosterMemberships.seasonId, task.seasonId),
+          eq(schema.rosterMemberships.isActive, true)
+        )
+      );
+
+    const personMembershipIds = personSeasonMemberships.map((m) => m.id);
+    const existingSubmissions = await db
+      .select()
+      .from(schema.taskSubmissions)
+      .where(
+        and(
+          eq(schema.taskSubmissions.taskId, input.taskId),
+          inArray(schema.taskSubmissions.membershipId, personMembershipIds)
+        )
+      );
+
+    const targetMembershipId = selectSubmissionMembershipForTask({
+      activeMembership: {
+        id: activeMembership.id,
+        role: activeMembership.role as MembershipRole,
+        committeeId: activeMembership.committeeId,
+      },
+      allPersonSeasonMemberships: personSeasonMemberships.map((m) => ({
+        id: m.id,
+        role: m.role as MembershipRole,
+        committeeId: m.committeeId,
+      })),
+      existingSubmissionMembershipIds: existingSubmissions.map(
+        (s) => s.membershipId
+      ),
+      taskCommitteeId: task.committeeId,
+      taskTargetType: task.targetType,
+      taskTargetGroup: task.targetGroup,
+    });
+
+    if (!targetMembershipId) {
+      return {
+        ok: false,
+        error: "Unauthorized: this task is not assigned to you or your committee.",
+      };
+    }
+
+    const targetMembership = personSeasonMemberships.find(
+      (m) => m.id === targetMembershipId
+    );
+    const isAttendee = targetMembership?.role === "attendee";
+
+    const existing = existingSubmissions.find(
+      (s) => s.membershipId === targetMembershipId
+    );
+    const monthKey = formatMonthInCairo(
+      existing?.gradedAt ?? task.dueAt ?? new Date()
+    );
+
+    if (!isAttendee) {
+      const monthGuard = await assertMonthNotPublished(task.seasonId, monthKey);
+      if (!monthGuard.ok) return { ok: false, error: monthGuard.error };
+    }
+
+    const now = new Date();
+    const totalPoints = input.completed ? task.maxPoints : 0;
+    let submissionId: string | null = existing?.id ?? null;
+
+    if (existing) {
+      await db
+        .update(schema.taskSubmissions)
+        .set({
+          submittedAt: input.completed ? existing.submittedAt ?? now : null,
+          gradedAt: input.completed ? existing.gradedAt ?? now : null,
+          totalPoints: input.completed ? task.maxPoints : null,
+        })
+        .where(eq(schema.taskSubmissions.id, existing.id));
+    } else if (input.completed) {
+      const [inserted] = await db
+        .insert(schema.taskSubmissions)
+        .values({
+          taskId: input.taskId,
+          membershipId: targetMembershipId,
+          submittedAt: now,
+          gradedAt: now,
+          totalPoints: task.maxPoints,
+        })
+        .returning();
+      submissionId = inserted.id;
+    }
+
+    if (!isAttendee && submissionId) {
+      const scope = resolveLedgerPostingScopeForWorkItem(task.committeeId);
+      await upsertScoreLedgerEntry(db, {
+        seasonId: task.seasonId,
+        membershipId: targetMembershipId,
+        month: monthKey,
+        sourceType: "task",
+        sourceId: submissionId,
+        postingScope: scope.postingScope,
+        committeeId: scope.committeeId,
+        points: totalPoints,
+        reason: input.completed
+          ? `Task: ${task.title}`
+          : `Task unchecked: ${task.title}`,
+        createdBy: targetMembershipId,
+      });
+    }
+
+    return { ok: true, completed: input.completed, totalPoints };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to update task status."),
     };
   }
 }

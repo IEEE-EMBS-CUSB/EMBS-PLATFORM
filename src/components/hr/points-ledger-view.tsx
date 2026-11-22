@@ -27,7 +27,7 @@ export interface LedgerEntryItem {
   memberEmail: string;
   committeeName: string;
   month: string;
-  sourceType: "attendance" | "task" | "event" | "manual_override";
+  sourceType: "attendance" | "task" | "assignment" | "event" | "manual_override";
   points: number;
   reason: string;
   createdByName?: string;
@@ -46,11 +46,13 @@ interface PointsLedgerViewProps {
   members: MemberOption[];
   currentUserName?: string;
   defaultMonth?: string;
+  canChooseOpenScope?: boolean;
   onAddEntry?: (input: {
     membershipId: string;
     points: number;
     month: string;
     reason: string;
+    postingScope?: "committee" | "open";
   }) => Promise<{ ok: boolean; id?: string; error?: string } | void>;
 }
 
@@ -59,6 +61,7 @@ export function PointsLedgerView({
   members,
   currentUserName = "HR Team",
   defaultMonth,
+  canChooseOpenScope = false,
   onAddEntry,
 }: PointsLedgerViewProps) {
   const resolvedDefaultMonth =
@@ -75,6 +78,9 @@ export function PointsLedgerView({
   );
   const [pointsDelta, setPointsDelta] = useState("10");
   const [month, setMonth] = useState(resolvedDefaultMonth);
+  const [postingScope, setPostingScope] = useState<"committee" | "open">(
+    "committee"
+  );
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -127,6 +133,7 @@ export function PointsLedgerView({
           points: pts,
           month: targetMonth,
           reason: reason.trim(),
+          ...(canChooseOpenScope ? { postingScope } : {}),
         });
         if (res && !res.ok) {
           setFormError(res.error ?? "Failed to save adjustment.");
@@ -178,13 +185,19 @@ export function PointsLedgerView({
         );
       case "task":
         return (
-          <span className="inline-flex items-center rounded-md bg-[#ebf3f8] px-2 py-0.5 text-xs font-semibold text-[#00629b] border border-[#b2d5ea]">
+          <span className="inline-flex items-center rounded-md bg-[#f5edf7] px-2 py-0.5 text-xs font-semibold text-[#5a1b63] border border-[#772583]/25">
             Task
+          </span>
+        );
+      case "assignment":
+        return (
+          <span className="inline-flex items-center rounded-md bg-[#ebf3f8] px-2 py-0.5 text-xs font-semibold text-[#00629b] border border-[#b2d5ea]">
+            Assignment
           </span>
         );
       case "event":
         return (
-          <span className="inline-flex items-center rounded-md bg-[#f5edf7] px-2 py-0.5 text-xs font-semibold text-[#772583] border border-[#772583]/25">
+          <span className="inline-flex items-center rounded-md bg-[#eef8e0] px-2 py-0.5 text-xs font-semibold text-[#2f600b] border border-[#78be20]/40">
             Event
           </span>
         );
@@ -247,6 +260,7 @@ export function PointsLedgerView({
                 <option value="manual_override">Manual Overrides</option>
                 <option value="attendance">Attendance</option>
                 <option value="task">Tasks</option>
+                <option value="assignment">Assignments</option>
                 <option value="event">Events</option>
               </select>
             </div>
@@ -426,6 +440,32 @@ export function PointsLedgerView({
                   />
                 </div>
               </div>
+
+              {canChooseOpenScope && (
+                <div>
+                  <label
+                    htmlFor="scopeSelect"
+                    className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                  >
+                    Board Scope
+                  </label>
+                  <select
+                    id="scopeSelect"
+                    value={postingScope}
+                    onChange={(e) =>
+                      setPostingScope(e.target.value as "committee" | "open")
+                    }
+                    className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b]"
+                  >
+                    <option value="committee">
+                      Member&apos;s Committee Board + Global
+                    </option>
+                    <option value="open">
+                      Org-Wide (All Eligible Committee Boards + Global)
+                    </option>
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label

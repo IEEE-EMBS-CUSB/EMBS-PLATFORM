@@ -5,9 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { submitTaskAction } from "@/app/hr/tasks/actions";
 
-export function TaskSubmitForm({ taskId }: { taskId: string }) {
-  const [text, setText] = useState("");
-  const [url, setUrl] = useState("");
+export function TaskSubmitForm({
+  taskId,
+  requireUrl = false,
+  initialUrl,
+  initialText,
+}: {
+  taskId: string;
+  requireUrl?: boolean;
+  initialUrl?: string | null;
+  initialText?: string | null;
+}) {
+  const [text, setText] = useState(initialText ?? "");
+  const [url, setUrl] = useState(initialUrl ?? "");
   const [status, setStatus] = useState<{ type: "ok" | "error"; text: string } | null>(
     null
   );
@@ -15,6 +25,13 @@ export function TaskSubmitForm({ taskId }: { taskId: string }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (requireUrl && !url.trim()) {
+      setStatus({
+        type: "error",
+        text: "Please enter a valid http:// or https:// deliverable link.",
+      });
+      return;
+    }
     if (!text.trim() && !url.trim()) {
       setStatus({ type: "error", text: "Please enter notes or a link." });
       return;
@@ -36,8 +53,10 @@ export function TaskSubmitForm({ taskId }: { taskId: string }) {
       });
       if (res.ok) {
         setStatus({ type: "ok", text: "Submitted successfully." });
-        setText("");
-        setUrl("");
+        if (!requireUrl) {
+          setText("");
+          setUrl("");
+        }
       } else {
         setStatus({
           type: "error",
@@ -70,7 +89,9 @@ export function TaskSubmitForm({ taskId }: { taskId: string }) {
         />
         <Input
           aria-label="Submission URL"
-          placeholder="https://... (optional)"
+          placeholder={
+            requireUrl ? "https://... (required)" : "https://... (optional)"
+          }
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           className="h-9 text-xs"

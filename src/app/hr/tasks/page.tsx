@@ -14,7 +14,10 @@ import {
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
-import { gradeTaskSubmissionAction } from "./actions";
+import {
+  gradeTaskSubmissionAction,
+  hrToggleTaskCompletionAction,
+} from "./actions";
 
 export default async function HrTasksPage() {
   const { profile } = await requireHrModule("tasks");
@@ -39,6 +42,9 @@ export default async function HrTasksPage() {
     timelinessScore: number | null;
     totalPoints: number | null;
     notes: string;
+    submissionUrl?: string | null;
+    submissionText?: string | null;
+    completed?: boolean;
   };
   const bulkTasks: { task: BulkTask; submissions: BulkSubmission[] }[] = [];
 
@@ -235,6 +241,9 @@ export default async function HrTasksPage() {
             timelinessScore: sub.timelinessScore,
             totalPoints: sub.totalPoints,
             notes: sub.notes ?? "",
+            submissionUrl: sub.submissionUrl,
+            submissionText: sub.submissionText,
+            completed: sub.gradedAt !== null && (sub.totalPoints ?? 0) > 0,
           });
           subsByTask.set(sub.taskId, list);
         }
@@ -289,6 +298,7 @@ export default async function HrTasksPage() {
               submissions={submissions}
               gradingWeights={gradingWeights}
               onGrade={gradeTaskSubmissionAction}
+              onToggleTask={hrToggleTaskCompletionAction}
             />
           ))}
         </div>

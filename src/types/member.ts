@@ -95,6 +95,9 @@ export interface MemberTask {
   onTime: boolean | null;
   /** Backend-provided task points. */
   taskPoints: number | null;
+  maxPoints?: number;
+  submissionUrl?: string | null;
+  submissionText?: string | null;
   notes?: string;
 }
 

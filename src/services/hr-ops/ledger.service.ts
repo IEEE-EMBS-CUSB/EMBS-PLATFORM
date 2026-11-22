@@ -1,7 +1,11 @@
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { upsertScoreLedgerEntry } from "@/db/ledger";
+import {
+  upsertScoreLedgerEntry,
+  type LedgerPostingScope,
+} from "@/db/ledger";
+import type { MembershipRole } from "@/lib/auth-helpers";
 import { canAwardBonus } from "@/lib/permissions";
 import type { HrActor } from "./helpers";
 import {
@@ -13,12 +17,38 @@ import {
   sanitizeDbError,
 } from "./helpers";
 
+/**
+ * Resolves manual ledger posting scope with least privilege:
+ * - Only `master_admin` and `hr_admin` can explicitly award org-wide `"open"` points.
+ * - Committee-scoped roles (`committee_head`, `hr_member`, track `director`) post to
+ *   the recipient's committee board (unless the recipient has no committee, in which case `"open"`).
+ */
+export function resolveManualLedgerPostingScope(input: {
+  actorRole: MembershipRole;
+  requestedScope?: LedgerPostingScope;
+  memberCommitteeId: string | null;
+}): { postingScope: LedgerPostingScope; committeeId: string | null } {
+  const canAwardOrgWide =
+    input.actorRole === "master_admin" || input.actorRole === "hr_admin";
+
+  if (!input.memberCommitteeId) {
+    return { postingScope: "open", committeeId: null };
+  }
+
+  if (canAwardOrgWide && input.requestedScope === "open") {
+    return { postingScope: "open", committeeId: null };
+  }
+
+  return { postingScope: "committee", committeeId: input.memberCommitteeId };
+}
+
 export async function addManualLedgerEntryAsActor(
   input: {
     membershipId: string;
     points: number;
     month: string;
     reason: string;
+    postingScope?: LedgerPostingScope;
   },
   actor: HrActor
 ) {
@@ -98,12 +128,20 @@ export async function addManualLedgerEntryAsActor(
     );
     if (!monthGuard.ok) return { ok: false, error: monthGuard.error };
 
+    const resolvedScope = resolveManualLedgerPostingScope({
+      actorRole: actor.profile.role,
+      requestedScope: input.postingScope,
+      memberCommitteeId: member.committeeId,
+    });
+
     const inserted = await upsertScoreLedgerEntry(db, {
       seasonId: seasonRes.season.id,
       membershipId: member.id,
       month: input.month.trim(),
       sourceType: "manual_override",
       sourceId: null,
+      postingScope: resolvedScope.postingScope,
+      committeeId: resolvedScope.committeeId,
       points: input.points,
       reason: trimmedReason,
       createdBy: actor.profile.id,

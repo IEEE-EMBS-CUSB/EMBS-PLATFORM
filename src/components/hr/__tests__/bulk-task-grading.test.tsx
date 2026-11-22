@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BulkTaskGradingView } from "@/components/hr/bulk-task-grading-view";
 
@@ -74,5 +74,82 @@ describe("BulkTaskGradingView Component", () => {
 
     // Custom weights: 3*12 + 5*4 + 5*2 = 66 pts (default weights would produce 80 pts)
     expect(screen.getByText("66 pts")).toBeInTheDocument();
+  });
+
+  it("shows clickable safe submission links for assignments and blocks unsafe javascript: URLs", () => {
+    render(
+      <BulkTaskGradingView
+        task={{ ...sampleTask, workType: "assignment" }}
+        submissions={[
+          {
+            ...sampleSubmissions[0],
+            submissionId: "sub-1",
+            submissionUrl: "https://github.com/embs/design-campaign",
+          },
+          {
+            ...sampleSubmissions[1],
+            submissionId: "sub-2",
+            submissionUrl: "javascript:alert(1)",
+          },
+        ]}
+      />
+    );
+
+    const link = screen.getByRole("link", { name: /open link/i });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://github.com/embs/design-campaign"
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(screen.getAllByRole("link", { name: /open link/i })).toHaveLength(1);
+  });
+
+  it("renders a completion checklist instead of rubric inputs for checkable tasks", async () => {
+    const user = userEvent.setup();
+    const onToggleTask = vi
+      .fn()
+      .mockResolvedValue({ ok: true, completed: true, totalPoints: 20 });
+
+    render(
+      <BulkTaskGradingView
+        task={{
+          id: "t-hr-1",
+          title: "Complete HR Onboarding Form",
+          workType: "task",
+          committeeName: "PR",
+          maxPoints: 20,
+        }}
+        submissions={[
+          {
+            submissionId: "sub-hr-1",
+            membershipId: "m-1",
+            memberName: "Nourhan Khaled",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: null,
+            notes: "",
+            completed: false,
+          },
+        ]}
+        onToggleTask={onToggleTask}
+      />
+    );
+
+    expect(screen.queryByLabelText(/effort/i)).not.toBeInTheDocument();
+    const checkbox = screen.getByRole("checkbox", {
+      name: /mark complete hr onboarding form completed for nourhan khaled/i,
+    });
+    expect(checkbox).not.toBeChecked();
+
+    await user.click(checkbox);
+    await waitFor(() => {
+      expect(onToggleTask).toHaveBeenCalledWith({
+        submissionId: "sub-hr-1",
+        completed: true,
+      });
+    });
+    expect(checkbox).toBeChecked();
   });
 });
