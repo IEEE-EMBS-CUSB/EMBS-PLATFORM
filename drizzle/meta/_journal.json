@@ -78,6 +78,20 @@
       "when": 1795339929243,
       "tag": "0010_contract_roster_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795344273754,
+      "tag": "0011_scoring_scope_and_hr_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795344274510,
+      "tag": "0012_backfill_assignment_ledger_source",
+      "breakpoints": true
     }
   ]
 }

@@ -46,8 +46,14 @@ export const membershipRoleEnum = pgEnum("membership_role", [
 export const ledgerSourceTypeEnum = pgEnum("ledger_source_type", [
   "attendance",
   "task",
+  "assignment",
   "event",
   "manual_override",
+]);
+
+export const ledgerPostingScopeEnum = pgEnum("ledger_posting_scope", [
+  "committee",
+  "open",
 ]);
 
 export const snapshotStatusEnum = pgEnum("snapshot_status", [
@@ -194,7 +200,13 @@ export const rosterMemberships = pgTable(
       .references(() => persons.id, { onDelete: "restrict" }),
     committeeId: uuid("committee_id").references(() => committees.id, {
       onDelete: "set null",
-    }), // Nullable for branch-wide HR admins or general attendees
+    }), // Home committee (for hr_member this is always the Human Resources committee; nullable for master/director/general attendee)
+    trackedCommitteeId: uuid("tracked_committee_id").references(
+      () => committees.id,
+      {
+        onDelete: "set null",
+      }
+    ), // Nullable; when set on an hr_member, scopes their operational HR duties to that committee while keeping their home committee as Human Resources
     managedTrackId: uuid("managed_track_id").references(() => committeeTracks.id, {
       onDelete: "set null",
     }), // Nullable; when set on a director, scopes them to all committees in that track
@@ -208,6 +220,7 @@ export const rosterMemberships = pgTable(
     index("roster_season_id_idx").on(table.seasonId),
     index("roster_person_id_idx").on(table.personId),
     index("roster_committee_id_idx").on(table.committeeId),
+    index("roster_tracked_committee_id_idx").on(table.trackedCommitteeId),
     index("roster_role_idx").on(table.role),
     uniqueIndex("roster_global_role_uniq")
       .on(table.seasonId, table.personId, table.role)
@@ -424,6 +437,12 @@ export const scoreLedger = pgTable(
     month: text("month").notNull(), // Format: "YYYY-MM"
     sourceType: ledgerSourceTypeEnum("source_type").notNull(),
     sourceId: text("source_id"), // Reference to attendance_record id, task_submission id, etc.
+    postingScope: ledgerPostingScopeEnum("posting_scope")
+      .notNull()
+      .default("committee"), // "committee" feeds that committee's board + global; "open" feeds global + every eligible committee board
+    committeeId: uuid("committee_id").references(() => committees.id, {
+      onDelete: "set null",
+    }), // Populated for committee-scoped postings; null for open/org-wide postings
     points: integer("points").notNull(), // Can be positive or negative
     reason: text("reason").notNull(),
     createdBy: uuid("created_by").references(() => rosterMemberships.id, {
@@ -437,6 +456,11 @@ export const scoreLedger = pgTable(
     index("score_ledger_season_month_idx").on(table.seasonId, table.month),
     index("score_ledger_membership_id_idx").on(table.membershipId),
     index("score_ledger_source_idx").on(table.sourceType, table.sourceId),
+    index("score_ledger_scope_committee_idx").on(
+      table.seasonId,
+      table.postingScope,
+      table.committeeId
+    ),
     uniqueIndex("score_ledger_source_unique_idx")
       .on(table.membershipId, table.sourceType, table.sourceId)
       .where(sql`${table.sourceId} IS NOT NULL`),
