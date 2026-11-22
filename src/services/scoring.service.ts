@@ -27,6 +27,7 @@ export interface PreviousBoardRankRef {
 export interface PreviousBoardsSnapshotRef {
   overall?: PreviousBoardRankRef[];
   committees?: Record<string, PreviousBoardRankRef[]>;
+  heads?: PreviousBoardRankRef[];
 }
 
 export interface BoardStandingEntry {
@@ -45,6 +46,7 @@ export interface ComputedMonthlyBoards {
   month: string;
   overallEntries: BoardStandingEntry[];
   committeeEntries: Record<string, BoardStandingEntry[]>;
+  headsEntries: BoardStandingEntry[];
 }
 
 const BOARD_ROLE_PRIORITY: Record<string, number> = {
@@ -119,9 +121,11 @@ export function computeMonthlyBoards(input: {
   // 1. globalTotalByPerson: sum of every eligible ledger row once per person
   // 2. openTotalByPerson: sum of every "open" ledger row once per person
   // 3. committeePointsByPersonAndComm: committee-scoped ledger rows keyed by `${personId}::${committeeId}`
+  // 4. headScopedPointsByPerson: non-open ledger rows stamped specifically to a committee_head membership
   const globalTotalByPerson = new Map<string, number>();
   const openTotalByPerson = new Map<string, number>();
   const committeePointsByPersonAndComm = new Map<string, number>();
+  const headScopedPointsByPerson = new Map<string, number>();
 
   for (const entry of ledgerEntries) {
     const stampedMembership = membershipById.get(entry.membershipId);
@@ -154,6 +158,16 @@ export function computeMonthlyBoards(input: {
         committeePointsByPersonAndComm.set(
           key,
           (committeePointsByPersonAndComm.get(key) ?? 0) + entry.points
+        );
+      }
+      if (
+        stampedMembership &&
+        (stampedMembership.role === "committee_head" ||
+          stampedMembership.role === "Head")
+      ) {
+        headScopedPointsByPerson.set(
+          personId,
+          (headScopedPointsByPerson.get(personId) ?? 0) + entry.points
         );
       }
     }
@@ -262,9 +276,47 @@ export function computeMonthlyBoards(input: {
     }));
   }
 
+  // 3. Build Heads-Only Board (committee_head memberships only: head-stamped points + open points once per person)
+  const headHatByPerson = new Map<string, ScoringMembershipRef>();
+  for (const m of eligibleMembers) {
+    if (m.role !== "committee_head" && m.role !== "Head") continue;
+    if (!headHatByPerson.has(m.personId)) {
+      headHatByPerson.set(m.personId, m);
+    }
+  }
+
+  const prevHeads = buildPreviousRankLookup(previousSnapshot?.heads);
+  const headsRaw: Array<Omit<BoardStandingEntry, "rank" | "previousRank">> = [];
+  for (const [personId, hat] of headHatByPerson.entries()) {
+    const headScopedPts = headScopedPointsByPerson.get(personId) ?? 0;
+    const openPts = openTotalByPerson.get(personId) ?? 0;
+    headsRaw.push({
+      memberId: hat.id,
+      personId,
+      memberName: hat.fullName,
+      committeeSlug: hat.committeeSlug ?? "unassigned",
+      committeeName: hat.committeeName ?? "Unassigned",
+      role: hat.role,
+      monthlyScore: headScopedPts + openPts,
+    });
+  }
+
+  headsRaw.sort(sortScoreDescending);
+  const headsEntries: BoardStandingEntry[] = headsRaw
+    .slice(0, topLimit)
+    .map((item, idx) => ({
+      ...item,
+      rank: idx + 1,
+      previousRank:
+        prevHeads.byPerson.get(item.personId) ??
+        prevHeads.byMember.get(item.memberId) ??
+        null,
+    }));
+
   return {
     month,
     overallEntries,
     committeeEntries,
+    headsEntries,
   };
 }

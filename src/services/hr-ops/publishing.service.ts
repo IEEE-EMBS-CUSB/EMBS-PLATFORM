@@ -34,6 +34,7 @@ interface StoredSnapshotPayload {
   entries?: CalculatedSnapshotEntry[];
   overallEntries?: CalculatedSnapshotEntry[];
   committeeEntries?: Record<string, CalculatedSnapshotEntry[]>;
+  headsEntries?: CalculatedSnapshotEntry[];
 }
 
 async function buildDraft(month: string, seasonId: string) {
@@ -116,22 +117,40 @@ async function buildDraft(month: string, seasonId: string) {
   const previous = prevRows.find((r) => r.month < month);
   let previousSnapshot:
     | {
-        overall?: { memberId: string; rank: number }[];
-        committees?: Record<string, { memberId: string; rank: number }[]>;
+        overall?: { memberId: string; personId?: string; rank: number }[];
+        committees?: Record<
+          string,
+          { memberId: string; personId?: string; rank: number }[]
+        >;
+        heads?: { memberId: string; personId?: string; rank: number }[];
       }
     | undefined;
 
   if (previous) {
     const json = previous.snapshotJson as StoredSnapshotPayload;
     const prevOverall = json.overallEntries ?? json.entries ?? [];
+    const prevHeads = json.headsEntries ?? [];
     previousSnapshot = {
-      overall: prevOverall.map((e) => ({ memberId: e.memberId, rank: e.rank })),
+      overall: prevOverall.map((e) => ({
+        memberId: e.memberId,
+        personId: e.personId,
+        rank: e.rank,
+      })),
       committees: Object.fromEntries(
         Object.entries(json.committeeEntries ?? {}).map(([k, v]) => [
           k,
-          (v ?? []).map((e) => ({ memberId: e.memberId, rank: e.rank })),
+          (v ?? []).map((e) => ({
+            memberId: e.memberId,
+            personId: e.personId,
+            rank: e.rank,
+          })),
         ])
       ),
+      heads: prevHeads.map((e) => ({
+        memberId: e.memberId,
+        personId: e.personId,
+        rank: e.rank,
+      })),
     };
   }
 
@@ -185,6 +204,7 @@ export async function publishMonthlySnapshotAsActor(
       entries: draft.overallEntries,
       overallEntries: draft.overallEntries,
       committeeEntries: draft.committeeEntries,
+      headsEntries: draft.headsEntries,
     };
 
     if (existing.length > 0) {
@@ -243,6 +263,11 @@ export async function getSnapshotForPublishingPage(month: string) {
     const json = existing.snapshotJson as StoredSnapshotPayload;
     const overallEntries = json.overallEntries ?? json.entries ?? [];
     const committeeEntries = json.committeeEntries ?? {};
+    const headsEntries =
+      json.headsEntries ??
+      overallEntries
+        .filter((e) => e.role === "committee_head" || e.role === "Head")
+        .map((e, idx) => ({ ...e, rank: idx + 1 }));
     return {
       month,
       status: "published" as const,
@@ -251,6 +276,7 @@ export async function getSnapshotForPublishingPage(month: string) {
         : undefined,
       overallEntries,
       committeeEntries,
+      headsEntries,
     };
   }
 
@@ -261,6 +287,7 @@ export async function getSnapshotForPublishingPage(month: string) {
     publishedAt: undefined,
     overallEntries: draft.overallEntries,
     committeeEntries: draft.committeeEntries,
+    headsEntries: draft.headsEntries,
   };
 }
 

@@ -22,7 +22,7 @@ export interface MonthlyLeaderboard {
   monthLabel: string;
   status: LeaderboardStatus;
   publishedAt: string;
-  scope: "overall" | "committee";
+  scope: "overall" | "committee" | "heads";
   committee?: Committee;
   entries: LeaderboardEntry[];
 }

@@ -12,6 +12,7 @@ function safeRevalidatePublishing() {
   try {
     revalidatePath("/hr/publishing");
     revalidatePath("/leaderboards");
+    revalidatePath("/leaderboards/heads");
     revalidatePath("/leaderboards/history");
     revalidatePath("/leaderboards/committees/[slug]", "page");
     revalidatePath("/");

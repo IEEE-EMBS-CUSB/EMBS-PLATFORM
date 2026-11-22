@@ -255,4 +255,135 @@ describe("scoring.service (Spec §4 board eligibility & counting discipline)", (
       boards.committeeEntries["ai-ml"].map((e) => e.memberName)
     ).toEqual(["Omar Tarek"]);
   });
+
+  it("computes heads-only leaderboard strictly from committee_head memberships plus open points without inflating from non-head hats", () => {
+    const members: ScoringMembershipRef[] = [
+      // Multi-hat: PR Head + AI Member
+      {
+        id: "mem-omar-pr-head",
+        personId: "person-omar",
+        fullName: "Omar Multi-Role",
+        role: "committee_head",
+        committeeId: "comm-pr",
+        committeeSlug: "public-relations",
+        committeeName: "Public Relations",
+      },
+      {
+        id: "mem-omar-ai-member",
+        personId: "person-omar",
+        fullName: "Omar Multi-Role",
+        role: "member",
+        committeeId: "comm-ai",
+        committeeSlug: "ai-ml",
+        committeeName: "AI & ML",
+      },
+      // Pure AI Head
+      {
+        id: "mem-salma-ai-head",
+        personId: "person-salma",
+        fullName: "Salma AI Head",
+        role: "committee_head",
+        committeeId: "comm-ai",
+        committeeSlug: "ai-ml",
+        committeeName: "AI & ML",
+      },
+      // Non-head roles must NOT appear on headsEntries
+      {
+        id: "mem-ahmed-member",
+        personId: "person-ahmed",
+        fullName: "Ahmed Member",
+        role: "member",
+        committeeId: "comm-ai",
+        committeeSlug: "ai-ml",
+        committeeName: "AI & ML",
+      },
+      {
+        id: "mem-sara-hr-admin",
+        personId: "person-sara",
+        fullName: "Sara HR Admin",
+        role: "hr_admin",
+        committeeId: "comm-hr",
+        committeeSlug: "human-resources",
+        committeeName: "Human Resources",
+      },
+    ];
+
+    const ledger: ScoringLedgerRow[] = [
+      // Omar's head-scoped points (Director assignment to PR Head): 60 pts
+      {
+        membershipId: "mem-omar-pr-head",
+        personId: "person-omar",
+        postingScope: "committee",
+        committeeId: "comm-pr",
+        points: 60,
+      },
+      // Omar's non-head AI member assignment: 90 pts -> counts on Global + AI, MUST NOT count on Heads board!
+      {
+        membershipId: "mem-omar-ai-member",
+        personId: "person-omar",
+        postingScope: "committee",
+        committeeId: "comm-ai",
+        points: 90,
+      },
+      // Omar's open HR task (stamped to his AI member hat): 15 pts -> open counts ONCE on Heads board too
+      {
+        membershipId: "mem-omar-ai-member",
+        personId: "person-omar",
+        postingScope: "open",
+        committeeId: null,
+        points: 15,
+      },
+      // Salma's head-scoped points: 85 pts
+      {
+        membershipId: "mem-salma-ai-head",
+        personId: "person-salma",
+        postingScope: "committee",
+        committeeId: "comm-ai",
+        points: 85,
+      },
+      // Ahmed (regular member) has 200 pts -> tops Global, excluded from Heads board
+      {
+        membershipId: "mem-ahmed-member",
+        personId: "person-ahmed",
+        postingScope: "committee",
+        committeeId: "comm-ai",
+        points: 200,
+      },
+    ];
+
+    const boards = computeMonthlyBoards({
+      month: "2026-11",
+      members,
+      ledgerEntries: ledger,
+      previousSnapshot: {
+        heads: [
+          { memberId: "mem-omar-pr-head", personId: "person-omar", rank: 1 },
+          { memberId: "mem-salma-ai-head", personId: "person-salma", rank: 2 },
+        ],
+      },
+    });
+
+    // Global: Ahmed (200), Omar (60+90+15=165), Salma (85), Sara (0)
+    expect(
+      boards.overallEntries.map((e) => [e.memberName, e.monthlyScore])
+    ).toEqual([
+      ["Ahmed Member", 200],
+      ["Omar Multi-Role", 165],
+      ["Salma AI Head", 85],
+      ["Sara HR Admin", 0],
+    ]);
+
+    // Heads-only board: Salma (85, moved from #2 -> #1) beats Omar (60 head + 15 open = 75, moved from #1 -> #2)
+    expect(
+      boards.headsEntries.map((e) => [
+        e.rank,
+        e.previousRank,
+        e.memberName,
+        e.monthlyScore,
+      ])
+    ).toEqual([
+      [1, 2, "Salma AI Head", 85],
+      [2, 1, "Omar Multi-Role", 75],
+    ]);
+  });
 });

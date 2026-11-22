@@ -31,6 +31,7 @@ interface SnapshotJsonShape {
   entries?: SnapshotEntryShape[];
   overallEntries?: SnapshotEntryShape[];
   committeeEntries?: Record<string, SnapshotEntryShape[]>;
+  headsEntries?: SnapshotEntryShape[];
 }
 
 function getOverallEntriesFromSnapshot(json: SnapshotJsonShape) {
@@ -44,6 +45,38 @@ function getOverallEntriesFromSnapshot(json: SnapshotJsonShape) {
     role: e.role,
     monthlyScore: e.monthlyScore,
   }));
+}
+
+/**
+ * Extracts ranked Heads-only entries from a published snapshot.
+ * Uses frozen `headsEntries` when available, or gracefully derives from
+ * pre-Priority-5 snapshots by filtering committee heads and re-ranking 1..N.
+ */
+export function extractHeadsEntriesFromSnapshot(
+  json: SnapshotJsonShape,
+  topLimit: number = LEADERBOARD_TOP_LIMIT
+) {
+  if (Array.isArray(json.headsEntries)) {
+    return json.headsEntries.slice(0, topLimit).map((e, idx) => ({
+      rank: e.rank ?? idx + 1,
+      previousRank: e.previousRank ?? null,
+      memberId: e.memberId,
+      memberName: e.memberName,
+      committeeSlug: e.committeeSlug,
+      committeeName: e.committeeName,
+      role: e.role,
+      monthlyScore: e.monthlyScore,
+    }));
+  }
+
+  return getOverallEntriesFromSnapshot(json)
+    .filter((e) => e.role === "committee_head" || e.role === "Head")
+    .slice(0, topLimit)
+    .map((e, idx) => ({
+      ...e,
+      rank: idx + 1,
+      previousRank: null,
+    }));
 }
 
 async function resolvePublicSeason(): Promise<{
@@ -194,6 +227,51 @@ export async function getOverallLeaderboard(
           : "",
         scope: "overall",
         entries: overallEntries.slice(0, season.publicTopN),
+      };
+    }
+  } catch {
+    // Graceful fallback
+  }
+  return null;
+}
+
+export async function getHeadsLeaderboard(
+  month?: MonthKey
+): Promise<MonthlyLeaderboard | null> {
+  try {
+    const season = await resolvePublicSeason();
+    if (!season) return null;
+
+    const rows = await db
+      .select()
+      .from(schema.monthlySnapshots)
+      .where(
+        and(
+          eq(schema.monthlySnapshots.status, "published"),
+          eq(schema.monthlySnapshots.seasonId, season.id)
+        )
+      )
+      .orderBy(desc(schema.monthlySnapshots.month));
+
+    if (rows.length > 0) {
+      const target = month ? rows.find((r) => r.month === month) : rows[0];
+      if (!target) return null;
+
+      const json = target.snapshotJson as SnapshotJsonShape;
+      const headsEntries = extractHeadsEntriesFromSnapshot(
+        json,
+        season.publicTopN
+      );
+
+      return {
+        month: target.month as MonthKey,
+        monthLabel: json.monthLabel ?? target.month,
+        status: target.status,
+        publishedAt: target.publishedAt
+          ? target.publishedAt.toISOString().slice(0, 10)
+          : "",
+        scope: "heads",
+        entries: headsEntries,
       };
     }
   } catch {

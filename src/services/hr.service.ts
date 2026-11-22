@@ -160,6 +160,7 @@ export interface PreviousRankRef {
 export interface PreviousSnapshotRef {
   overall?: PreviousRankRef[];
   committees?: Record<string, PreviousRankRef[]>;
+  heads?: PreviousRankRef[];
 }
 
 export interface CalculatedSnapshotEntry {
@@ -178,6 +179,7 @@ export interface DraftSnapshotResult {
   month: string;
   overallEntries: CalculatedSnapshotEntry[];
   committeeEntries: Record<string, CalculatedSnapshotEntry[]>;
+  headsEntries: CalculatedSnapshotEntry[];
 }
 
 /**
