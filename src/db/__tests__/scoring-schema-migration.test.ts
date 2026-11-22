@@ -54,7 +54,9 @@ describe("Scoring scope, 5 point sources, and HR tracked committee schema + migr
       path.join(DRIZZLE_DIR, `${entry12!.tag}.sql`),
       "utf8"
     );
-    expect(sqlText).toMatch(/ADD VALUE IF NOT EXISTS 'assignment'/i);
+    expect(sqlText).toMatch(
+      /CREATE TYPE "public"\."ledger_source_type_v2" AS ENUM\('attendance', 'task', 'assignment', 'event', 'manual_override'\)/i
+    );
     expect(sqlText).toMatch(/CREATE TYPE "public"\."ledger_posting_scope"/i);
     expect(sqlText).toMatch(/ADD COLUMN "posting_scope"/i);
     expect(sqlText).toMatch(/ADD COLUMN "committee_id"/i);

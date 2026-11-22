@@ -1,5 +1,9 @@
 CREATE TYPE "public"."ledger_posting_scope" AS ENUM('committee', 'open');--> statement-breakpoint
-ALTER TYPE "public"."ledger_source_type" ADD VALUE IF NOT EXISTS 'assignment' BEFORE 'event';--> statement-breakpoint
+-- Transaction-safe enum expansion (avoids PostgreSQL 55P04 when subsequent migration 0012 runs in Drizzle's single batch transaction)
+CREATE TYPE "public"."ledger_source_type_v2" AS ENUM('attendance', 'task', 'assignment', 'event', 'manual_override');--> statement-breakpoint
+ALTER TABLE "score_ledger" ALTER COLUMN "source_type" TYPE "public"."ledger_source_type_v2" USING ("source_type"::text::"public"."ledger_source_type_v2");--> statement-breakpoint
+DROP TYPE "public"."ledger_source_type";--> statement-breakpoint
+ALTER TYPE "public"."ledger_source_type_v2" RENAME TO "ledger_source_type";--> statement-breakpoint
 ALTER TABLE "roster_memberships" ADD COLUMN "tracked_committee_id" uuid;--> statement-breakpoint
 ALTER TABLE "score_ledger" ADD COLUMN "posting_scope" "ledger_posting_scope" DEFAULT 'committee' NOT NULL;--> statement-breakpoint
 ALTER TABLE "score_ledger" ADD COLUMN "committee_id" uuid;--> statement-breakpoint

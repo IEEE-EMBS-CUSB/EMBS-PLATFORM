@@ -6,12 +6,12 @@ Handoff guide for the agent/operator executing migrations `0011` and `0012` on N
 
 1. [`drizzle/0011_scoring_scope_and_hr_tracking.sql`](../drizzle/0011_scoring_scope_and_hr_tracking.sql):
    - Creates `ledger_posting_scope` enum (`'committee' | 'open'`).
-   - Adds `'assignment'` to `ledger_source_type` enum (`attendance | task | assignment | event | manual_override`).
+   - Replaces `ledger_source_type` enum via a transaction-safe enum swap (`ledger_source_type_v2` → `ALTER COLUMN` → `DROP TYPE` → `RENAME`) to add `'assignment'` (`attendance | task | assignment | event | manual_override`) without hitting PostgreSQL `55P04` during Drizzle's single-transaction batch migration.
    - Adds `score_ledger.posting_scope` (`NOT NULL DEFAULT 'committee'`) and nullable `score_ledger.committee_id` (FK → `committees.id`, `ON DELETE SET NULL`), backfilled from `branch_sessions`, `tasks`, `events`, and `roster_memberships`.
    - Adds `roster_memberships.tracked_committee_id` (FK → `committees.id`, `ON DELETE SET NULL`).
    - Ensures any season containing an `hr_member` has an active `human-resources` committee, moves existing `hr_member.committee_id` → `tracked_committee_id`, and anchors `hr_member.committee_id` to `human-resources`.
 2. [`drizzle/0012_backfill_assignment_ledger_source.sql`](../drizzle/0012_backfill_assignment_ledger_source.sql):
-   - Runs in a separate committed transaction (required by PostgreSQL to avoid `55P04` unsafe new-enum-value use in the same transaction) to re-tag existing `score_ledger` rows backed by `tasks.work_type = 'assignment'` from `'task'` → `'assignment'`.
+   - Re-tags existing `score_ledger` rows backed by `tasks.work_type = 'assignment'` from `'task'` → `'assignment'`.
 
 ---
 
