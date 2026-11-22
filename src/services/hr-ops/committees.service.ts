@@ -41,6 +41,83 @@ export interface AddRubricInput {
   seasonId?: string;
 }
 
+export const HR_COMMITTEE_SLUG = "human-resources";
+
+export function isProtectedCoreCommittee(committee: {
+  slug: string;
+}): boolean {
+  return committee.slug.trim().toLowerCase() === HR_COMMITTEE_SLUG;
+}
+
+/**
+ * Guarantees that the core Human Resources committee exists and is active in a season.
+ * Handles the edge case where a season was created or edited without an HR committee row.
+ */
+export async function ensureHrCommitteeForSeason(seasonId: string): Promise<{
+  id: string;
+  name: string;
+  slug: string;
+}> {
+  const [existing] = await db
+    .select({
+      id: schema.committees.id,
+      name: schema.committees.name,
+      slug: schema.committees.slug,
+      isActive: schema.committees.isActive,
+    })
+    .from(schema.committees)
+    .where(
+      and(
+        eq(schema.committees.seasonId, seasonId),
+        eq(schema.committees.slug, HR_COMMITTEE_SLUG)
+      )
+    )
+    .limit(1);
+
+  if (existing) {
+    if (!existing.isActive) {
+      await db
+        .update(schema.committees)
+        .set({ isActive: true })
+        .where(eq(schema.committees.id, existing.id));
+    }
+    return { id: existing.id, name: existing.name, slug: existing.slug };
+  }
+
+  const tracks = await ensureDefaultTracksForSeason(seasonId);
+  const opsTrack =
+    tracks.find((t) => t.slug === "operations") ?? tracks[0] ?? null;
+
+  await db
+    .insert(schema.committees)
+    .values({
+      seasonId,
+      trackId: opsTrack?.id ?? null,
+      name: "Human Resources",
+      slug: HR_COMMITTEE_SLUG,
+      category: "non_technical",
+      isActive: true,
+    })
+    .onConflictDoNothing();
+
+  const [ensured] = await db
+    .select({
+      id: schema.committees.id,
+      name: schema.committees.name,
+      slug: schema.committees.slug,
+    })
+    .from(schema.committees)
+    .where(
+      and(
+        eq(schema.committees.seasonId, seasonId),
+        eq(schema.committees.slug, HR_COMMITTEE_SLUG)
+      )
+    )
+    .limit(1);
+
+  return ensured;
+}
+
 function slugifyName(name: string): string {
   return name
     .trim()
@@ -439,6 +516,14 @@ export async function removeCommitteeAsActor(
       .limit(1);
     if (!existing) {
       return { ok: false, error: "Committee not found." };
+    }
+
+    if (isProtectedCoreCommittee(existing)) {
+      return {
+        ok: false,
+        error:
+          "The Human Resources committee is a core chapter committee and cannot be removed.",
+      };
     }
 
     const seasonRes = await resolveMutableSeason(existing.seasonId);

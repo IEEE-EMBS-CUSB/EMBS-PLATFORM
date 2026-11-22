@@ -10,7 +10,10 @@ import {
   validateSeasonSettings,
   type SeasonSettings,
 } from "@/lib/season-settings";
-import { ensureDefaultTracksForSeason } from "./committees.service";
+import {
+  ensureDefaultTracksForSeason,
+  ensureHrCommitteeForSeason,
+} from "./committees.service";
 import { isValidDateString, sanitizeDbError } from "./helpers";
 
 interface SeasonActor {
@@ -75,7 +78,7 @@ export async function createSeasonAsActor(
       })
       .returning();
 
-    // Seed the 3 default editable committee tracks: Technical, Creative, Operations
+    // Seed the 3 default editable committee tracks and guarantee core Human Resources committee exists
     await db
       .insert(schema.committeeTracks)
       .values(
@@ -88,6 +91,8 @@ export async function createSeasonAsActor(
         }))
       )
       .onConflictDoNothing();
+
+    await ensureHrCommitteeForSeason(season.id);
 
     return { ok: true, seasonId: season.id };
   } catch (err: unknown) {
@@ -263,6 +268,9 @@ export async function cloneSeasonAsActor(
             personId: m.personId,
             committeeId: m.committeeId
               ? committeeMap.get(m.committeeId) ?? null
+              : null,
+            trackedCommitteeId: m.trackedCommitteeId
+              ? committeeMap.get(m.trackedCommitteeId) ?? null
               : null,
             managedTrackId: m.managedTrackId
               ? trackMap.get(m.managedTrackId) ?? null

@@ -348,6 +348,8 @@ export interface OperationalUserProfile {
   role: MembershipRole;
   committeeId: string | null;
   committeeName?: string;
+  trackedCommitteeId?: string | null;
+  trackedCommitteeName?: string;
   managedTrackId: string | null;
   managedTrackName?: string;
   seasonId?: string;
@@ -366,6 +368,7 @@ export async function getOperationalUserProfile(
         role: schema.rosterMemberships.role,
         committeeId: schema.rosterMemberships.committeeId,
         committeeName: schema.committees.name,
+        trackedCommitteeId: schema.rosterMemberships.trackedCommitteeId,
         managedTrackId: schema.rosterMemberships.managedTrackId,
         managedTrackName: schema.committeeTracks.name,
         seasonId: schema.rosterMemberships.seasonId,
@@ -394,6 +397,16 @@ export async function getOperationalUserProfile(
 
     const member = memberRows[0];
     if (member && member.role !== "attendee") {
+      let trackedCommitteeName: string | undefined;
+      if (member.trackedCommitteeId) {
+        const [tracked] = await db
+          .select({ name: schema.committees.name })
+          .from(schema.committees)
+          .where(eq(schema.committees.id, member.trackedCommitteeId))
+          .limit(1);
+        trackedCommitteeName = tracked?.name;
+      }
+
       return {
         id: member.id,
         personId: member.personId,
@@ -402,6 +415,8 @@ export async function getOperationalUserProfile(
         role: member.role as MembershipRole,
         committeeId: member.committeeId,
         committeeName: member.committeeName ?? undefined,
+        trackedCommitteeId: member.trackedCommitteeId ?? null,
+        trackedCommitteeName,
         managedTrackId: member.managedTrackId ?? null,
         managedTrackName: member.managedTrackName ?? undefined,
         seasonId: member.seasonId,

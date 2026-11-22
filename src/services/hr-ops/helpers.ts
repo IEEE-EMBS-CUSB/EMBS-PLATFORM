@@ -9,6 +9,7 @@ export interface HrActor {
     personId?: string;
     role: MembershipRole;
     committeeId: string | null;
+    trackedCommitteeId?: string | null;
     managedTrackId?: string | null;
     email?: string;
     fullName?: string;

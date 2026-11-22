@@ -216,7 +216,8 @@ export async function seedDatabase() {
     {
       email: normalizeEmail("hr.member@cu.edu.eg"),
       fullName: "Laila Amr",
-      committeeId: committeeMap.get("ai-and-machine-learning") ?? null,
+      committeeId: committeeMap.get("human-resources") ?? null,
+      trackedCommitteeId: committeeMap.get("ai-and-machine-learning") ?? null,
       role: "hr_member" as const,
     },
     {
@@ -286,6 +287,8 @@ export async function seedDatabase() {
         seasonId,
         personId: person.id,
         committeeId: m.committeeId,
+        trackedCommitteeId:
+          "trackedCommitteeId" in m ? m.trackedCommitteeId ?? null : null,
         role: m.role,
         isActive: true,
       })

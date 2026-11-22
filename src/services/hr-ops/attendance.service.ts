@@ -3,7 +3,10 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
-import { canManageCommitteeSessions } from "@/lib/permissions";
+import {
+  canManageCommitteeSessions,
+  getOperationalCommitteeScope,
+} from "@/lib/permissions";
 import { normalizeSeasonSettings } from "@/lib/season-settings";
 import {
   assertMonthNotPublished,
@@ -44,6 +47,7 @@ export interface AttendanceActor {
     id: string;
     role: MembershipRole;
     committeeId: string | null;
+    trackedCommitteeId?: string | null;
     email?: string;
     fullName?: string;
   };
@@ -53,14 +57,16 @@ export async function createSessionAsActor(
   input: CreateSessionInput,
   actor: AttendanceActor
 ): Promise<CreateSessionResult> {
+  const actorScopeCommitteeId = getOperationalCommitteeScope(actor.profile);
   const targetCommitteeId =
-    input.committeeId !== undefined ? input.committeeId : actor.profile.committeeId;
+    input.committeeId !== undefined ? input.committeeId : actorScopeCommitteeId;
 
   const permCtx = {
     id: actor.profile.id,
     email: actor.profile.email ?? "",
     role: actor.profile.role,
     committeeId: actor.profile.committeeId,
+    trackedCommitteeId: actor.profile.trackedCommitteeId,
   };
 
   if (!canManageCommitteeSessions(permCtx, targetCommitteeId ?? null)) {
@@ -188,6 +194,7 @@ export async function toggleSessionCheckinAsActor(
       email: actor.profile.email ?? "",
       role: actor.profile.role,
       committeeId: actor.profile.committeeId,
+      trackedCommitteeId: actor.profile.trackedCommitteeId,
     };
     if (!canManageCommitteeSessions(permCtx, session.committeeId)) {
       return {
@@ -258,6 +265,7 @@ export async function rotateSessionCheckinCodeAsActor(
       email: actor.profile.email ?? "",
       role: actor.profile.role,
       committeeId: actor.profile.committeeId,
+      trackedCommitteeId: actor.profile.trackedCommitteeId,
     };
     if (!canManageCommitteeSessions(permCtx, session.committeeId)) {
       return {

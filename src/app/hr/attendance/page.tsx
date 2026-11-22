@@ -3,6 +3,7 @@ import {
   type SessionItem,
 } from "@/components/hr/attendance-manager-view";
 import { requireHrModule } from "@/lib/portal-guards";
+import { getOperationalCommitteeScope } from "@/lib/permissions";
 import {
   DEFAULT_SEASON_SETTINGS,
   normalizeSeasonSettings,
@@ -22,6 +23,11 @@ export default async function HrAttendancePage() {
 
   const isCommitteeScoped =
     profile.role === "committee_head" || profile.role === "hr_member";
+  const operationalCommitteeId = getOperationalCommitteeScope(profile);
+  const operationalCommitteeName =
+    profile.role === "hr_member"
+      ? profile.trackedCommitteeName
+      : profile.committeeName;
 
   try {
     const [activeSeason] = await db
@@ -37,10 +43,10 @@ export default async function HrAttendancePage() {
       ).attendance;
 
       const sessionFilter =
-        isCommitteeScoped && profile.committeeId
+        isCommitteeScoped && operationalCommitteeId
           ? and(
               eq(schema.branchSessions.seasonId, seasonId),
-              eq(schema.branchSessions.committeeId, profile.committeeId)
+              eq(schema.branchSessions.committeeId, operationalCommitteeId)
             )
           : eq(schema.branchSessions.seasonId, seasonId);
 
@@ -84,11 +90,17 @@ export default async function HrAttendancePage() {
       );
       dbCommitteesList = isCommitteeScoped
         ? dbCommittees
-            .filter((c) => c.id === profile.committeeId)
+            .filter(
+              (c) =>
+                operationalCommitteeId !== null &&
+                c.id === operationalCommitteeId
+            )
             .map((c) => ({ id: c.id, name: c.name }))
         : dbCommittees.map((c) => ({ id: c.id, name: c.name }));
 
-      dbSessionsList = dbSessions.map((s) => ({
+      dbSessionsList = (
+        isCommitteeScoped && !operationalCommitteeId ? [] : dbSessions
+      ).map((s) => ({
         id: s.id,
         title: s.title,
         committeeId: s.committeeId,
@@ -112,8 +124,8 @@ export default async function HrAttendancePage() {
     <AttendanceManagerView
       sessions={dbSessionsList}
       currentUserRole={profile.role}
-      currentUserCommitteeId={profile.committeeId}
-      currentUserCommitteeName={profile.committeeName}
+      currentUserCommitteeId={operationalCommitteeId}
+      currentUserCommitteeName={operationalCommitteeName}
       committees={dbCommitteesList}
       attendanceDefaults={attendanceDefaults}
     />

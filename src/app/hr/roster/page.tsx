@@ -44,6 +44,7 @@ export default async function HrRosterPage() {
             fullName: schema.persons.fullName,
             email: schema.persons.email,
             committeeId: schema.rosterMemberships.committeeId,
+            trackedCommitteeId: schema.rosterMemberships.trackedCommitteeId,
             managedTrackId: schema.rosterMemberships.managedTrackId,
             role: schema.rosterMemberships.role,
             isActive: schema.rosterMemberships.isActive,
@@ -92,21 +93,33 @@ export default async function HrRosterPage() {
           if (m.id === profile.id) return true;
           return m.committeeId !== null && directorTrackCommitteeIds.has(m.committeeId);
         })
-        .map((m) => ({
-          id: m.id,
-          fullName: m.fullName,
-          email: m.email,
-          committeeId: m.committeeId,
-          committeeName: m.committeeId
-            ? committeeMap.get(m.committeeId) ?? "Unassigned"
-            : "Unassigned",
-          managedTrackId: m.managedTrackId,
-          managedTrackName: m.managedTrackId
-            ? trackMap.get(m.managedTrackId) ?? null
-            : null,
-          role: m.role,
-          isActive: m.isActive,
-        }));
+        .map((m) => {
+          const isHrMember = m.role === "hr_member";
+          const displayCommitteeId = isHrMember
+            ? m.trackedCommitteeId
+            : m.committeeId;
+          const displayCommitteeName = isHrMember
+            ? m.trackedCommitteeId
+              ? `Human Resources (Tracks ${committeeMap.get(m.trackedCommitteeId) ?? "Unassigned"})`
+              : "Human Resources"
+            : m.committeeId
+              ? committeeMap.get(m.committeeId) ?? "Unassigned"
+              : "Unassigned";
+
+          return {
+            id: m.id,
+            fullName: m.fullName,
+            email: m.email,
+            committeeId: displayCommitteeId,
+            committeeName: displayCommitteeName,
+            managedTrackId: m.managedTrackId,
+            managedTrackName: m.managedTrackId
+              ? trackMap.get(m.managedTrackId) ?? null
+              : null,
+            role: m.role,
+            isActive: m.isActive,
+          };
+        });
     }
   } catch {
     // If database is temporarily offline during build

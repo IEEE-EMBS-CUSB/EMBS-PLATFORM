@@ -64,6 +64,7 @@ export async function addManualLedgerEntryAsActor(
       email: actor.profile.email ?? "",
       role: actor.profile.role,
       committeeId: actor.profile.committeeId,
+      trackedCommitteeId: actor.profile.trackedCommitteeId,
     };
     if (!canAwardBonus(permCtx, member.committeeId)) {
       return {

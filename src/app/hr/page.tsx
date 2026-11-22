@@ -1,4 +1,5 @@
 import { requireOperationalSession } from "@/lib/portal-guards";
+import { getOperationalCommitteeScope } from "@/lib/permissions";
 import {
   RoleOperationalDashboard,
   type DashboardKpis,
@@ -157,6 +158,7 @@ export default async function HrOverviewPage() {
 
       const isCommitteeScoped =
         profile.role === "committee_head" || profile.role === "hr_member";
+      const operationalCommitteeId = getOperationalCommitteeScope(profile);
       const isTrackDirector =
         profile.role === "director" && Boolean(profile.managedTrackId);
       const directorTrackCommitteeIds = isTrackDirector
@@ -168,7 +170,11 @@ export default async function HrOverviewPage() {
         : null;
 
       const scopedMembers = isCommitteeScoped
-        ? dbMembers.filter((m) => m.committeeId === profile.committeeId)
+        ? dbMembers.filter(
+            (m) =>
+              operationalCommitteeId !== null &&
+              m.committeeId === operationalCommitteeId
+          )
         : directorTrackCommitteeIds
           ? dbMembers.filter(
               (m) =>
@@ -179,7 +185,11 @@ export default async function HrOverviewPage() {
       const scopedMemberIds = new Set(scopedMembers.map((m) => m.id));
 
       const scopedTasks = isCommitteeScoped
-        ? dbTasks.filter((t) => t.committeeId === profile.committeeId)
+        ? dbTasks.filter(
+            (t) =>
+              operationalCommitteeId !== null &&
+              t.committeeId === operationalCommitteeId
+          )
         : directorTrackCommitteeIds
           ? dbTasks.filter(
               (t) =>
@@ -189,7 +199,9 @@ export default async function HrOverviewPage() {
           : dbTasks;
       const scopedSubmissions = isCommitteeScoped
         ? dbAllTaskSubmissions.filter(
-            (s) => s.committeeId === profile.committeeId
+            (s) =>
+              operationalCommitteeId !== null &&
+              s.committeeId === operationalCommitteeId
           )
         : directorTrackCommitteeIds
           ? dbAllTaskSubmissions.filter(
@@ -199,7 +211,11 @@ export default async function HrOverviewPage() {
             )
           : dbAllTaskSubmissions;
       const scopedSessions = isCommitteeScoped
-        ? dbSessions.filter((s) => s.committeeId === profile.committeeId)
+        ? dbSessions.filter(
+            (s) =>
+              operationalCommitteeId !== null &&
+              s.committeeId === operationalCommitteeId
+          )
         : directorTrackCommitteeIds
           ? dbSessions.filter(
               (s) =>

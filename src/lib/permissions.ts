@@ -5,6 +5,26 @@ export interface UserPermissionContext {
   email: string;
   role: MembershipRole;
   committeeId: string | null;
+  trackedCommitteeId?: string | null;
+}
+
+/**
+ * Returns the committee ID that bounds an operational user's committee-scoped actions.
+ * - `hr_member`: always belongs to the Human Resources home committee (`committeeId`), while
+ *   their operational HR duties (attendance, HR tasks, bonuses) scope to `trackedCommitteeId`.
+ *   When `trackedCommitteeId` is explicitly present (including `null` when unassigned), it is
+ *   authoritative so an HR member never gains HR-committee management scope by accident.
+ * - Other committee-scoped roles (`committee_head`, etc.): scoped to `committeeId`.
+ */
+export function getOperationalCommitteeScope(
+  user: Pick<UserPermissionContext, "role" | "committeeId" | "trackedCommitteeId">
+): string | null {
+  if (user.role === "hr_member") {
+    return user.trackedCommitteeId !== undefined
+      ? user.trackedCommitteeId
+      : user.committeeId;
+  }
+  return user.committeeId;
 }
 
 export type HrModuleName =
@@ -135,7 +155,8 @@ export function canManageCommitteeSessions(
     return true;
   }
   if (user.role === "hr_member" || user.role === "committee_head") {
-    return user.committeeId !== null && user.committeeId === committeeId;
+    const scopeId = getOperationalCommitteeScope(user);
+    return scopeId !== null && scopeId === committeeId;
   }
   return false;
 }
@@ -143,7 +164,7 @@ export function canManageCommitteeSessions(
 /**
  * Manage attendance & live QR check-ins for a committee session.
  * Master and HR Admin can manage for all committees.
- * HR Member can manage only for their assigned committee.
+ * HR Member can manage only for their assigned tracked committee.
  * Committee Heads do NOT manage attendance (attendance is an HR duty).
  */
 export function canManageCommitteeAttendance(
@@ -154,7 +175,8 @@ export function canManageCommitteeAttendance(
     return true;
   }
   if (user.role === "hr_member") {
-    return user.committeeId !== null && user.committeeId === committeeId;
+    const scopeId = getOperationalCommitteeScope(user);
+    return scopeId !== null && scopeId === committeeId;
   }
   return false;
 }
@@ -162,7 +184,7 @@ export function canManageCommitteeAttendance(
 /**
  * Create tasks/assignments and submit grades for a committee.
  * Master, Director, and HR Admin can manage across all committees.
- * Committee Head (assignments) and HR Member (tasks) can manage only for their committee.
+ * Committee Head (assignments) and HR Member (tasks) can manage only for their operational committee.
  */
 export function canManageCommitteeTasks(
   user: UserPermissionContext,
@@ -176,7 +198,8 @@ export function canManageCommitteeTasks(
     return true;
   }
   if (user.role === "committee_head" || user.role === "hr_member") {
-    return user.committeeId !== null && user.committeeId === committeeId;
+    const scopeId = getOperationalCommitteeScope(user);
+    return scopeId !== null && scopeId === committeeId;
   }
   return false;
 }
@@ -184,7 +207,7 @@ export function canManageCommitteeTasks(
 /**
  * Award bonus or point overrides in score_ledger.
  * Master, Director, and HR Admin can award across all committees.
- * HR Member and Committee Head can award only to members in their committee.
+ * HR Member and Committee Head can award only to members in their operational committee.
  */
 export function canAwardBonus(
   user: UserPermissionContext,
@@ -198,9 +221,8 @@ export function canAwardBonus(
     return true;
   }
   if (user.role === "hr_member" || user.role === "committee_head") {
-    return (
-      user.committeeId !== null && user.committeeId === targetMemberCommitteeId
-    );
+    const scopeId = getOperationalCommitteeScope(user);
+    return scopeId !== null && scopeId === targetMemberCommitteeId;
   }
   return false;
 }
@@ -371,10 +393,11 @@ export function canAssignTask(
   }
 
   if (assigner.role === "committee_head" || assigner.role === "hr_member") {
+    const scopeId = getOperationalCommitteeScope(assigner);
     return (
       target.role === "member" &&
-      assigner.committeeId !== null &&
-      assigner.committeeId === target.committeeId
+      scopeId !== null &&
+      scopeId === target.committeeId
     );
   }
 

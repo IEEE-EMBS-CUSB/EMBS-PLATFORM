@@ -3,6 +3,7 @@ import {
   type LedgerEntryItem,
 } from "@/components/hr/points-ledger-view";
 import { requireHrModule } from "@/lib/portal-guards";
+import { getOperationalCommitteeScope } from "@/lib/permissions";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -22,6 +23,7 @@ export default async function HrLedgerPage() {
 
   const isCommitteeScoped =
     profile.role === "committee_head" || profile.role === "hr_member";
+  const operationalCommitteeId = getOperationalCommitteeScope(profile);
   const isTrackDirector =
     profile.role === "director" && Boolean(profile.managedTrackId);
 
@@ -72,7 +74,10 @@ export default async function HrLedgerPage() {
       const visibleMembers = allSeasonMembers.filter((m) => {
         if (!m.isActive || m.role === "attendee") return false;
         if (isCommitteeScoped) {
-          return profile.committeeId !== null && m.committeeId === profile.committeeId;
+          return (
+            operationalCommitteeId !== null &&
+            m.committeeId === operationalCommitteeId
+          );
         }
         if (directorTrackCommitteeIds) {
           return m.committeeId !== null && directorTrackCommitteeIds.has(m.committeeId);

@@ -28,8 +28,12 @@ export default async function HrLayout({ children }: { children: ReactNode }) {
       currentUserRole={profile.role}
       userName={profile.fullName}
       userCommitteeName={
-        profile.committeeName ??
-        (profile.managedTrackName ? `${profile.managedTrackName} Track` : undefined)
+        profile.role === "hr_member"
+          ? profile.trackedCommitteeName
+            ? `HR · Tracking ${profile.trackedCommitteeName}`
+            : profile.committeeName ?? "Human Resources"
+          : (profile.committeeName ??
+            (profile.managedTrackName ? `${profile.managedTrackName} Track` : undefined))
       }
       activeSeasonName={activeSeasonName}
     >

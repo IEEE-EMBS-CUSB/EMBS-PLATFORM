@@ -5,6 +5,7 @@ import {
   type EligibleAssignee,
 } from "@/components/hr/task-delegation-view";
 import { requireHrModule } from "@/lib/portal-guards";
+import { getOperationalCommitteeScope } from "@/lib/permissions";
 import {
   DEFAULT_SEASON_SETTINGS,
   normalizeSeasonSettings,
@@ -43,6 +44,7 @@ export default async function HrTasksPage() {
 
   const isCommitteeScoped =
     profile.role === "committee_head" || profile.role === "hr_member";
+  const operationalCommitteeId = getOperationalCommitteeScope(profile);
   const isTrackDirector =
     profile.role === "director" && Boolean(profile.managedTrackId);
 
@@ -59,10 +61,10 @@ export default async function HrTasksPage() {
       gradingWeights = seasonSettings.grading;
 
       const memberFilter =
-        isCommitteeScoped && profile.committeeId
+        isCommitteeScoped && operationalCommitteeId
           ? and(
               eq(schema.rosterMemberships.seasonId, seasonId),
-              eq(schema.rosterMemberships.committeeId, profile.committeeId),
+              eq(schema.rosterMemberships.committeeId, operationalCommitteeId),
               eq(schema.rosterMemberships.isActive, true),
               ne(schema.rosterMemberships.role, "attendee")
             )
@@ -73,10 +75,10 @@ export default async function HrTasksPage() {
             );
 
       const taskFilter =
-        isCommitteeScoped && profile.committeeId
+        isCommitteeScoped && operationalCommitteeId
           ? and(
               eq(schema.tasks.seasonId, seasonId),
-              eq(schema.tasks.committeeId, profile.committeeId)
+              eq(schema.tasks.committeeId, operationalCommitteeId)
             )
           : eq(schema.tasks.seasonId, seasonId);
 
@@ -144,7 +146,11 @@ export default async function HrTasksPage() {
 
       dbCommitteesList = isCommitteeScoped
         ? dbCommittees
-            .filter((c) => c.id === profile.committeeId)
+            .filter(
+              (c) =>
+                operationalCommitteeId !== null &&
+                c.id === operationalCommitteeId
+            )
             .map((c) => ({ id: c.id, name: c.name }))
         : directorTrackCommitteeIds
           ? dbCommittees
@@ -152,13 +158,16 @@ export default async function HrTasksPage() {
               .map((c) => ({ id: c.id, name: c.name }))
           : dbCommittees.map((c) => ({ id: c.id, name: c.name }));
 
-      const scopedMembers = directorTrackCommitteeIds
-        ? dbMembers.filter(
-            (m) =>
-              m.committeeId !== null &&
-              directorTrackCommitteeIds.has(m.committeeId)
-          )
-        : dbMembers;
+      const scopedMembers =
+        isCommitteeScoped && !operationalCommitteeId
+          ? []
+          : directorTrackCommitteeIds
+            ? dbMembers.filter(
+                (m) =>
+                  m.committeeId !== null &&
+                  directorTrackCommitteeIds.has(m.committeeId)
+              )
+            : dbMembers;
 
       eligibleMembers = scopedMembers.map((m) => ({
         id: m.id,
@@ -264,7 +273,7 @@ export default async function HrTasksPage() {
       <TaskDelegationView
         currentUserRole={profile.role}
         currentUserId={profile.id}
-        currentUserCommitteeId={profile.committeeId}
+        currentUserCommitteeId={operationalCommitteeId}
         defaultMaxPoints={gradingWeights.defaultMaxPoints}
         assignedToMe={assignedToMe}
         eligibleMembers={eligibleMembers}
