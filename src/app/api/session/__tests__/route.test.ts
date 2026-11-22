@@ -42,40 +42,61 @@ describe("/api/session route handler", () => {
         personId: schema.persons.id,
         fullName: schema.persons.fullName,
         role: schema.rosterMemberships.role,
+        mustChangePassword: schema.persons.mustChangePassword,
       })
       .from(schema.rosterMemberships)
       .innerJoin(
         schema.persons,
         eq(schema.rosterMemberships.personId, schema.persons.id)
       )
+      .innerJoin(
+        schema.seasons,
+        eq(schema.rosterMemberships.seasonId, schema.seasons.id)
+      )
       .where(
         and(
           eq(schema.rosterMemberships.isActive, true),
           eq(schema.persons.isActive, true),
-          eq(schema.persons.mustChangePassword, false)
+          eq(schema.seasons.status, "active")
         )
       )
       .limit(1);
 
     expect(activeMember).toBeDefined();
 
-    const sessionUser = createSessionForMember({
-      id: activeMember.id,
-      personId: activeMember.personId,
-      fullName: activeMember.fullName,
-      role: activeMember.role,
-    });
-    const token = encodeSessionToken(sessionUser);
+    if (activeMember.mustChangePassword) {
+      await db
+        .update(schema.persons)
+        .set({ mustChangePassword: false })
+        .where(eq(schema.persons.id, activeMember.personId));
+    }
 
-    const response = await GET(makeRequest("GET", token));
-    const data = await response.json();
+    try {
+      const sessionUser = createSessionForMember({
+        id: activeMember.id,
+        personId: activeMember.personId,
+        fullName: activeMember.fullName,
+        role: activeMember.role,
+      });
+      const token = encodeSessionToken(sessionUser);
 
-    expect(response.status).toBe(200);
-    expect(data.authenticated).toBe(true);
-    expect(data.user.fullName).toBe(activeMember.fullName);
-    expect(response.headers.get("set-cookie")).toContain(
-      `Max-Age=${SESSION_DURATION_SECONDS}`
-    );
+      const response = await GET(makeRequest("GET", token));
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.authenticated).toBe(true);
+      expect(data.user.fullName).toBe(activeMember.fullName);
+      expect(response.headers.get("set-cookie")).toContain(
+        `Max-Age=${SESSION_DURATION_SECONDS}`
+      );
+    } finally {
+      if (activeMember.mustChangePassword) {
+        await db
+          .update(schema.persons)
+          .set({ mustChangePassword: true })
+          .where(eq(schema.persons.id, activeMember.personId));
+      }
+    }
   });
 
   it("clears forged, invalid, or nonexistent-member session cookies on GET and clears active sessions on DELETE", async () => {
