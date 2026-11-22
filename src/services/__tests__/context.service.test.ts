@@ -74,6 +74,52 @@ describe("context.service (multi-role context selection & ownership validation)"
     ]);
   });
 
+  it("blocks archived-only non-master accounts while keeping master_admin exempt across season rollover", () => {
+    const archivedNonMaster = filterEligibleSeasonContexts([
+      makeCandidate({
+        membershipId: "mem-old-head",
+        seasonId: "season-2025",
+        seasonStatus: "archived",
+        seasonStartDate: new Date("2025-09-01T00:00:00Z"),
+        role: "committee_head",
+      }),
+      makeCandidate({
+        membershipId: "mem-old-hr",
+        seasonId: "season-2025",
+        seasonStatus: "archived",
+        seasonStartDate: new Date("2025-09-01T00:00:00Z"),
+        role: "hr_admin",
+      }),
+    ]);
+    expect(archivedNonMaster).toEqual([]);
+
+    const archivedMaster = filterEligibleSeasonContexts([
+      makeCandidate({
+        membershipId: "mem-old-master-2024",
+        seasonId: "season-2024",
+        seasonStatus: "archived",
+        seasonStartDate: new Date("2024-09-01T00:00:00Z"),
+        role: "master_admin",
+        committeeId: null,
+        committeeName: null,
+        committeeSlug: null,
+      }),
+      makeCandidate({
+        membershipId: "mem-old-master-2025",
+        seasonId: "season-2025",
+        seasonStatus: "archived",
+        seasonStartDate: new Date("2025-09-01T00:00:00Z"),
+        role: "master_admin",
+        committeeId: null,
+        committeeName: null,
+        committeeSlug: null,
+      }),
+    ]);
+    expect(archivedMaster.map((c) => c.membershipId)).toEqual([
+      "mem-old-master-2025",
+    ]);
+  });
+
   it("refuses switching to a membership owned by another person even when that membership exists", () => {
     const aliceHat = makeCandidate({
       membershipId: "mem-alice-1",

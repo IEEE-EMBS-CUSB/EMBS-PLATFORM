@@ -190,27 +190,50 @@ describe("Password Authentication & First-Login Reset Service", () => {
     ]);
     expect(deactivatedInActive).toBeNull();
 
-    // Alumni with no active-season membership can still resolve most recent archived membership
-    const alumni = pickPreferredLoginMembership([
+    // Non-master roles with only archived-season memberships MUST be blocked once a new season starts
+    for (const role of [
+      "member",
+      "committee_head",
+      "hr_member",
+      "hr_admin",
+      "director",
+      "attendee",
+    ] as const) {
+      const archivedNonMaster = pickPreferredLoginMembership([
+        {
+          id: `m-old-${role}`,
+          role,
+          committeeId: "c-1",
+          isActive: true,
+          seasonStatus: "archived",
+          seasonStartDate: new Date("2025-09-01"),
+          createdAt: new Date("2025-09-01"),
+        },
+      ]);
+      expect(archivedNonMaster).toBeNull();
+    }
+
+    // Master Admin is the ONLY role exempt from archived-season lockout
+    const archivedMaster = pickPreferredLoginMembership([
       {
-        id: "m-old-1",
-        role: "member",
-        committeeId: "c-1",
+        id: "m-master-2024",
+        role: "master_admin",
+        committeeId: null,
         isActive: true,
         seasonStatus: "archived",
         seasonStartDate: new Date("2024-09-01"),
         createdAt: new Date("2024-09-01"),
       },
       {
-        id: "m-old-2",
-        role: "committee_head",
-        committeeId: "c-2",
+        id: "m-master-2025",
+        role: "master_admin",
+        committeeId: null,
         isActive: true,
         seasonStatus: "archived",
         seasonStartDate: new Date("2025-09-01"),
         createdAt: new Date("2025-09-01"),
       },
     ]);
-    expect(alumni?.id).toBe("m-old-2");
+    expect(archivedMaster?.id).toBe("m-master-2025");
   });
 });

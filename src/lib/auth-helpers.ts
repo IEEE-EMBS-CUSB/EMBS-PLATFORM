@@ -112,22 +112,26 @@ export function checkRosterWhitelist(
     };
   }
 
-  // Check for historical alumni membership (archived season)
-  const archivedMembership = userMemberships.find(
-    (m) => m.seasonStatus === "archived" && m.isActive
+  // Only master_admin is exempt from archived-season lockout when not yet assigned in the active season
+  const archivedMasterMembership = userMemberships.find(
+    (m) =>
+      m.seasonStatus === "archived" &&
+      m.isActive &&
+      m.role === "master_admin"
   );
 
-  if (archivedMembership) {
+  if (archivedMasterMembership) {
     return {
       allowed: true,
-      isAlumni: true,
-      membership: archivedMembership,
+      isAlumni: false,
+      membership: archivedMasterMembership,
     };
   }
 
   return {
     allowed: false,
     isAlumni: false,
-    reason: "No active or archived season memberships found for this account.",
+    reason:
+      "Your account is not assigned to an active role in the current season. Please contact your chapter administrator.",
   };
 }

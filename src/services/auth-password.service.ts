@@ -75,8 +75,9 @@ const GENERIC_AUTH_FAILURE = "Invalid email or password.";
  * 1. If the person has any membership in an active season, only active memberships in that
  *    active season are eligible (deactivated active-season members never fall back to archived).
  *    Multiple hats in the active season break ties by operational precedence, then createdAt ASC.
- * 2. Otherwise, alumni with no active-season membership may log into their most recent
- *    active membership in an archived season (read-only).
+ * 2. Once a season is archived, non-master roles cannot log in until assigned a role in the
+ *    active season. Only `master_admin` is exempt (may fall back to their most recent active
+ *    archived `master_admin` membership so chapter administration is never locked out).
  * 3. Draft-season memberships are never permitted to authenticate.
  */
 export function pickPreferredLoginMembership(
@@ -95,18 +96,18 @@ export function pickPreferredLoginMembership(
     })[0];
   }
 
-  const archivedEligible = candidates.filter(
-    (c) => c.seasonStatus === "archived" && c.isActive
+  const archivedMasterEligible = candidates.filter(
+    (c) =>
+      c.seasonStatus === "archived" &&
+      c.isActive &&
+      c.role === "master_admin"
   );
-  if (archivedEligible.length === 0) return null;
+  if (archivedMasterEligible.length === 0) return null;
 
-  return [...archivedEligible].sort((a, b) => {
+  return [...archivedMasterEligible].sort((a, b) => {
     const seasonDiff =
       b.seasonStartDate.getTime() - a.seasonStartDate.getTime();
     if (seasonDiff !== 0) return seasonDiff;
-    const roleDiff =
-      (ROLE_PRECEDENCE[a.role] ?? 99) - (ROLE_PRECEDENCE[b.role] ?? 99);
-    if (roleDiff !== 0) return roleDiff;
     return a.createdAt.getTime() - b.createdAt.getTime();
   })[0];
 }
@@ -159,18 +160,14 @@ export async function resolveLoginMembershipByEmail(
   const defaultChosen = pickPreferredLoginMembership(candidates);
   if (!defaultChosen) return null;
 
-  // Honor preferredMembershipId ONLY if it belongs to this person, is active,
-  // and is in the same eligible season status (active season takes strict priority over archived).
+  // Honor preferredMembershipId ONLY when active-season memberships exist and it is active in that season
   const preferredCandidate =
-    preferredMembershipId
+    preferredMembershipId && defaultChosen.seasonStatus === "active"
       ? candidates.find(
           (c) =>
             c.id === preferredMembershipId &&
             c.isActive &&
-            c.seasonStatus === defaultChosen.seasonStatus &&
-            (defaultChosen.seasonStatus === "active" ||
-              c.seasonStartDate.getTime() ===
-                defaultChosen.seasonStartDate.getTime())
+            c.seasonStatus === "active"
         )
       : undefined;
 

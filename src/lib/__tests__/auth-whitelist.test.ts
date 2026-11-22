@@ -53,6 +53,15 @@ describe("Roster Whitelist & Role Access Helpers", () => {
       isActive: true,
       seasonStatus: "archived",
     },
+    {
+      id: "master-archived-1",
+      seasonId: "season-2025",
+      email: "master.archived@cu.edu.eg",
+      fullName: "Master Admin",
+      role: "master_admin",
+      isActive: true,
+      seasonStatus: "archived",
+    },
   ];
 
   it("authorizes active season members and normalizes input emails", () => {
@@ -95,6 +104,21 @@ describe("Roster Whitelist & Role Access Helpers", () => {
     );
     expect(result.allowed).toBe(false);
     expect(result.reason).toMatch(/inactive/i);
+  });
+
+  it("denies access to archived-season non-master accounts while exempting master_admin", () => {
+    const oldMember = checkRosterWhitelist(
+      "alumni.omar@cu.edu.eg",
+      activeMemberships
+    );
+    expect(oldMember.allowed).toBe(false);
+
+    const archivedMaster = checkRosterWhitelist(
+      "master.archived@cu.edu.eg",
+      activeMemberships
+    );
+    expect(archivedMaster.allowed).toBe(true);
+    expect(archivedMaster.membership?.role).toBe("master_admin");
   });
 
   it("denies access to emails not present on any roster", () => {

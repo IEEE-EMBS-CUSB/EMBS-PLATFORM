@@ -91,7 +91,8 @@ function toEligibleOption(c: RawContextCandidate): EligibleContextOption {
  * Filters a person's raw membership rows down to their currently eligible contexts:
  * 1. If the person has any membership row in an active season, ONLY active memberships
  *    in that active season are eligible (deactivated active-season users never fall back to archived).
- * 2. Otherwise (alumni), active memberships from the single most recent archived season are eligible.
+ * 2. Otherwise, archived-season accounts are locked out once a new season starts — EXCEPT
+ *    `master_admin`, who remains exempt via their most recent active archived `master_admin` row.
  * 3. Draft seasons are never eligible.
  */
 export function filterEligibleSeasonContexts(
@@ -105,15 +106,18 @@ export function filterEligibleSeasonContexts(
       .map(toEligibleOption);
   }
 
-  const archivedActive = candidates.filter(
-    (c) => c.seasonStatus === "archived" && c.isActive
+  const archivedMasterActive = candidates.filter(
+    (c) =>
+      c.seasonStatus === "archived" &&
+      c.isActive &&
+      c.role === "master_admin"
   );
-  if (archivedActive.length === 0) return [];
+  if (archivedMasterActive.length === 0) return [];
 
   const latestStartMs = Math.max(
-    ...archivedActive.map((c) => c.seasonStartDate.getTime())
+    ...archivedMasterActive.map((c) => c.seasonStartDate.getTime())
   );
-  return archivedActive
+  return archivedMasterActive
     .filter((c) => c.seasonStartDate.getTime() === latestStartMs)
     .sort(compareContextPriority)
     .map(toEligibleOption);
