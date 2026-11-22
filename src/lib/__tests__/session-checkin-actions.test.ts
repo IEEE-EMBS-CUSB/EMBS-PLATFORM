@@ -137,9 +137,16 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
 
   it("handles member live check-in and records attendance and score_ledger entry", async () => {
     const [omar] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"));
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
     expect(omar).toBeDefined();
 
     const createResult = await createSessionAsActor(
@@ -198,9 +205,16 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
 
   it("rejects check-in when window is expired", async () => {
     const [omar] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"));
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
 
     const [activeSeason] = await db
       .select()

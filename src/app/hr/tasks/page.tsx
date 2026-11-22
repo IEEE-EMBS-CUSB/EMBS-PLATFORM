@@ -82,7 +82,19 @@ export default async function HrTasksPage() {
 
       const [dbMembers, dbCommittees, dbMySubmissions, dbTasks] =
         await Promise.all([
-          db.select().from(schema.rosterMemberships).where(memberFilter),
+          db
+            .select({
+              id: schema.rosterMemberships.id,
+              fullName: schema.persons.fullName,
+              role: schema.rosterMemberships.role,
+              committeeId: schema.rosterMemberships.committeeId,
+            })
+            .from(schema.rosterMemberships)
+            .innerJoin(
+              schema.persons,
+              eq(schema.rosterMemberships.personId, schema.persons.id)
+            )
+            .where(and(memberFilter, eq(schema.persons.isActive, true))),
           db
             .select()
             .from(schema.committees)
@@ -178,12 +190,20 @@ export default async function HrTasksPage() {
         const allSubs = await db
           .select({
             sub: schema.taskSubmissions,
-            member: schema.rosterMemberships,
+            member: {
+              id: schema.rosterMemberships.id,
+              committeeId: schema.rosterMemberships.committeeId,
+              fullName: schema.persons.fullName,
+            },
           })
           .from(schema.taskSubmissions)
           .innerJoin(
             schema.rosterMemberships,
             eq(schema.taskSubmissions.membershipId, schema.rosterMemberships.id)
+          )
+          .innerJoin(
+            schema.persons,
+            eq(schema.rosterMemberships.personId, schema.persons.id)
           )
           .where(inArray(schema.taskSubmissions.taskId, taskIds));
 

@@ -18,9 +18,16 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
 
   it("assigns task to a specific person and verifies task_submission in DB", async () => {
     const [omar] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"));
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
     expect(omar).toBeDefined();
 
     const title = `Individual Task ${Date.now()}`;
@@ -234,9 +241,16 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
 
   it("enforces Assignments vs Tasks workType rules across director, head, hr_member, hr_admin, and master_admin", async () => {
     const [omar] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"));
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
     expect(omar).toBeDefined();
 
     // Committee Head cannot create a 'task' (only 'assignment')

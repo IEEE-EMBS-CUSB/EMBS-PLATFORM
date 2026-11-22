@@ -32,13 +32,27 @@ describe("Monthly leaderboard publishing", () => {
       .from(schema.seasons)
       .where(eq(schema.seasons.status, "active"));
     const [hrAdmin] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        fullName: schema.persons.fullName,
+      })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.email, "hr.lead@cu.edu.eg"));
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "hr.lead@cu.edu.eg"));
     const [omar] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        fullName: schema.persons.fullName,
+      })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"));
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
     const attendees = await db
       .select()
       .from(schema.rosterMemberships)

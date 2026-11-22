@@ -37,8 +37,20 @@ export default async function HrLedgerPage() {
 
       const [allSeasonMembers, dbCommittees] = await Promise.all([
         db
-          .select()
+          .select({
+            id: schema.rosterMemberships.id,
+            personId: schema.rosterMemberships.personId,
+            fullName: schema.persons.fullName,
+            email: schema.persons.email,
+            committeeId: schema.rosterMemberships.committeeId,
+            role: schema.rosterMemberships.role,
+            isActive: schema.rosterMemberships.isActive,
+          })
           .from(schema.rosterMemberships)
+          .innerJoin(
+            schema.persons,
+            eq(schema.rosterMemberships.personId, schema.persons.id)
+          )
           .where(eq(schema.rosterMemberships.seasonId, seasonId)),
         db
           .select()
@@ -68,9 +80,9 @@ export default async function HrLedgerPage() {
         return true;
       });
 
-      // Exclude self from manual bonus award dropdown
+      // Exclude self (across all hats owned by the same person) from manual bonus award dropdown
       members = visibleMembers
-        .filter((m) => m.id !== profile.id)
+        .filter((m) => m.id !== profile.id && m.personId !== profile.personId)
         .map((m) => ({
           id: m.id,
           fullName: m.fullName,

@@ -18,9 +18,13 @@ let salmaId = "";
 
 beforeAll(async () => {
   const [salma] = await db
-    .select()
+    .select({ id: schema.rosterMemberships.id })
     .from(schema.rosterMemberships)
-    .where(eq(schema.rosterMemberships.email, "salma.elsayed@cu.edu.eg"));
+    .innerJoin(
+      schema.persons,
+      eq(schema.rosterMemberships.personId, schema.persons.id)
+    )
+    .where(eq(schema.persons.email, "salma.elsayed@cu.edu.eg"));
   salmaId = salma.id;
 });
 
@@ -71,7 +75,14 @@ describe("member.service (Database-Backed & Privacy Guarded)", () => {
   });
 
   it("does not resolve an attendee identifier as a member profile or dashboard", async () => {
-    const [attendee] = await db.select().from(schema.rosterMemberships).where(eq(schema.rosterMemberships.email, "mariam.yassin@gmail.com"));
+    const [attendee] = await db
+      .select({ id: schema.rosterMemberships.id })
+      .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "mariam.yassin@gmail.com"));
     expect(await getMemberProfile(attendee.id)).toBeNull();
     expect(await getMemberDashboard(attendee.id)).toBeNull();
   });

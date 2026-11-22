@@ -6,7 +6,7 @@ import { requireHrModule } from "@/lib/portal-guards";
 import { addHrFeedbackAction } from "./actions";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 
 export default async function HrFeedbackPage() {
   const { profile } = await requireHrModule("feedback");
@@ -39,8 +39,19 @@ export default async function HrFeedbackPage() {
 
       const [allSeasonMembers, dbCommittees] = await Promise.all([
         db
-          .select()
+          .select({
+            id: schema.rosterMemberships.id,
+            personId: schema.rosterMemberships.personId,
+            fullName: schema.persons.fullName,
+            email: schema.persons.email,
+            committeeId: schema.rosterMemberships.committeeId,
+            isActive: schema.rosterMemberships.isActive,
+          })
           .from(schema.rosterMemberships)
+          .innerJoin(
+            schema.persons,
+            eq(schema.rosterMemberships.personId, schema.persons.id)
+          )
           .where(eq(schema.rosterMemberships.seasonId, seasonId)),
         db
           .select()
@@ -51,6 +62,17 @@ export default async function HrFeedbackPage() {
       const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
       const memberMap = new Map(allSeasonMembers.map((m) => [m.id, m]));
       const authorMap = new Map(allSeasonMembers.map((m) => [m.id, m.fullName]));
+      // Exclude ALL memberships owned by the viewing person (not only their active hat)
+      // so a multi-hat user can NEVER view private HR warnings/notes written about another hat.
+      const ownMembershipIds = Array.from(
+        new Set([
+          profile.id,
+          ...allSeasonMembers
+            .filter((m) => m.personId === profile.personId)
+            .map((m) => m.id),
+        ])
+      );
+      const ownMembershipIdSet = new Set(ownMembershipIds);
       const directorTrackCommitteeIds = isTrackDirector
         ? new Set(
             dbCommittees
@@ -65,17 +87,17 @@ export default async function HrFeedbackPage() {
           return (
             profile.committeeId !== null &&
             m.committeeId === profile.committeeId &&
-            m.id !== profile.id
+            !ownMembershipIdSet.has(m.id)
           );
         }
         if (directorTrackCommitteeIds) {
           return (
             m.committeeId !== null &&
             directorTrackCommitteeIds.has(m.committeeId) &&
-            m.id !== profile.id
+            !ownMembershipIdSet.has(m.id)
           );
         }
-        return true;
+        return !ownMembershipIdSet.has(m.id);
       });
 
       members = targetableMembers.map((m) => ({
@@ -87,7 +109,7 @@ export default async function HrFeedbackPage() {
           : "Unassigned",
       }));
 
-      // Data-layer privacy: committee heads NEVER receive private HR warnings or notes about themselves
+      // Data-layer privacy: users NEVER receive private HR warnings or notes about any of their own hats
       let dbFeedback: (typeof schema.hrFeedback.$inferSelect)[] = [];
       if (canViewAndCreateWarnings) {
         if (directorTrackCommitteeIds) {
@@ -99,7 +121,7 @@ export default async function HrFeedbackPage() {
               .where(
                 and(
                   eq(schema.hrFeedback.seasonId, seasonId),
-                  ne(schema.hrFeedback.membershipId, profile.id),
+                  notInArray(schema.hrFeedback.membershipId, ownMembershipIds),
                   inArray(schema.hrFeedback.membershipId, trackMemberIds)
                 )
               )
@@ -112,7 +134,7 @@ export default async function HrFeedbackPage() {
             .where(
               and(
                 eq(schema.hrFeedback.seasonId, seasonId),
-                ne(schema.hrFeedback.membershipId, profile.id)
+                notInArray(schema.hrFeedback.membershipId, ownMembershipIds)
               )
             )
             .orderBy(desc(schema.hrFeedback.createdAt));
@@ -127,6 +149,7 @@ export default async function HrFeedbackPage() {
               eq(schema.hrFeedback.seasonId, seasonId),
               eq(schema.hrFeedback.isPublished, true),
               eq(schema.hrFeedback.isWarning, false),
+              notInArray(schema.hrFeedback.membershipId, ownMembershipIds),
               inArray(schema.hrFeedback.membershipId, commMemberIds)
             )
           )

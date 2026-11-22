@@ -56,10 +56,19 @@ export function isProtectedFromHrAdminPasswordReset(
   return roles.some((role) => PROTECTED_FROM_HR_ADMIN_RESET.has(role));
 }
 
+export interface AddRosterMemberResult {
+  ok: boolean;
+  memberId?: string;
+  personId?: string;
+  existingPerson?: boolean;
+  tempPassword?: string;
+  error?: string;
+}
+
 export async function addRosterMemberAsActor(
   input: AddRosterMemberInput,
   actor: RosterActor
-) {
+): Promise<AddRosterMemberResult> {
   if (!canAssignRoles(actor.profile.role)) {
     return {
       ok: false,
@@ -475,7 +484,9 @@ export async function assignMemberRoleAsActor(
       .update(schema.rosterMemberships)
       .set({
         role: newRole,
-        ...(newRole !== "director" ? { managedTrackId: null } : {}),
+        ...(newRole === "director"
+          ? { committeeId: null }
+          : { managedTrackId: null }),
       })
       .where(eq(schema.rosterMemberships.id, memberId));
     return { ok: true };

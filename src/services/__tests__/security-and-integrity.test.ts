@@ -66,12 +66,19 @@ describe("Server Action Attack Surface & Core Security Invariants", () => {
       .where(eq(schema.seasons.status, "active"))
       .limit(1);
     const [omar] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
       .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
       .where(
         and(
           eq(schema.rosterMemberships.seasonId, activeSeason.id),
-          eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg")
+          eq(schema.persons.email, "omar.tarek@cu.edu.eg")
         )
       )
       .limit(1);
@@ -101,9 +108,17 @@ describe("Server Action Attack Surface & Core Security Invariants", () => {
 
   it("blocks cross-committee task grading and javascript: XSS submission URLs", async () => {
     const [omar] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        personId: schema.rosterMemberships.personId,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"))
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"))
       .limit(1);
     const [ai] = await db
       .select()
@@ -185,9 +200,17 @@ describe("Server Action Attack Surface & Core Security Invariants", () => {
 
   it("blocks self-awarding in ledger and private warnings from committee_head", async () => {
     const [omar] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        personId: schema.rosterMemberships.personId,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"))
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"))
       .limit(1);
     expect(omar).toBeDefined();
 

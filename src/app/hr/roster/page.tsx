@@ -38,8 +38,21 @@ export default async function HrRosterPage() {
 
       const [dbMembers, dbCommittees] = await Promise.all([
         db
-          .select()
+          .select({
+            id: schema.rosterMemberships.id,
+            personId: schema.persons.id,
+            fullName: schema.persons.fullName,
+            email: schema.persons.email,
+            committeeId: schema.rosterMemberships.committeeId,
+            managedTrackId: schema.rosterMemberships.managedTrackId,
+            role: schema.rosterMemberships.role,
+            isActive: schema.rosterMemberships.isActive,
+          })
           .from(schema.rosterMemberships)
+          .innerJoin(
+            schema.persons,
+            eq(schema.rosterMemberships.personId, schema.persons.id)
+          )
           .where(eq(schema.rosterMemberships.seasonId, seasonId)),
         db
           .select()

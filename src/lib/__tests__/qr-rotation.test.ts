@@ -48,9 +48,16 @@ describe("QR code rotation", () => {
     expect(robotics).toBeDefined();
 
     const [omar] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.email, "omar.tarek@cu.edu.eg"));
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
     expect(omar).toBeDefined();
 
     const created = await createSessionAsActor(

@@ -55,10 +55,14 @@ export default async function HrSeasonsPage() {
         .select({
           seasonId: schema.rosterMemberships.seasonId,
           role: schema.rosterMemberships.role,
-          fullName: schema.rosterMemberships.fullName,
+          fullName: schema.persons.fullName,
           managedTrackId: schema.rosterMemberships.managedTrackId,
         })
         .from(schema.rosterMemberships)
+        .innerJoin(
+          schema.persons,
+          eq(schema.rosterMemberships.personId, schema.persons.id)
+        )
         .where(eq(schema.rosterMemberships.isActive, true)),
       db
         .select()

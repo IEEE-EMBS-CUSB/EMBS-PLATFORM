@@ -253,32 +253,59 @@ export async function seedDatabase() {
 
   const defaultInitialPasswordHash = hashPassword("EMBS2026!");
 
-  let insertedMemberships = await db
-    .insert(schema.rosterMemberships)
+  // 4a. Seed Persons (cross-season identity + credentials)
+  await db
+    .insert(schema.persons)
     .values(
       rosterData.map((m) => ({
-        ...m,
-        seasonId,
+        email: m.email,
+        fullName: m.fullName,
         passwordHash: defaultInitialPasswordHash,
         mustChangePassword: true,
         isActive: true,
       }))
     )
-    .onConflictDoNothing()
-    .returning();
+    .onConflictDoNothing();
 
-  // Ensure all existing memberships have the initial password populated
-  await db
-    .update(schema.rosterMemberships)
-    .set({
-      passwordHash: defaultInitialPasswordHash,
-      mustChangePassword: true,
-    });
+  // Ensure all seeded persons have the initial password populated
+  await db.update(schema.persons).set({
+    passwordHash: defaultInitialPasswordHash,
+    mustChangePassword: true,
+  });
 
-  insertedMemberships = await db.select().from(schema.rosterMemberships);
+  const allPersons = await db.select().from(schema.persons);
+  const personByEmail = new Map(allPersons.map((p) => [p.email, p]));
 
-  const salmaMember = insertedMemberships.find((m) => m.email === "salma.elsayed@cu.edu.eg");
-  const hrAdminMember = insertedMemberships.find((m) => m.email === "hr.lead@cu.edu.eg");
+  // 4b. Seed Season-Scoped Roster Memberships linked to persons
+  for (const m of rosterData) {
+    const person = personByEmail.get(m.email);
+    if (!person) continue;
+    await db
+      .insert(schema.rosterMemberships)
+      .values({
+        seasonId,
+        personId: person.id,
+        committeeId: m.committeeId,
+        role: m.role,
+        isActive: true,
+      })
+      .onConflictDoNothing();
+  }
+
+  const insertedMemberships = await db.select().from(schema.rosterMemberships);
+
+  const salmaPerson = personByEmail.get("salma.elsayed@cu.edu.eg");
+  const hrAdminPerson = personByEmail.get("hr.lead@cu.edu.eg");
+  const salmaMember = salmaPerson
+    ? insertedMemberships.find(
+        (m) => m.seasonId === seasonId && m.personId === salmaPerson.id
+      )
+    : undefined;
+  const hrAdminMember = hrAdminPerson
+    ? insertedMemberships.find(
+        (m) => m.seasonId === seasonId && m.personId === hrAdminPerson.id
+      )
+    : undefined;
 
   // 5. Seed Historical Monthly Snapshots
   const { MOCK_LEADERBOARD_SNAPSHOTS } = await import("./leaderboard-snapshots");

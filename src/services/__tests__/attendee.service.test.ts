@@ -11,7 +11,14 @@ describe("attendee.service", () => {
     const { db } = await import("@/db");
     const schema = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
-    const rows = await db.select().from(schema.rosterMemberships).where(eq(schema.rosterMemberships.email, "mariam.yassin@gmail.com"));
+    const rows = await db
+      .select({ id: schema.rosterMemberships.id })
+      .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "mariam.yassin@gmail.com"));
     const attendeeId = rows[0].id;
 
     const profile = await getAttendeeProfile(attendeeId);
@@ -32,7 +39,14 @@ describe("attendee.service", () => {
     const { db } = await import("@/db");
     const schema = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
-    const rows = await db.select().from(schema.rosterMemberships).where(eq(schema.rosterMemberships.email, "mariam.yassin@gmail.com"));
+    const rows = await db
+      .select({ id: schema.rosterMemberships.id })
+      .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "mariam.yassin@gmail.com"));
     const dashboard = await getAttendeeDashboard(rows[0].id);
     expect(dashboard).not.toBeNull();
 
@@ -48,7 +62,14 @@ describe("attendee.service", () => {
     const { db } = await import("@/db");
     const schema = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
-    const rows = await db.select().from(schema.rosterMemberships).where(eq(schema.rosterMemberships.email, "salma.elsayed@cu.edu.eg"));
+    const rows = await db
+      .select({ id: schema.rosterMemberships.id })
+      .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "salma.elsayed@cu.edu.eg"));
     expect(await getAttendeeProfile(rows[0].id)).toBeNull();
     expect(await getAttendeeDashboard(rows[0].id)).toBeNull();
   });
@@ -60,9 +81,13 @@ describe("attendee.service", () => {
     const { eq } = await import("drizzle-orm");
 
     const rows = await db
-      .select()
+      .select({ id: schema.rosterMemberships.id })
       .from(schema.rosterMemberships)
-      .where(eq(schema.rosterMemberships.email, "mariam.yassin@gmail.com"));
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "mariam.yassin@gmail.com"));
 
     if (rows.length > 0) {
       const dbAttendeeId = rows[0].id;
