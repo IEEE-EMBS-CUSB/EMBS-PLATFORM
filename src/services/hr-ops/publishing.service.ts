@@ -307,16 +307,19 @@ export async function getSnapshotForPublishingPage(month: string) {
   };
 }
 
-export async function getPublishingMonthOptions(): Promise<
-  Array<{ month: string; status: "draft" | "published" }>
-> {
-  const seasonRes = await resolveActiveSeason();
-  if (!seasonRes.ok) return [];
-  const seasonId = seasonRes.season.id;
+export async function getPublishingMonthOptions(
+  providedSeasonId?: string
+): Promise<Array<{ month: string; status: "draft" | "published" }>> {
+  let seasonId = providedSeasonId;
+  if (!seasonId) {
+    const seasonRes = await resolveActiveSeason();
+    if (!seasonRes.ok) return [];
+    seasonId = seasonRes.season.id;
+  }
 
   const [ledgerRows, snapshotRows] = await Promise.all([
     db
-      .select({ month: schema.scoreLedger.month })
+      .selectDistinct({ month: schema.scoreLedger.month })
       .from(schema.scoreLedger)
       .where(eq(schema.scoreLedger.seasonId, seasonId)),
     db

@@ -1,6 +1,16 @@
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq, gte, inArray, isNull, ne, notInArray } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  notInArray,
+  or,
+} from "drizzle-orm";
 import {
   canAccessHrModule,
   canManageWorkItem,
@@ -73,9 +83,9 @@ export function computeHrActionableWorkCount(input: {
   for (const sub of submissions) {
     if (sub.gradedAt) continue;
 
-    // Personal item assigned to this operational officer
+    // Personal item assigned directly to HR Admin by their overseeing Director
     if (sub.membershipId === actor.id) {
-      if (sub.workType === "task" || !sub.submittedAt) {
+      if (actor.role === "hr_admin" && !sub.submittedAt) {
         countedSubmissionIds.add(sub.submissionId);
       }
       continue;
@@ -425,6 +435,7 @@ export async function getHrNavNotifications(
               completionMode: schema.tasks.completionMode,
               taskCommitteeId: schema.tasks.committeeId,
               memberCommitteeId: schema.rosterMemberships.committeeId,
+              memberRole: schema.rosterMemberships.role,
               submittedAt: schema.taskSubmissions.submittedAt,
               gradedAt: schema.taskSubmissions.gradedAt,
             })
@@ -440,7 +451,20 @@ export async function getHrNavNotifications(
             .where(
               and(
                 eq(schema.tasks.seasonId, seasonId),
-                isNull(schema.taskSubmissions.gradedAt)
+                isNull(schema.taskSubmissions.gradedAt),
+                or(
+                  and(
+                    eq(schema.tasks.workType, "assignment"),
+                    isNotNull(schema.taskSubmissions.submittedAt)
+                  ),
+                  and(
+                    eq(schema.tasks.workType, "task"),
+                    eq(schema.tasks.completionMode, "hr_only")
+                  ),
+                  ...(profile.role === "hr_admin"
+                    ? [eq(schema.taskSubmissions.membershipId, profile.id)]
+                    : [])
+                )
               )
             )
         : Promise.resolve([]),
@@ -481,9 +505,16 @@ export async function getHrNavNotifications(
             )
         : Promise.resolve([]),
       canPublishLeaderboard(profile.role)
-        ? getPublishingMonthOptions()
+        ? getPublishingMonthOptions(seasonId)
         : Promise.resolve([]),
     ]);
+
+    const hrCommitteeId =
+      dbCommittees.find(
+        (c) =>
+          c.slug === "human-resources" ||
+          c.name.toLowerCase() === "human resources"
+      )?.id ?? null;
 
     const directorTrackCommitteeIds = isTrackDirector
       ? new Set(
@@ -510,7 +541,9 @@ export async function getHrNavNotifications(
           completionMode:
             s.completionMode === "hr_only" ? "hr_only" : "self_report",
           taskCommitteeId: s.taskCommitteeId,
-          memberCommitteeId: s.memberCommitteeId,
+          memberCommitteeId:
+            s.memberCommitteeId ??
+            (s.memberRole === "hr_admin" ? hrCommitteeId : null),
           submittedAt: s.submittedAt,
           gradedAt: s.gradedAt,
         })),

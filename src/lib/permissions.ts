@@ -396,10 +396,12 @@ export function canAccessHrModule(
 
 /**
  * Checks if a role is permitted to assign tasks/assignments to a target role.
+ * Admin-only roles (`master_admin`, `director`) are never assignable.
+ * `hr_admin` is assignable only by an overseeing Director (whose track contains Human Resources) or Master Admin.
  * Hierarchy:
- * - master_admin: can assign both assignments and tasks to anyone
- * - director: can give assignments to committee_head, hr_admin, and member (within track)
- * - hr_admin: can give assignments ONLY to hr_member; can give tasks to everyone (committee_head, hr_member, member, director)
+ * - master_admin: can assign both assignments and tasks to committee_head, hr_admin, hr_member, member
+ * - director: can give assignments to committee_head, hr_admin (if HR is in their track), and member
+ * - hr_admin: can give assignments ONLY to hr_member; can give tasks to committee_head, hr_member, member
  * - committee_head: can give assignments to members in their committee
  * - hr_member: can give tasks to members in their tracked committee
  */
@@ -414,7 +416,6 @@ export function canAssignTaskToRole(
 
   if (assignerRole === "master_admin") {
     return (
-      targetRole === "director" ||
       targetRole === "committee_head" ||
       targetRole === "hr_admin" ||
       targetRole === "hr_member" ||
@@ -438,8 +439,7 @@ export function canAssignTaskToRole(
       return (
         targetRole === "committee_head" ||
         targetRole === "hr_member" ||
-        targetRole === "member" ||
-        targetRole === "director"
+        targetRole === "member"
       );
     }
     return (

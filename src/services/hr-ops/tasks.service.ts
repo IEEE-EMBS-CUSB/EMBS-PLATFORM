@@ -354,9 +354,16 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         };
       }
 
+      let effectiveMemberCommitteeId = member.committeeId;
+      if (member.role === "hr_admin" && !effectiveMemberCommitteeId) {
+        const hrComm = await ensureHrCommitteeForSeason(seasonId);
+        effectiveMemberCommitteeId = hrComm.id;
+      }
+
       if (
         directorTrackCommitteeIds &&
-        (!member.committeeId || !directorTrackCommitteeIds.has(member.committeeId))
+        (!effectiveMemberCommitteeId ||
+          !directorTrackCommitteeIds.has(effectiveMemberCommitteeId))
       ) {
         return {
           ok: false,
@@ -366,7 +373,7 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
       }
 
       targetMembershipIds = [member.id];
-      taskCommitteeId = member.committeeId;
+      taskCommitteeId = effectiveMemberCommitteeId;
     } else if (input.targetType === "group") {
       if (!input.targetGroup) {
         return { ok: false, error: "Target group type is required." };
@@ -494,7 +501,11 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
               eq(schema.rosterMemberships.seasonId, seasonId),
               eq(schema.rosterMemberships.isActive, true),
               eq(schema.persons.isActive, true),
-              ne(schema.rosterMemberships.role, "attendee")
+              inArray(schema.rosterMemberships.role, [
+                "committee_head",
+                "hr_member",
+                "member",
+              ])
             )
           );
         const scopedAll = directorTrackCommitteeIds
@@ -683,6 +694,13 @@ export async function gradeTaskSubmissionAsActor(
     const seasonRes = await resolveActiveSeason(task.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
 
+    if (submission.membershipId === actor.profile.id) {
+      return {
+        ok: false,
+        error: "You cannot grade your own assignment submission.",
+      };
+    }
+
     const [member] = await db
       .select()
       .from(schema.rosterMemberships)
@@ -690,7 +708,11 @@ export async function gradeTaskSubmissionAsActor(
       .limit(1);
     if (!member) return { ok: false, error: "Assignee record not found." };
 
-    const scopeCommitteeId = task.committeeId ?? member.committeeId;
+    let scopeCommitteeId = task.committeeId ?? member.committeeId;
+    if (!scopeCommitteeId && member.role === "hr_admin") {
+      const hrComm = await ensureHrCommitteeForSeason(task.seasonId);
+      scopeCommitteeId = hrComm.id;
+    }
     let effectiveActorCommitteeId = actor.profile.committeeId;
     if (actor.profile.role === "hr_admin" && !effectiveActorCommitteeId) {
       const hrComm = await ensureHrCommitteeForSeason(task.seasonId);
@@ -816,6 +838,16 @@ export async function toggleTaskCompletionAsActor(
     const seasonRes = await resolveActiveSeason(task.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
 
+    if (
+      submission.membershipId === actor.profile.id &&
+      task.completionMode === "hr_only"
+    ) {
+      return {
+        ok: false,
+        error: "You cannot verify your own HR-only task.",
+      };
+    }
+
     const [member] = await db
       .select()
       .from(schema.rosterMemberships)
@@ -823,7 +855,11 @@ export async function toggleTaskCompletionAsActor(
       .limit(1);
     if (!member) return { ok: false, error: "Assignee record not found." };
 
-    const scopeCommitteeId = task.committeeId ?? member.committeeId;
+    let scopeCommitteeId = task.committeeId ?? member.committeeId;
+    if (!scopeCommitteeId && member.role === "hr_admin") {
+      const hrComm = await ensureHrCommitteeForSeason(task.seasonId);
+      scopeCommitteeId = hrComm.id;
+    }
     const permCtx = {
       id: actor.profile.id,
       email: actor.profile.email ?? "",

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { createTaskAsActor } from "@/services/hr-ops/tasks.service";
 
 describe("Task Assignment Actions (Database-backed Groups & Individuals)", () => {
@@ -172,7 +172,7 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
     }
   });
 
-  it("assigns task to 'everyone' by master_admin while excluding attendees", async () => {
+  it("assigns task to 'everyone' by master_admin while excluding attendees and admin-only roles", async () => {
     const [activeSeason] = await db
       .select()
       .from(schema.seasons)
@@ -195,18 +195,33 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
     expect(result.assignedCount).toBeGreaterThanOrEqual(1);
     createdTaskIds.push(result.taskId!);
 
-    const activeMembers = await db
-      .select()
+    const activeAssignableMembers = await db
+      .select({
+        id: schema.rosterMemberships.id,
+        personId: schema.rosterMemberships.personId,
+      })
       .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
       .where(
         and(
           eq(schema.rosterMemberships.seasonId, activeSeason.id),
           eq(schema.rosterMemberships.isActive, true),
-          ne(schema.rosterMemberships.role, "attendee")
+          eq(schema.persons.isActive, true),
+          inArray(schema.rosterMemberships.role, [
+            "committee_head",
+            "hr_member",
+            "member",
+          ])
         )
       );
 
-    expect(result.assignedCount).toBe(activeMembers.length);
+    const uniquePersonIds = new Set(
+      activeAssignableMembers.map((m) => m.personId)
+    );
+    expect(result.assignedCount).toBe(uniquePersonIds.size);
   });
 
   it("rejects unauthorized task creation by regular member", async () => {

@@ -107,7 +107,7 @@ export function RoleOperationalDashboard({
                   {task.title}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-1.5 pt-0 text-xs text-muted-foreground">
+              <CardContent className="space-y-2 pt-0 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1.5 text-foreground/85">
                   <UserCheck className="h-3.5 w-3.5 text-[#00629b]" />
                   <span>
@@ -117,9 +117,22 @@ export function RoleOperationalDashboard({
                       : ""}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span>Due {new Date(task.dueAt).toLocaleDateString()}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span>Due {new Date(task.dueAt).toLocaleDateString()}</span>
+                  </div>
+                  <Link
+                    href="/hr/tasks"
+                    className={buttonVariants({
+                      variant: "outline",
+                      size: "sm",
+                      className:
+                        "h-7 border-[#772583]/30 px-2.5 text-[11px] font-semibold text-[#772583] hover:bg-[#772583] hover:text-white",
+                    })}
+                  >
+                    Open &amp; Submit
+                  </Link>
                 </div>
               </CardContent>
             </Card>
@@ -132,13 +145,7 @@ export function RoleOperationalDashboard({
   // 1. COMMITTEE HEAD VIEW
   if (currentUserRole === "committee_head") {
     return (
-      <div className="space-y-10">
-        {renderAssignedTasksSection(
-          "My Assignments (From Director)",
-          "Specific milestones and curriculum assignments given to you by chapter directors."
-        )}
-
-        <div className="space-y-6 border-t border-border pt-8">
+      <div className="space-y-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -285,7 +292,6 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
           </div>
-        </div>
       </div>
     );
   }
@@ -293,13 +299,7 @@ export function RoleOperationalDashboard({
   // 2. DIRECTOR VIEW
   if (currentUserRole === "director") {
     return (
-      <div className="space-y-10">
-        {renderAssignedTasksSection(
-          "Executive Directives & Roadmap",
-          "High-level strategic deliverables and milestones overseen by chapter directorship."
-        )}
-
-        <div className="space-y-6 border-t border-border pt-8">
+      <div className="space-y-6">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-heading text-xl font-bold text-[#002855]">
@@ -392,7 +392,6 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
           </div>
-        </div>
       </div>
     );
   }
@@ -401,12 +400,19 @@ export function RoleOperationalDashboard({
   if (currentUserRole === "hr_admin") {
     return (
       <div className="space-y-10">
-        {renderAssignedTasksSection(
-          "Directives from Director",
-          "Tasks and operational mandates assigned to HR Administration by chapter directors."
-        )}
+        {assignedTasks.length > 0 &&
+          renderAssignedTasksSection(
+            "Directives from Director",
+            "Assignments delegated to HR Administration by your overseeing track director."
+          )}
 
-        <div className="space-y-6 border-t border-border pt-8">
+        <div
+          className={
+            assignedTasks.length > 0
+              ? "space-y-6 border-t border-border pt-8"
+              : "space-y-6"
+          }
+        >
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-heading text-xl font-bold text-[#002855]">
@@ -685,13 +691,7 @@ export function RoleOperationalDashboard({
 
   // 5. HR MEMBER VIEW
   return (
-    <div className="space-y-8">
-        {renderAssignedTasksSection(
-          "My Tasks (From HR Admin)",
-          "Operational tasks assigned to you by chapter HR administration."
-        )}
-
-        <div className="space-y-6 border-t border-border pt-8">
+    <div className="space-y-6">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="font-heading text-xl font-bold text-[#002855]">
@@ -811,7 +811,6 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
           </div>
-        </div>
       </div>
   );
 }

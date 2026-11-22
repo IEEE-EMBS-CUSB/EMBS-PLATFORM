@@ -123,29 +123,34 @@ export default async function HrTasksPage() {
                 eq(schema.committees.isActive, true)
               )
             ),
-          db
-            .select({
-              taskId: schema.tasks.id,
-              title: schema.tasks.title,
-              workType: schema.tasks.workType,
-              createdBy: schema.tasks.createdBy,
-              dueAt: schema.tasks.dueAt,
-              maxPoints: schema.tasks.maxPoints,
-              totalPoints: schema.taskSubmissions.totalPoints,
-              submittedAt: schema.taskSubmissions.submittedAt,
-            })
-            .from(schema.taskSubmissions)
-            .innerJoin(
-              schema.tasks,
-              eq(schema.taskSubmissions.taskId, schema.tasks.id)
-            )
-            .where(
-              and(
-                eq(schema.taskSubmissions.membershipId, profile.id),
-                eq(schema.tasks.seasonId, seasonId)
-              )
-            )
-            .orderBy(desc(schema.tasks.createdAt)),
+          profile.role === "hr_admin"
+            ? db
+                .select({
+                  taskId: schema.tasks.id,
+                  title: schema.tasks.title,
+                  workType: schema.tasks.workType,
+                  completionMode: schema.tasks.completionMode,
+                  createdBy: schema.tasks.createdBy,
+                  dueAt: schema.tasks.dueAt,
+                  maxPoints: schema.tasks.maxPoints,
+                  totalPoints: schema.taskSubmissions.totalPoints,
+                  submittedAt: schema.taskSubmissions.submittedAt,
+                  submissionUrl: schema.taskSubmissions.submissionUrl,
+                  submissionText: schema.taskSubmissions.submissionText,
+                })
+                .from(schema.taskSubmissions)
+                .innerJoin(
+                  schema.tasks,
+                  eq(schema.taskSubmissions.taskId, schema.tasks.id)
+                )
+                .where(
+                  and(
+                    eq(schema.taskSubmissions.membershipId, profile.id),
+                    eq(schema.tasks.seasonId, seasonId)
+                  )
+                )
+                .orderBy(desc(schema.tasks.createdAt))
+            : Promise.resolve([]),
           shouldSkipTaskQuery
             ? Promise.resolve([])
             : db
@@ -156,6 +161,12 @@ export default async function HrTasksPage() {
         ]);
 
       const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
+      const hrCommitteeId =
+        dbCommittees.find(
+          (c) =>
+            c.slug === "human-resources" ||
+            c.name.toLowerCase() === "human resources"
+        )?.id ?? null;
       const directorTrackCommitteeIds = isTrackDirector
         ? new Set(
             dbCommittees
@@ -182,11 +193,15 @@ export default async function HrTasksPage() {
         isCommitteeScoped && !operationalCommitteeId
           ? []
           : directorTrackCommitteeIds
-            ? dbMembers.filter(
-                (m) =>
-                  m.committeeId !== null &&
-                  directorTrackCommitteeIds.has(m.committeeId)
-              )
+            ? dbMembers.filter((m) => {
+                const effectiveCommId =
+                  m.committeeId ??
+                  (m.role === "hr_admin" ? hrCommitteeId : null);
+                return (
+                  effectiveCommId !== null &&
+                  directorTrackCommitteeIds.has(effectiveCommId)
+                );
+              })
             : dbMembers;
 
       eligibleMembers = scopedMembers.map((m) => ({
@@ -233,6 +248,8 @@ export default async function HrTasksPage() {
           id: s.taskId,
           title: s.title,
           workType: s.workType === "task" ? "task" : "assignment",
+          completionMode:
+            s.completionMode === "hr_only" ? "hr_only" : "self_report",
           assignedByName: creator?.fullName ?? "Leadership",
           assignerRole:
             creator?.role ?? (s.workType === "task" ? "hr_admin" : "director"),
@@ -244,6 +261,8 @@ export default async function HrTasksPage() {
               : s.submittedAt
                 ? "in_progress"
                 : "not_started",
+          submissionUrl: s.submissionUrl,
+          submissionText: s.submissionText,
         };
       });
 
@@ -272,6 +291,7 @@ export default async function HrTasksPage() {
             sub: schema.taskSubmissions,
             member: {
               id: schema.rosterMemberships.id,
+              role: schema.rosterMemberships.role,
               committeeId: schema.rosterMemberships.committeeId,
               fullName: schema.persons.fullName,
             },
@@ -289,10 +309,17 @@ export default async function HrTasksPage() {
 
         const subsByTask = new Map<string, BulkSubmission[]>();
         for (const { sub, member } of allSubs) {
+          // Never show an officer their own submission in the grading table
+          if (member.id === profile.id) {
+            continue;
+          }
+          const effectiveMemberCommId =
+            member.committeeId ??
+            (member.role === "hr_admin" ? hrCommitteeId : null);
           if (
             directorTrackCommitteeIds &&
-            (!member.committeeId ||
-              !directorTrackCommitteeIds.has(member.committeeId))
+            (!effectiveMemberCommId ||
+              !directorTrackCommitteeIds.has(effectiveMemberCommId))
           ) {
             continue;
           }
@@ -320,7 +347,11 @@ export default async function HrTasksPage() {
                   directorTrackCommitteeIds.has(t.committeeId)) ||
                 (subsByTask.get(t.id)?.length ?? 0) > 0
             )
-          : roleAuthorizedTasks;
+          : roleAuthorizedTasks.filter(
+              (t) =>
+                profile.role !== "hr_admin" ||
+                (subsByTask.get(t.id)?.length ?? 0) > 0
+            );
 
         for (const t of visibleTasks) {
           bulkTasks.push({

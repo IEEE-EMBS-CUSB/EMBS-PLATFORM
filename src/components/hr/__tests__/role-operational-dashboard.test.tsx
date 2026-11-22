@@ -15,7 +15,7 @@ describe("RoleOperationalDashboard Component", () => {
     },
   ];
 
-  it("renders distinct dual-section view for committee_head (personal deliverables vs committee management)", () => {
+  it("renders committee management console for committee_head without duplicating personal /member work", () => {
     render(
       <RoleOperationalDashboard
         currentUserRole="committee_head"
@@ -25,12 +25,7 @@ describe("RoleOperationalDashboard Component", () => {
       />
     );
 
-    // Section 1: Personal assignments from Director
-    expect(screen.getByText(/My Assignments \(From Director\)/i)).toBeInTheDocument();
-    expect(screen.getByText("Draft Q2 Committee Roadmap & Milestones")).toBeInTheDocument();
-    expect(screen.getByText(/Assigned by Director Khaled Mansour/i)).toBeInTheDocument();
-
-    // Section 2: Committee Management Console
+    expect(screen.queryByText(/My Assignments \(From Director\)/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Committee Leadership Console/i)).toBeInTheDocument();
     expect(screen.getByText("AI and Machine Learning")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /create committee assignments/i })).toHaveAttribute("href", "/hr/tasks");
@@ -43,7 +38,7 @@ describe("RoleOperationalDashboard Component", () => {
     expect(screen.queryByText(/csv bulk whitelist import/i)).not.toBeInTheDocument();
   });
 
-  it("renders distinct dual-section view for director (executive roadmap vs heads delegation board)", () => {
+  it("renders director console without an unsubmittable Executive Directives section", () => {
     render(
       <RoleOperationalDashboard
         currentUserRole="director"
@@ -52,7 +47,7 @@ describe("RoleOperationalDashboard Component", () => {
       />
     );
 
-    expect(screen.getByText(/Executive Directives & Roadmap/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Executive Directives & Roadmap/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Committee Overseer & Heads Delegation/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /delegate assignments to heads/i })).toHaveAttribute("href", "/hr/tasks");
 
@@ -61,8 +56,8 @@ describe("RoleOperationalDashboard Component", () => {
     expect(screen.queryByText(/live qr check-in/i)).not.toBeInTheDocument();
   });
 
-  it("renders distinct dual-section view for hr_admin (director tasks vs HR operations)", () => {
-    render(
+  it("renders Directives from Director for hr_admin only when assignments exist, with link to submit", () => {
+    const { rerender } = render(
       <RoleOperationalDashboard
         currentUserRole="hr_admin"
         userName="Sara Hassan"
@@ -70,16 +65,24 @@ describe("RoleOperationalDashboard Component", () => {
       />
     );
 
-    // Section 1: Tasks from Director
+    // Section 1: Assignments from overseeing Director (with link to submit on /hr/tasks)
     expect(screen.getByText(/Directives from Director/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /open & submit/i })).toHaveAttribute("href", "/hr/tasks");
 
     // Section 2: HR Management Console
     expect(screen.getByText(/Human Resources Operations Console/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /assign hr members/i })).toHaveAttribute("href", "/hr/roster");
     expect(screen.getByRole("link", { name: /publish monthly leaderboard/i })).toHaveAttribute("href", "/hr/publishing");
 
-    // HR Admin cannot manage seasons (only master)
-    expect(screen.queryByText(/season rollover/i)).not.toBeInTheDocument();
+    // Empty directives box hidden when hr_admin has no assigned work
+    rerender(
+      <RoleOperationalDashboard
+        currentUserRole="hr_admin"
+        userName="Sara Hassan"
+        assignedTasks={[]}
+      />
+    );
+    expect(screen.queryByText(/Directives from Director/i)).not.toBeInTheDocument();
   });
 
   it("renders Master Authority governance console for master_admin", () => {

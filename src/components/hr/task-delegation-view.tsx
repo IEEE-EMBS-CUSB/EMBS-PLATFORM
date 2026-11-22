@@ -5,12 +5,15 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock,
+  ExternalLink,
   Lock,
   Send,
   User,
   UserCheck,
   Users,
 } from "lucide-react";
+import { TaskCheckToggle } from "@/components/member/task-check-toggle";
+import { TaskSubmitForm } from "@/components/member/task-submit-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,11 +41,14 @@ export interface AssignedTaskItem {
   id: string;
   title: string;
   workType?: WorkItemType;
+  completionMode?: TaskCompletionMode;
   assignedByName: string;
   assignerRole: MembershipRole;
   dueAt: Date;
   maxPoints: number;
   status: "not_started" | "in_progress" | "completed";
+  submissionUrl?: string | null;
+  submissionText?: string | null;
 }
 
 export interface EligibleAssignee {
@@ -450,6 +456,61 @@ export function TaskDelegationView({
                         Due {new Date(item.dueAt).toLocaleDateString()}
                       </span>
                     </div>
+
+                    {item.submissionUrl &&
+                      /^https?:\/\//i.test(item.submissionUrl) && (
+                        <div className="pt-1">
+                          <a
+                            href={item.submissionUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-semibold text-[#00629b] underline-offset-2 hover:underline"
+                          >
+                            <ExternalLink
+                              className="h-3 w-3"
+                              aria-hidden="true"
+                            />
+                            Open submitted link
+                          </a>
+                        </div>
+                      )}
+
+                    {!itemIsTask ? (
+                      item.status !== "completed" ? (
+                        <div className="border-t border-border/60 pt-2">
+                          <TaskSubmitForm
+                            taskId={item.id}
+                            requireUrl
+                            initialUrl={item.submissionUrl}
+                            initialText={item.submissionText}
+                          />
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-1 pt-1 text-xs font-semibold text-[#1e6b0a]">
+                          <CheckCircle2
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
+                          Graded
+                        </div>
+                      )
+                    ) : item.completionMode === "hr_only" ? (
+                      <div className="inline-flex items-center gap-1 pt-1 text-xs font-semibold text-[#002855]">
+                        <Lock className="h-3 w-3" aria-hidden="true" />
+                        {item.status === "completed"
+                          ? "Verified completed"
+                          : "Awaiting verification"}
+                      </div>
+                    ) : (
+                      <div className="border-t border-border/60 pt-2">
+                        <TaskCheckToggle
+                          taskId={item.id}
+                          title={item.title}
+                          maxPoints={item.maxPoints}
+                          initialCompleted={item.status === "completed"}
+                        />
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );

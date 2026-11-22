@@ -44,28 +44,30 @@ export default async function HrOverviewPage() {
         dbLedger,
         dbSnapshots,
       ] = await Promise.all([
-        db
-          .select({
-            taskId: schema.tasks.id,
-            title: schema.tasks.title,
-            workType: schema.tasks.workType,
-            dueAt: schema.tasks.dueAt,
-            maxPoints: schema.tasks.maxPoints,
-            totalPoints: schema.taskSubmissions.totalPoints,
-            submittedAt: schema.taskSubmissions.submittedAt,
-          })
-          .from(schema.taskSubmissions)
-          .innerJoin(
-            schema.tasks,
-            eq(schema.taskSubmissions.taskId, schema.tasks.id)
-          )
-          .where(
-            and(
-              eq(schema.taskSubmissions.membershipId, profile.id),
-              eq(schema.tasks.seasonId, seasonId)
-            )
-          )
-          .orderBy(desc(schema.tasks.createdAt)),
+        profile.role === "hr_admin"
+          ? db
+              .select({
+                taskId: schema.tasks.id,
+                title: schema.tasks.title,
+                workType: schema.tasks.workType,
+                dueAt: schema.tasks.dueAt,
+                maxPoints: schema.tasks.maxPoints,
+                totalPoints: schema.taskSubmissions.totalPoints,
+                submittedAt: schema.taskSubmissions.submittedAt,
+              })
+              .from(schema.taskSubmissions)
+              .innerJoin(
+                schema.tasks,
+                eq(schema.taskSubmissions.taskId, schema.tasks.id)
+              )
+              .where(
+                and(
+                  eq(schema.taskSubmissions.membershipId, profile.id),
+                  eq(schema.tasks.seasonId, seasonId)
+                )
+              )
+              .orderBy(desc(schema.tasks.createdAt))
+          : Promise.resolve([]),
         db
           .select({
             id: schema.rosterMemberships.id,

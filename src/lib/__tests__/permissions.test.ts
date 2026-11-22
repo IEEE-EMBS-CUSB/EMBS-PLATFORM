@@ -282,10 +282,13 @@ describe("RBAC Permissions Engine", () => {
       expect(canAssignTaskToRole("hr_admin", "committee_head", "assignment")).toBe(false);
       expect(canAssignTask(hrAdminUser, memberAiUser, "assignment")).toBe(false);
 
-      // Tasks: everyone (members, heads, hr_members)
+      // Tasks: operational members & heads (never master_admin, director, or hr_admin)
       expect(canAssignTaskToRole("hr_admin", "hr_member", "task")).toBe(true);
       expect(canAssignTaskToRole("hr_admin", "member", "task")).toBe(true);
       expect(canAssignTaskToRole("hr_admin", "committee_head", "task")).toBe(true);
+      expect(canAssignTaskToRole("hr_admin", "director", "task")).toBe(false);
+      expect(canAssignTaskToRole("hr_admin", "master_admin", "task")).toBe(false);
+      expect(canAssignTaskToRole("hr_admin", "hr_admin", "task")).toBe(false);
       expect(canAssignTask(hrAdminUser, headAiUser, "task")).toBe(true);
       expect(canAssignTask(hrAdminUser, memberAiUser, "task")).toBe(true);
       expect(canReceiveTasksFromRole("hr_member", "hr_admin")).toBe(true);
@@ -316,12 +319,16 @@ describe("RBAC Permissions Engine", () => {
       expect(canAssignTask(headAiUser, memberWebUser)).toBe(false);
     });
 
-    it("allows master admin to assign tasks to anyone", () => {
-      expect(canAssignTaskToRole("master_admin", "director")).toBe(true);
-      expect(canAssignTaskToRole("master_admin", "committee_head")).toBe(true);
+    it("blocks assigning work to admin-only roles (master_admin, director) while keeping hr_admin assignable by overseeing director/master", () => {
+      expect(canAssignTaskToRole("master_admin", "master_admin")).toBe(false);
+      expect(canAssignTaskToRole("master_admin", "director")).toBe(false);
       expect(canAssignTaskToRole("master_admin", "hr_admin")).toBe(true);
+      expect(canAssignTaskToRole("master_admin", "committee_head")).toBe(true);
       expect(canAssignTaskToRole("master_admin", "hr_member")).toBe(true);
       expect(canAssignTaskToRole("master_admin", "member")).toBe(true);
+      expect(canAssignTaskToRole("director", "director", "assignment")).toBe(false);
+      expect(canAssignTaskToRole("director", "master_admin", "assignment")).toBe(false);
+      expect(canAssignTaskToRole("director", "hr_admin", "assignment")).toBe(true);
     });
 
     it("enforces Assignments vs Tasks role rules (only master_admin and hr_admin can give both)", () => {

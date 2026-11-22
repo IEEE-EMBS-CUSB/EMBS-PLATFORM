@@ -117,8 +117,10 @@ describe("TaskDelegationView Component", () => {
       />
     );
 
-    // HR Admin can receive assignments from Director
+    // HR Admin can receive assignments from their overseeing Director AND submit directly from /hr/tasks
     expect(screen.getByText("Draft Q2 Committee Roadmap & Milestones")).toBeInTheDocument();
+    expect(screen.getByLabelText(/submission url/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^submit$/i })).toBeInTheDocument();
 
     // HR Admin sees both Assignment and Task type buttons
     const assignmentBtn = screen.getByRole("button", { name: /^assignment$/i });
