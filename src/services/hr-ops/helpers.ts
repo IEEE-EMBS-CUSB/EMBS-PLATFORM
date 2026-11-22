@@ -6,12 +6,31 @@ import type { MembershipRole } from "@/lib/auth-helpers";
 export interface HrActor {
   profile: {
     id: string;
+    personId?: string;
     role: MembershipRole;
     committeeId: string | null;
     managedTrackId?: string | null;
     email?: string;
     fullName?: string;
   };
+}
+
+/**
+ * Returns true when an actor and a target membership refer to the same human
+ * (either the same membership row or different hats owned by the same `personId`).
+ * Used to block multi-hat self-bonuses, self-deactivation, and internal HR note leaks.
+ */
+export function isSamePersonOrMembership(
+  actor: { id?: string; personId?: string | null },
+  target: { id: string; personId?: string | null }
+): boolean {
+  if (actor.id && actor.id === target.id) {
+    return true;
+  }
+  if (actor.personId && target.personId && actor.personId === target.personId) {
+    return true;
+  }
+  return false;
 }
 
 /**

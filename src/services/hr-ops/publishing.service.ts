@@ -40,15 +40,20 @@ async function buildDraft(month: string, seasonId: string) {
   const dbMembers = await db
     .select({
       id: schema.rosterMemberships.id,
-      fullName: schema.rosterMemberships.fullName,
+      fullName: schema.persons.fullName,
       committeeId: schema.rosterMemberships.committeeId,
       role: schema.rosterMemberships.role,
     })
     .from(schema.rosterMemberships)
+    .innerJoin(
+      schema.persons,
+      eq(schema.rosterMemberships.personId, schema.persons.id)
+    )
     .where(
       and(
         eq(schema.rosterMemberships.seasonId, seasonId),
         eq(schema.rosterMemberships.isActive, true),
+        eq(schema.persons.isActive, true),
         ne(schema.rosterMemberships.role, "attendee")
       )
     );

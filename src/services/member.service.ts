@@ -53,7 +53,7 @@ export async function getMemberProfile(
     const memberRows = await db
       .select({
         id: schema.rosterMemberships.id,
-        fullName: schema.rosterMemberships.fullName,
+        fullName: schema.persons.fullName,
         role: schema.rosterMemberships.role,
         committeeId: schema.committees.id,
         committeeSlug: schema.committees.slug,
@@ -62,6 +62,10 @@ export async function getMemberProfile(
         seasonName: schema.seasons.name,
       })
       .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
       .leftJoin(
         schema.committees,
         eq(schema.rosterMemberships.committeeId, schema.committees.id)
@@ -73,7 +77,8 @@ export async function getMemberProfile(
       .where(
         and(
           eq(schema.rosterMemberships.id, memberId),
-          eq(schema.rosterMemberships.isActive, true)
+          eq(schema.rosterMemberships.isActive, true),
+          eq(schema.persons.isActive, true)
         )
       )
       .limit(1);
@@ -116,6 +121,7 @@ export async function getMemberProfile(
 
 export interface OperationalUserProfile {
   id: string;
+  personId: string;
   fullName: string;
   email: string;
   role: MembershipRole;
@@ -133,8 +139,9 @@ export async function getOperationalUserProfile(
     const memberRows = await db
       .select({
         id: schema.rosterMemberships.id,
-        fullName: schema.rosterMemberships.fullName,
-        email: schema.rosterMemberships.email,
+        personId: schema.persons.id,
+        fullName: schema.persons.fullName,
+        email: schema.persons.email,
         role: schema.rosterMemberships.role,
         committeeId: schema.rosterMemberships.committeeId,
         committeeName: schema.committees.name,
@@ -143,6 +150,10 @@ export async function getOperationalUserProfile(
         seasonId: schema.rosterMemberships.seasonId,
       })
       .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
       .leftJoin(
         schema.committees,
         eq(schema.rosterMemberships.committeeId, schema.committees.id)
@@ -154,7 +165,8 @@ export async function getOperationalUserProfile(
       .where(
         and(
           eq(schema.rosterMemberships.id, memberId),
-          eq(schema.rosterMemberships.isActive, true)
+          eq(schema.rosterMemberships.isActive, true),
+          eq(schema.persons.isActive, true)
         )
       )
       .limit(1);
@@ -163,6 +175,7 @@ export async function getOperationalUserProfile(
     if (member && member.role !== "attendee") {
       return {
         id: member.id,
+        personId: member.personId,
         fullName: member.fullName,
         email: member.email,
         role: member.role as MembershipRole,

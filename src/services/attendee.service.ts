@@ -16,12 +16,16 @@ export async function getAttendeeProfile(
     const rows = await db
       .select({
         id: schema.rosterMemberships.id,
-        fullName: schema.rosterMemberships.fullName,
+        fullName: schema.persons.fullName,
         role: schema.rosterMemberships.role,
         committeeName: schema.committees.name,
         seasonName: schema.seasons.name,
       })
       .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
       .leftJoin(
         schema.committees,
         eq(schema.rosterMemberships.committeeId, schema.committees.id)
@@ -34,6 +38,7 @@ export async function getAttendeeProfile(
         and(
           eq(schema.rosterMemberships.id, attendeeId),
           eq(schema.rosterMemberships.isActive, true),
+          eq(schema.persons.isActive, true),
           eq(schema.rosterMemberships.role, "attendee")
         )
       )

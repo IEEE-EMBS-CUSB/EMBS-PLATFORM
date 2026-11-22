@@ -63,11 +63,12 @@ interface BulkImportResult {
   skippedCount?: number;
   imported?: Array<{
     id: string;
+    personId?: string;
     fullName: string;
     email: string;
     role: MembershipRole;
     committeeId: string | null;
-    tempPassword: string;
+    tempPassword?: string;
   }>;
   errors?: string[];
   error?: string;

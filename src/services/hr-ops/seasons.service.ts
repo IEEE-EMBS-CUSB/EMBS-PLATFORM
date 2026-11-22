@@ -260,8 +260,7 @@ export async function cloneSeasonAsActor(
         await db.insert(schema.rosterMemberships).values(
           activeMembers.map((m) => ({
             seasonId: newSeason.id,
-            email: m.email,
-            fullName: m.fullName,
+            personId: m.personId,
             committeeId: m.committeeId
               ? committeeMap.get(m.committeeId) ?? null
               : null,
@@ -269,8 +268,6 @@ export async function cloneSeasonAsActor(
               ? trackMap.get(m.managedTrackId) ?? null
               : null,
             role: m.role,
-            passwordHash: m.passwordHash,
-            mustChangePassword: m.mustChangePassword,
             isActive: m.isActive,
           }))
         );

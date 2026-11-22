@@ -151,6 +151,7 @@ describe("portal-guards", () => {
       };
       mockOperationalProfile = {
         id: "mem-1",
+        personId: "p-mem-1",
         fullName: "General Member",
         email: "member@cu.edu.eg",
         role: "member",
@@ -176,6 +177,7 @@ describe("portal-guards", () => {
       };
       mockOperationalProfile = {
         id: "mem-dir",
+        personId: "p-dir-1",
         fullName: "Khaled Mansour",
         email: "director@cu.edu.eg",
         role: "director",
@@ -206,6 +208,7 @@ describe("portal-guards", () => {
       };
       mockOperationalProfile = {
         id: "mem-hr",
+        personId: "p-hr-1",
         fullName: "HR Member",
         email: "hr.member@cu.edu.eg",
         role: "hr_member",

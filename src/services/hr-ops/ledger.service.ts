@@ -7,6 +7,7 @@ import type { HrActor } from "./helpers";
 import {
   assertMonthNotPublished,
   getDirectorTrackCommitteeIds,
+  isSamePersonOrMembership,
   isValidMonthKey,
   resolveActiveSeason,
   sanitizeDbError,
@@ -51,7 +52,7 @@ export async function addManualLedgerEntryAsActor(
         error: "Attendees do not participate in member score ledgers.",
       };
     }
-    if (actor.profile.id === member.id) {
+    if (isSamePersonOrMembership(actor.profile, member)) {
       return {
         ok: false,
         error: "You cannot award manual bonus points to yourself.",

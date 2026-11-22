@@ -126,13 +126,24 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
       }
 
       const [member] = await db
-        .select()
+        .select({
+          id: schema.rosterMemberships.id,
+          personId: schema.rosterMemberships.personId,
+          email: schema.persons.email,
+          role: schema.rosterMemberships.role,
+          committeeId: schema.rosterMemberships.committeeId,
+        })
         .from(schema.rosterMemberships)
+        .innerJoin(
+          schema.persons,
+          eq(schema.rosterMemberships.personId, schema.persons.id)
+        )
         .where(
           and(
             eq(schema.rosterMemberships.id, input.assignedToMembershipId),
             eq(schema.rosterMemberships.seasonId, seasonId),
-            eq(schema.rosterMemberships.isActive, true)
+            eq(schema.rosterMemberships.isActive, true),
+            eq(schema.persons.isActive, true)
           )
         )
         .limit(1);

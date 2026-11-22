@@ -1,12 +1,16 @@
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { resetMemberPassword } from "@/services/auth-password.service";
+import { resetPersonPassword } from "@/services/auth-password.service";
 import { hashPassword, generatePreassignedPassword } from "@/lib/password";
 import { normalizeEmail, type MembershipRole } from "@/lib/auth-helpers";
 import { canAssignRoles, canAssignHrCommittees } from "@/lib/permissions";
 import { parseRosterCsv } from "@/services/hr.service";
-import { resolveMutableSeason, sanitizeDbError } from "./helpers";
+import {
+  isSamePersonOrMembership,
+  resolveMutableSeason,
+  sanitizeDbError,
+} from "./helpers";
 
 export interface AddRosterMemberInput {
   fullName: string;
@@ -20,6 +24,7 @@ export interface AddRosterMemberInput {
 export interface RosterActor {
   profile: {
     id?: string;
+    personId?: string;
     role: MembershipRole;
     committeeId?: string | null;
   };
@@ -40,6 +45,16 @@ const PROTECTED_FROM_HR_ADMIN_RESET = new Set<MembershipRole>([
   "director",
   "hr_admin",
 ]);
+
+/**
+ * Returns true if any active role held by a person is privileged and therefore
+ * protected from password reset by an hr_admin.
+ */
+export function isProtectedFromHrAdminPasswordReset(
+  roles: readonly MembershipRole[]
+): boolean {
+  return roles.some((role) => PROTECTED_FROM_HR_ADMIN_RESET.has(role));
+}
 
 export async function addRosterMemberAsActor(
   input: AddRosterMemberInput,
@@ -83,7 +98,10 @@ export async function addRosterMemberAsActor(
         )
         .limit(1);
       if (!comm) {
-        return { ok: false, error: "Selected committee does not belong to this season." };
+        return {
+          ok: false,
+          error: "Selected committee does not belong to this season.",
+        };
       }
       committeeId = comm.id;
     }
@@ -110,27 +128,60 @@ export async function addRosterMemberAsActor(
       managedTrackId = track.id;
     }
 
-    const tempPassword = generatePreassignedPassword();
-    const passwordHash = hashPassword(tempPassword);
+    // Reuse existing person identity & password if this email already exists across any season
+    const [existingPerson] = await db
+      .select()
+      .from(schema.persons)
+      .where(eq(schema.persons.email, normalizedEmail))
+      .limit(1);
+
+    let personId: string;
+    let tempPassword: string | undefined;
+    let existingPersonFlag = false;
+
+    if (existingPerson) {
+      personId = existingPerson.id;
+      existingPersonFlag = true;
+    } else {
+      tempPassword = generatePreassignedPassword();
+      const passwordHash = hashPassword(tempPassword);
+      const [createdPerson] = await db
+        .insert(schema.persons)
+        .values({
+          email: normalizedEmail,
+          fullName: trimmedName,
+          passwordHash,
+          mustChangePassword: true,
+          isActive: true,
+        })
+        .returning();
+      personId = createdPerson.id;
+    }
 
     const [inserted] = await db
       .insert(schema.rosterMemberships)
       .values({
         seasonId,
-        email: normalizedEmail,
-        fullName: trimmedName,
+        personId,
         role: input.role,
         committeeId: input.role === "director" ? null : committeeId,
         managedTrackId,
-        passwordHash,
-        mustChangePassword: true,
         isActive: true,
       })
       .returning();
 
-    return { ok: true, memberId: inserted.id, tempPassword };
+    return {
+      ok: true,
+      memberId: inserted.id,
+      personId,
+      existingPerson: existingPersonFlag,
+      ...(tempPassword ? { tempPassword } : {}),
+    };
   } catch (err: unknown) {
-    return { ok: false, error: sanitizeDbError(err, "Failed to add member to roster.") };
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to add member to roster."),
+    };
   }
 }
 
@@ -141,14 +192,23 @@ export async function bulkImportRosterAsActor(
   ok: boolean;
   importedCount?: number;
   skippedCount?: number;
-  imported?: Array<{ id: string; fullName: string; email: string; role: MembershipRole; committeeId: string | null; tempPassword: string }>;
+  imported?: Array<{
+    id: string;
+    personId: string;
+    fullName: string;
+    email: string;
+    role: MembershipRole;
+    committeeId: string | null;
+    tempPassword?: string;
+  }>;
   errors?: string[];
   error?: string;
 }> {
   if (!canAssignRoles(actor.profile.role)) {
     return {
       ok: false,
-      error: "Unauthorized: only Master Admin can bulk import roster members.",
+      error:
+        "Unauthorized: only Master Admin can bulk import roster members.",
     };
   }
 
@@ -176,69 +236,90 @@ export async function bulkImportRosterAsActor(
         eq(schema.committees.isActive, true)
       )
     );
-  const committeeBySlug = new Map(committees.map((c) => [c.slug.toLowerCase(), c.id]));
-
-  const existing = await db
-    .select({ email: schema.rosterMemberships.email })
-    .from(schema.rosterMemberships)
-    .where(eq(schema.rosterMemberships.seasonId, seasonId));
-  const existingEmails = new Set(existing.map((e) => e.email.toLowerCase()));
+  const committeeBySlug = new Map(
+    committees.map((c) => [c.slug.toLowerCase(), c.id])
+  );
 
   const imported: Array<{
     id: string;
+    personId: string;
     fullName: string;
     email: string;
     role: MembershipRole;
     committeeId: string | null;
-    tempPassword: string;
+    tempPassword?: string;
   }> = [];
   const rowErrors: string[] = [];
   let skippedCount = 0;
 
   for (const rec of parsed.validRecords) {
-    if (existingEmails.has(rec.email)) {
-      skippedCount++;
-      rowErrors.push(`Skipped duplicate email: ${rec.email}`);
-      continue;
-    }
-
     const committeeId = rec.committeeSlug
       ? committeeBySlug.get(rec.committeeSlug.toLowerCase()) ?? null
       : null;
 
     if (rec.committeeSlug && !committeeId) {
       skippedCount++;
-      rowErrors.push(`Unknown committee slug "${rec.committeeSlug}" for ${rec.email}`);
+      rowErrors.push(
+        `Unknown committee slug "${rec.committeeSlug}" for ${rec.email}`
+      );
       continue;
     }
 
-    const tempPassword = generatePreassignedPassword();
     try {
+      const [existingPerson] = await db
+        .select()
+        .from(schema.persons)
+        .where(eq(schema.persons.email, rec.email))
+        .limit(1);
+
+      let personId: string;
+      let personFullName: string;
+      let tempPassword: string | undefined;
+
+      if (existingPerson) {
+        personId = existingPerson.id;
+        personFullName = existingPerson.fullName;
+      } else {
+        tempPassword = generatePreassignedPassword();
+        const [createdPerson] = await db
+          .insert(schema.persons)
+          .values({
+            email: rec.email,
+            fullName: rec.fullName,
+            passwordHash: hashPassword(tempPassword),
+            mustChangePassword: true,
+            isActive: true,
+          })
+          .returning();
+        personId = createdPerson.id;
+        personFullName = createdPerson.fullName;
+      }
+
       const [inserted] = await db
         .insert(schema.rosterMemberships)
         .values({
           seasonId,
-          email: rec.email,
-          fullName: rec.fullName,
+          personId,
           role: rec.role,
-          committeeId,
-          passwordHash: hashPassword(tempPassword),
-          mustChangePassword: true,
+          committeeId: rec.role === "director" ? null : committeeId,
           isActive: true,
         })
         .returning();
-      existingEmails.add(rec.email);
+
       imported.push({
         id: inserted.id,
-        fullName: inserted.fullName,
-        email: inserted.email,
+        personId,
+        fullName: personFullName,
+        email: rec.email,
         role: inserted.role as MembershipRole,
         committeeId: inserted.committeeId,
-        tempPassword,
+        ...(tempPassword ? { tempPassword } : {}),
       });
     } catch (err) {
       skippedCount++;
-      rowErrors.push(`Failed to import ${rec.email}: ${sanitizeDbError(err, "database error")}`);
+      rowErrors.push(
+        `Failed to import ${rec.email}: ${sanitizeDbError(err, "database error")}`
+      );
     }
   }
 
@@ -248,7 +329,10 @@ export async function bulkImportRosterAsActor(
     skippedCount,
     imported,
     errors: rowErrors,
-    error: imported.length === 0 ? rowErrors[0] ?? "No members were imported." : undefined,
+    error:
+      imported.length === 0
+        ? rowErrors[0] ?? "No members were imported."
+        : undefined,
   };
 }
 
@@ -259,7 +343,8 @@ export async function removeRosterMemberAsActor(
   if (!canAssignRoles(actor.profile.role)) {
     return {
       ok: false,
-      error: "Unauthorized: only Master Admin can remove members from the roster.",
+      error:
+        "Unauthorized: only Master Admin can remove members from the roster.",
     };
   }
   try {
@@ -273,8 +358,11 @@ export async function removeRosterMemberAsActor(
     const seasonRes = await resolveMutableSeason(target.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
 
-    if (actor.profile.id && actor.profile.id === target.id) {
-      return { ok: false, error: "You cannot deactivate your own active account." };
+    if (isSamePersonOrMembership(actor.profile, target)) {
+      return {
+        ok: false,
+        error: "You cannot deactivate your own active account.",
+      };
     }
 
     await db
@@ -295,7 +383,10 @@ export async function resetMemberPasswordAsActor(
   memberId: string,
   actor: RosterActor
 ): Promise<{ ok: boolean; tempPassword: string; error?: string }> {
-  if (!canAssignRoles(actor.profile.role) && actor.profile.role !== "hr_admin") {
+  if (
+    !canAssignRoles(actor.profile.role) &&
+    actor.profile.role !== "hr_admin"
+  ) {
     return {
       ok: false,
       tempPassword: "",
@@ -318,19 +409,33 @@ export async function resetMemberPasswordAsActor(
       return { ok: false, tempPassword: "", error: seasonRes.error };
     }
 
-    // Prevent privilege escalation: hr_admin cannot reset master_admin, director, or other hr_admin accounts
-    if (
-      actor.profile.role === "hr_admin" &&
-      PROTECTED_FROM_HR_ADMIN_RESET.has(target.role as MembershipRole)
-    ) {
-      return {
-        ok: false,
-        tempPassword: "",
-        error: "Unauthorized: HR Admin cannot reset passwords for executive leadership or other HR Admins.",
-      };
+    // Prevent privilege escalation across multi-hat accounts:
+    // check ALL active memberships of target.personId, not just the single clicked hat.
+    if (actor.profile.role === "hr_admin") {
+      const personMemberships = await db
+        .select({ role: schema.rosterMemberships.role })
+        .from(schema.rosterMemberships)
+        .where(
+          and(
+            eq(schema.rosterMemberships.personId, target.personId),
+            eq(schema.rosterMemberships.isActive, true)
+          )
+        );
+      const rolesToCheck: MembershipRole[] = [
+        target.role as MembershipRole,
+        ...personMemberships.map((m) => m.role as MembershipRole),
+      ];
+      if (isProtectedFromHrAdminPasswordReset(rolesToCheck)) {
+        return {
+          ok: false,
+          tempPassword: "",
+          error:
+            "Unauthorized: HR Admin cannot reset passwords for executive leadership or other HR Admins.",
+        };
+      }
     }
 
-    const result = await resetMemberPassword({ memberId });
+    const result = await resetPersonPassword({ personId: target.personId });
     return result;
   } catch (err: unknown) {
     return {
@@ -368,7 +473,10 @@ export async function assignMemberRoleAsActor(
 
     await db
       .update(schema.rosterMemberships)
-      .set({ role: newRole })
+      .set({
+        role: newRole,
+        ...(newRole !== "director" ? { managedTrackId: null } : {}),
+      })
       .where(eq(schema.rosterMemberships.id, memberId));
     return { ok: true };
   } catch (err: unknown) {
@@ -405,7 +513,8 @@ export async function assignMemberCommitteeAsActor(
     if (actor.profile.role === "hr_admin" && target.role !== "hr_member") {
       return {
         ok: false,
-        error: "Unauthorized: HR Admin can only assign committees for HR Members.",
+        error:
+          "Unauthorized: HR Admin can only assign committees for HR Members.",
       };
     }
 
@@ -493,7 +602,8 @@ export async function assignDirectorTrackAsActor(
       if (!track) {
         return {
           ok: false,
-          error: "Selected track does not belong to this Director's season.",
+          error:
+            "Selected track does not belong to this Director's season.",
         };
       }
       resolvedTrackId = track.id;
