@@ -29,6 +29,8 @@ export interface ContextPickerGroup {
 
 export interface ContextPickerModel {
   groups: ContextPickerGroup[];
+  activeHeading: string;
+  activeViewLabel: string | null;
   activeTriggerLabel: string;
   isInteractive: boolean;
   totalOptions: number;
@@ -186,6 +188,8 @@ export function buildContextPickerModel(input: {
   if (contexts.length === 0) {
     return {
       groups: [],
+      activeHeading: fallbackLabel,
+      activeViewLabel: null,
       activeTriggerLabel: fallbackLabel,
       isInteractive: false,
       totalOptions: 0,
@@ -208,9 +212,12 @@ export function buildContextPickerModel(input: {
   const isInteractive = totalOptions > 1;
 
   if (!isInteractive) {
+    const singleHeading = groups[0]?.heading ?? fallbackLabel;
     return {
       groups,
-      activeTriggerLabel: groups[0]?.heading ?? fallbackLabel,
+      activeHeading: singleHeading,
+      activeViewLabel: null,
+      activeTriggerLabel: singleHeading,
       isInteractive: false,
       totalOptions,
     };
@@ -221,6 +228,8 @@ export function buildContextPickerModel(input: {
     if (activeView) {
       return {
         groups,
+        activeHeading: group.heading,
+        activeViewLabel: activeView.label,
         activeTriggerLabel: `${group.heading} · ${activeView.label}`,
         isInteractive: true,
         totalOptions,
@@ -233,6 +242,8 @@ export function buildContextPickerModel(input: {
   const fallbackView = fallbackGroup.views[0];
   return {
     groups,
+    activeHeading: fallbackGroup.heading,
+    activeViewLabel: fallbackView?.label ?? null,
     activeTriggerLabel: fallbackView
       ? `${fallbackGroup.heading} · ${fallbackView.label}`
       : fallbackGroup.heading,

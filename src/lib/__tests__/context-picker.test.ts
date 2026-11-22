@@ -23,6 +23,8 @@ describe("buildContextPickerModel", () => {
     });
 
     expect(onPersonal.isInteractive).toBe(true);
+    expect(onPersonal.activeHeading).toBe("PR · Head");
+    expect(onPersonal.activeViewLabel).toBe("My work");
     expect(onPersonal.activeTriggerLabel).toBe("PR · Head · My work");
     expect(onPersonal.activeTriggerLabel).not.toMatch(/member/i);
     expect(onPersonal.groups).toHaveLength(1);

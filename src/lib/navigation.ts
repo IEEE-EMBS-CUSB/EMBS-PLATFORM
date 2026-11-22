@@ -3,5 +3,5 @@
  * and React preserved component state across authentication boundary changes.
  */
 export function navigateHard(url: string): void {
-  window.location.assign(url);
+  window.location.replace(url);
 }

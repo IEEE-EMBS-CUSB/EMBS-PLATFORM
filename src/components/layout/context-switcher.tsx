@@ -216,15 +216,25 @@ export function ContextSwitcher({
         render={
           <button
             type="button"
+            title={model.activeTriggerLabel}
             aria-label={`Switch role or view: ${model.activeTriggerLabel}`}
             className={cn(
-              "mt-1.5 flex w-full items-center justify-between gap-2 rounded-md border border-border bg-[#f8f9fb] px-2.5 py-1.5 text-left text-xs font-semibold text-[#002855] transition-colors hover:border-[#772583]/40 hover:bg-[#f5edf7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00629b]",
+              "mt-1.5 flex w-full items-center justify-between gap-2 rounded-md border border-border bg-[#f8f9fb] px-2.5 py-2 text-left transition-colors hover:border-[#772583]/40 hover:bg-[#f5edf7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00629b]",
               className
             )}
           />
         }
       >
-        <span className="truncate">{model.activeTriggerLabel}</span>
+        <span className="min-w-0 flex-1 space-y-0.5">
+          <span className="block truncate text-[11px] leading-tight font-medium text-muted-foreground">
+            {model.activeHeading}
+          </span>
+          {model.activeViewLabel && (
+            <span className="block truncate text-xs leading-tight font-bold text-[#002855]">
+              {model.activeViewLabel}
+            </span>
+          )}
+        </span>
         <ChevronDown
           className={cn(
             "h-3.5 w-3.5 shrink-0 text-[#772583] transition-transform duration-150",

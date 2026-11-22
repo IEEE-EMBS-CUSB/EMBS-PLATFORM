@@ -91,6 +91,9 @@ describe("ContextSwitcher", () => {
       name: /switch role or view: pr · head · manage committee/i,
     });
     expect(trigger).toBeInTheDocument();
+    expect(trigger).toHaveAttribute("title", "PR · Head · Manage committee");
+    expect(within(trigger).getByText("PR · Head")).toBeInTheDocument();
+    expect(within(trigger).getByText("Manage committee")).toBeInTheDocument();
 
     await user.click(trigger);
 

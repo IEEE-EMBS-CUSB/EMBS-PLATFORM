@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
   Clock,
   Send,
   UserCheck,
@@ -481,22 +482,28 @@ export function TaskDelegationView({
                     >
                       Assign To
                     </label>
-                    <select
-                      id="task-assignee-select"
-                      aria-label="Assign to"
-                      required
-                      value={selectedAssignee}
-                      onChange={(e) => setSelectedAssignee(e.target.value)}
-                      className="mt-1 block h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
-                    >
-                      <option value="">Select recipient...</option>
-                      {assignableMembers.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.fullName} ({roleLabels[m.role]})
-                          {m.committeeName ? ` — ${m.committeeName}` : ""}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative mt-1">
+                      <select
+                        id="task-assignee-select"
+                        aria-label="Assign to"
+                        required
+                        value={selectedAssignee}
+                        onChange={(e) => setSelectedAssignee(e.target.value)}
+                        className="block h-10 w-full appearance-none truncate rounded-lg border border-border bg-white py-2 pr-9 pl-3 text-xs leading-normal font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                      >
+                        <option value="">Select recipient...</option>
+                        {assignableMembers.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.fullName} ({roleLabels[m.role]})
+                            {m.committeeName ? ` — ${m.committeeName}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        className="pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    </div>
                   </div>
                 ) : (
                   <div>
@@ -506,60 +513,66 @@ export function TaskDelegationView({
                     >
                       Target Group
                     </label>
-                    <select
-                      id="task-group-select"
-                      aria-label="Target group"
-                      required
-                      value={targetGroup}
-                      onChange={(e) =>
-                        setTargetGroup(e.target.value as TaskTargetGroup)
-                      }
-                      className="mt-1 block h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
-                    >
-                      {currentUserRole === "master_admin" ? (
-                        <>
-                          <option value="everyone">
-                            Everyone (All Chapter Members)
-                          </option>
-                          <option value="all_heads">All Committee Heads</option>
-                          <option value="all_members">
-                            All Regular Members
-                          </option>
-                          <option value="committee_all">
-                            Committee: All (Heads & Members)
-                          </option>
-                          <option value="committee_heads">
-                            Committee: Heads Only
-                          </option>
+                    <div className="relative mt-1">
+                      <select
+                        id="task-group-select"
+                        aria-label="Target group"
+                        required
+                        value={targetGroup}
+                        onChange={(e) =>
+                          setTargetGroup(e.target.value as TaskTargetGroup)
+                        }
+                        className="block h-10 w-full appearance-none truncate rounded-lg border border-border bg-white py-2 pr-9 pl-3 text-xs leading-normal font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                      >
+                        {currentUserRole === "master_admin" ? (
+                          <>
+                            <option value="everyone">
+                              Everyone (All Chapter Members)
+                            </option>
+                            <option value="all_heads">All Committee Heads</option>
+                            <option value="all_members">
+                              All Regular Members
+                            </option>
+                            <option value="committee_all">
+                              Committee: All (Heads & Members)
+                            </option>
+                            <option value="committee_heads">
+                              Committee: Heads Only
+                            </option>
+                            <option value="committee_members">
+                              Committee: Members Only
+                            </option>
+                          </>
+                        ) : currentUserRole === "director" ? (
+                          <>
+                            <option value="all_heads">All Committee Heads</option>
+                            <option value="committee_heads">
+                              Committee: Heads Only
+                            </option>
+                          </>
+                        ) : currentUserRole === "hr_admin" ? (
+                          <>
+                            <option value="all_members">
+                              All Regular Members
+                            </option>
+                            <option value="committee_members">
+                              Committee: Members Only
+                            </option>
+                            <option value="committee_all">
+                              Committee: All (Heads & Members)
+                            </option>
+                          </>
+                        ) : (
                           <option value="committee_members">
-                            Committee: Members Only
+                            All Members of My Committee
                           </option>
-                        </>
-                      ) : currentUserRole === "director" ? (
-                        <>
-                          <option value="all_heads">All Committee Heads</option>
-                          <option value="committee_heads">
-                            Committee: Heads Only
-                          </option>
-                        </>
-                      ) : currentUserRole === "hr_admin" ? (
-                        <>
-                          <option value="all_members">
-                            All Regular Members
-                          </option>
-                          <option value="committee_members">
-                            Committee: Members Only
-                          </option>
-                          <option value="committee_all">
-                            Committee: All (Heads & Members)
-                          </option>
-                        </>
-                      ) : (
-                        <option value="committee_members">
-                          All Members of My Committee
-                        </option>
-                      )}
-                    </select>
+                        )}
+                      </select>
+                      <ChevronDown
+                        className="pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -574,21 +587,27 @@ export function TaskDelegationView({
                     >
                       Select Committee
                     </label>
-                    <select
-                      id="task-committee-select"
-                      aria-label="Target committee"
-                      required
-                      value={targetCommitteeId}
-                      onChange={(e) => setTargetCommitteeId(e.target.value)}
-                      className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
-                    >
-                      <option value="">Choose committee...</option>
-                      {committees.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative mt-1">
+                      <select
+                        id="task-committee-select"
+                        aria-label="Target committee"
+                        required
+                        value={targetCommitteeId}
+                        onChange={(e) => setTargetCommitteeId(e.target.value)}
+                        className="block h-10 w-full appearance-none truncate rounded-lg border border-border bg-white py-2 pr-9 pl-3 text-xs leading-normal font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                      >
+                        <option value="">Choose committee...</option>
+                        {committees.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        className="pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    </div>
                   </div>
                 )}
 

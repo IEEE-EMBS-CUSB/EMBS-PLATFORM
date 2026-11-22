@@ -43,6 +43,7 @@ export function buildClearSessionCookieOptions(
     secure,
     path: "/",
     maxAge: 0,
+    expires: new Date(0),
   };
 }
 
@@ -67,6 +68,7 @@ export function buildClearLastContextCookieOptions(
     secure,
     path: "/",
     maxAge: 0,
+    expires: new Date(0),
   };
 }
 

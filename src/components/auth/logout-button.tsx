@@ -29,9 +29,14 @@ export function LogoutButton({
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
-      await fetch("/api/session", { method: "DELETE" });
+      const res = await fetch("/api/session", {
+        method: "DELETE",
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      await res.text().catch(() => {});
     } catch {
-      // Fall through to access screen even if offline
+      // Fall through to login screen even if offline
     } finally {
       navigateHard("/login");
     }

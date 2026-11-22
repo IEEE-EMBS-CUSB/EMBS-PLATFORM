@@ -65,7 +65,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE() {
-  const response = NextResponse.json({ ok: true }, { status: 200 });
+  const response = NextResponse.json(
+    { ok: true },
+    {
+      status: 200,
+      headers: { "Cache-Control": "no-store" },
+    }
+  );
   response.cookies.set(SESSION_COOKIE_NAME, "", buildClearSessionCookieOptions());
   response.cookies.set(
     LAST_CONTEXT_COOKIE_NAME,

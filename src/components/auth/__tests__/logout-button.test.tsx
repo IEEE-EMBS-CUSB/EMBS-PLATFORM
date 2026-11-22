@@ -22,7 +22,11 @@ describe("LogoutButton", () => {
     render(<LogoutButton />);
     await user.click(screen.getByRole("button", { name: /log out/i }));
 
-    expect(fetchSpy).toHaveBeenCalledWith("/api/session", { method: "DELETE" });
+    expect(fetchSpy).toHaveBeenCalledWith("/api/session", {
+      method: "DELETE",
+      cache: "no-store",
+      credentials: "same-origin",
+    });
     expect(navSpy).toHaveBeenCalledWith("/login");
   });
 });
