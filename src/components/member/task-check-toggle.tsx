@@ -17,8 +17,15 @@ export function TaskCheckToggle({
   initialCompleted,
 }: TaskCheckToggleProps) {
   const [completed, setCompleted] = useState(initialCompleted);
+  const [prevInitialCompleted, setPrevInitialCompleted] =
+    useState(initialCompleted);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (initialCompleted !== prevInitialCompleted) {
+    setPrevInitialCompleted(initialCompleted);
+    setCompleted(initialCompleted);
+  }
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const next = e.target.checked;

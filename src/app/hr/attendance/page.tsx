@@ -9,6 +9,10 @@ import {
   normalizeSeasonSettings,
   type SeasonAttendanceSettings,
 } from "@/lib/season-settings";
+import {
+  closeExpiredSessionsForSeason,
+  isSessionCheckinLive,
+} from "@/services/hr-ops/attendance.service";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { and, count, desc, eq } from "drizzle-orm";
@@ -38,6 +42,10 @@ export default async function HrAttendancePage() {
 
     if (activeSeason) {
       const seasonId = activeSeason.id;
+      const now = new Date();
+      // Lazily close any expired check-in windows before reading
+      await closeExpiredSessionsForSeason(seasonId, now);
+
       attendanceDefaults = normalizeSeasonSettings(
         activeSeason.settingsJson
       ).attendance;
@@ -59,7 +67,10 @@ export default async function HrAttendancePage() {
             startsAt: schema.branchSessions.startsAt,
             checkinOpen: schema.branchSessions.checkinOpen,
             checkinCode: schema.branchSessions.checkinCode,
+            checkinEndsAt: schema.branchSessions.checkinEndsAt,
             checkinExpiresAt: schema.branchSessions.checkinExpiresAt,
+            punctualityCutoffMinutes:
+              schema.branchSessions.punctualityCutoffMinutes,
             basePoints: schema.branchSessions.basePoints,
             punctualityBonus: schema.branchSessions.punctualityBonus,
           })
@@ -81,6 +92,7 @@ export default async function HrAttendancePage() {
             count: count(schema.attendanceRecords.id),
           })
           .from(schema.attendanceRecords)
+          .where(eq(schema.attendanceRecords.status, "present"))
           .groupBy(schema.attendanceRecords.sessionId),
       ]);
 
@@ -100,21 +112,25 @@ export default async function HrAttendancePage() {
 
       dbSessionsList = (
         isCommitteeScoped && !operationalCommitteeId ? [] : dbSessions
-      ).map((s) => ({
-        id: s.id,
-        title: s.title,
-        committeeId: s.committeeId,
-        committeeName: s.committeeId
-          ? commMap.get(s.committeeId) ?? "Unknown"
-          : "Branch-wide",
-        startsAt: s.startsAt,
-        checkinOpen: s.checkinOpen,
-        checkinCode: s.checkinCode,
-        checkinExpiresAt: s.checkinExpiresAt,
-        basePoints: s.basePoints,
-        punctualityBonus: s.punctualityBonus,
-        attendanceCount: countMap.get(s.id) ?? 0,
-      }));
+      ).map((s) => {
+        const isLive = isSessionCheckinLive(s, now);
+        return {
+          id: s.id,
+          title: s.title,
+          committeeId: s.committeeId,
+          committeeName: s.committeeId
+            ? commMap.get(s.committeeId) ?? "Unknown"
+            : "Branch-wide",
+          startsAt: s.startsAt,
+          checkinOpen: isLive,
+          checkinCode: isLive ? s.checkinCode : null,
+          checkinExpiresAt: s.checkinEndsAt ?? s.checkinExpiresAt,
+          punctualityCutoffMinutes: s.punctualityCutoffMinutes,
+          basePoints: s.basePoints,
+          punctualityBonus: s.punctualityBonus,
+          attendanceCount: countMap.get(s.id) ?? 0,
+        };
+      });
     }
   } catch {
     // If DB is offline during build

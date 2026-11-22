@@ -17,12 +17,14 @@ import {
   calculateRubricPoints,
   DEFAULT_SEASON_SETTINGS,
   type SeasonGradingSettings,
+  type TaskCompletionMode,
 } from "@/lib/season-settings";
 
 export interface TaskHeaderRef {
   id: string;
   title: string;
   workType?: "assignment" | "task";
+  completionMode?: TaskCompletionMode;
   committeeName: string;
   maxPoints: number;
 }
@@ -79,13 +81,22 @@ export function BulkTaskGradingView({
   onToggleTask,
 }: BulkTaskGradingViewProps) {
   const [submissions, setSubmissions] = useState(initialSubmissions);
+  const [prevInitialSubmissions, setPrevInitialSubmissions] =
+    useState(initialSubmissions);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [savedNotification, setSavedNotification] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  if (initialSubmissions !== prevInitialSubmissions) {
+    setPrevInitialSubmissions(initialSubmissions);
+    setSubmissions(initialSubmissions);
+    setHasUnsavedChanges(false);
+  }
+
   const isCheckableTask = task.workType === "task";
+  const isHrOnlyTask = task.completionMode === "hr_only";
 
   const handleScoreChange = (
     idx: number,
@@ -272,11 +283,22 @@ export function BulkTaskGradingView({
               <span className="inline-flex rounded-full bg-[#f5edf7] px-2.5 py-0.5 text-[11px] font-semibold text-[#5a1b63]">
                 Task
               </span>
+              <span
+                className={
+                  isHrOnlyTask
+                    ? "inline-flex rounded-full bg-[#002855]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#002855]"
+                    : "inline-flex rounded-full bg-[#eef8e0] px-2.5 py-0.5 text-[11px] font-semibold text-[#2f600b]"
+                }
+              >
+                {isHrOnlyTask ? "HR-Only" : "Self-Report"}
+              </span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               {task.title} · {task.committeeName} ({task.maxPoints} pts on
-              completion). Members can self-check on their portal, or HR can
-              toggle below.
+              completion).{" "}
+              {isHrOnlyTask
+                ? "HR-only verification: only HR or the assigner can mark this task completed."
+                : "Members can self-check on their portal, or HR can toggle below."}
             </p>
           </div>
           {saveError && (

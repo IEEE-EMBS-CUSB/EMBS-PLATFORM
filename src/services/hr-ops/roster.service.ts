@@ -2,7 +2,7 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { resetPersonPassword } from "@/services/auth-password.service";
-import { hashPassword, generatePreassignedPassword } from "@/lib/password";
+import { hashPassword, getDefaultMemberPassword } from "@/lib/password";
 import { normalizeEmail, type MembershipRole } from "@/lib/auth-helpers";
 import { canAssignRoles, canAssignHrCommittees } from "@/lib/permissions";
 import { parseRosterCsv } from "@/services/hr.service";
@@ -188,7 +188,7 @@ export async function addRosterMemberAsActor(
       personId = existingPerson.id;
       existingPersonFlag = true;
     } else {
-      tempPassword = generatePreassignedPassword();
+      tempPassword = getDefaultMemberPassword();
       const passwordHash = hashPassword(tempPassword);
       const [createdPerson] = await db
         .insert(schema.persons)
@@ -326,7 +326,7 @@ export async function bulkImportRosterAsActor(
         personId = existingPerson.id;
         personFullName = existingPerson.fullName;
       } else {
-        tempPassword = generatePreassignedPassword();
+        tempPassword = getDefaultMemberPassword();
         const [createdPerson] = await db
           .insert(schema.persons)
           .values({

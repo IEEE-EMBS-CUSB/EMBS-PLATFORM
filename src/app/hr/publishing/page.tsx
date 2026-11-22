@@ -3,8 +3,10 @@ import {
   type SnapshotDisplayData,
 } from "@/components/hr/leaderboard-publisher-view";
 import { requireHrModule } from "@/lib/portal-guards";
+import { pickDefaultPublishingMonth } from "@/lib/publishing-state";
+import { formatMonthInCairo } from "@/services/hr-ops/helpers";
 import {
-  getAvailableMonthsForPublishingPage,
+  getPublishingMonthOptions,
   getSnapshotForPublishingPage,
 } from "@/services/hr-ops/publishing.service";
 import {
@@ -15,21 +17,29 @@ import {
 export default async function HrPublishingPage() {
   await requireHrModule("publishing");
 
-  const availableMonths = await getAvailableMonthsForPublishingPage();
-  const month = availableMonths[0] ?? new Date().toISOString().slice(0, 7);
-  const draft = await getSnapshotForPublishingPage(month);
+  const currentMonth = formatMonthInCairo(new Date());
+  const monthOptions = await getPublishingMonthOptions();
+  const availableMonths =
+    monthOptions.length > 0
+      ? monthOptions.map((o) => o.month)
+      : [currentMonth];
+  const monthStatuses: Record<string, "draft" | "published"> =
+    Object.fromEntries(monthOptions.map((o) => [o.month, o.status]));
+  const defaultMonth = pickDefaultPublishingMonth(monthOptions, currentMonth);
+  const draft = await getSnapshotForPublishingPage(defaultMonth);
 
   const snapshot: SnapshotDisplayData = draft
     ? {
         month: draft.month,
         status: draft.status,
         publishedAt: draft.publishedAt,
+        publishedByName: draft.publishedByName,
         overallEntries: draft.overallEntries,
         committeeEntries: draft.committeeEntries,
         headsEntries: draft.headsEntries,
       }
     : {
-        month,
+        month: defaultMonth,
         status: "draft",
         overallEntries: [],
         committeeEntries: {},
@@ -39,7 +49,9 @@ export default async function HrPublishingPage() {
   return (
     <LeaderboardPublisherView
       snapshot={snapshot}
-      availableMonths={availableMonths.length > 0 ? availableMonths : [month]}
+      availableMonths={availableMonths}
+      monthStatuses={monthStatuses}
+      currentMonth={currentMonth}
       onPublish={publishMonthlySnapshotAction}
       onLoadMonth={loadPublishingSnapshotAction}
     />

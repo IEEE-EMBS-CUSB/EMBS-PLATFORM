@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Popover } from "@base-ui/react/popover";
-import { Check, ChevronDown, Loader2 } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { switchActiveContextAction } from "@/app/actions/context";
 import {
   Sheet,
@@ -24,7 +24,7 @@ export interface ContextSwitcherProps {
   contexts: readonly ContextPickerOption[];
   activeMembershipId?: string | null;
   activePortal: ActivePortalKind;
-  variant: "desktop" | "mobile";
+  variant: "header" | "desktop" | "mobile";
   fallbackLabel?: string;
   className?: string;
   onSwitched?: () => void;
@@ -55,8 +55,21 @@ export function ContextSwitcher({
     return null;
   }
 
-  // Single-context users see a plain, non-interactive label (Spec §5).
+  // Single-context users see a clean, non-interactive label.
   if (!model.isInteractive) {
+    if (variant === "header") {
+      return (
+        <span
+          className={cn(
+            "inline-flex max-w-[200px] items-center truncate rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/95 sm:max-w-[280px]",
+            className
+          )}
+        >
+          <span className="truncate">{model.activeTriggerLabel}</span>
+        </span>
+      );
+    }
+
     return (
       <p
         className={cn(
@@ -184,7 +197,7 @@ export function ContextSwitcher({
           }
         >
           <span className="truncate">{model.activeTriggerLabel}</span>
-          <ChevronDown
+          <ChevronsUpDown
             className="h-3.5 w-3.5 shrink-0 text-[#772583]"
             aria-hidden="true"
           />
@@ -204,6 +217,64 @@ export function ContextSwitcher({
     );
   }
 
+  if (variant === "header") {
+    return (
+      <Popover.Root
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) setError(null);
+        }}
+      >
+        <Popover.Trigger
+          render={
+            <button
+              type="button"
+              title={model.activeTriggerLabel}
+              aria-label={`Switch role or view: ${model.activeTriggerLabel}`}
+              className={cn(
+                "inline-flex h-9 max-w-[190px] items-center gap-2 rounded-lg border border-white/25 bg-white/12 px-2.5 text-left text-white transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:max-w-[280px] sm:px-3",
+                className
+              )}
+            />
+          }
+        >
+          <span className="min-w-0 flex-1 truncate">
+            <span className="block truncate text-[10px] leading-tight font-medium text-white/75">
+              {model.activeHeading}
+            </span>
+            {model.activeViewLabel && (
+              <span className="block truncate text-xs leading-tight font-bold text-white">
+                {model.activeViewLabel}
+              </span>
+            )}
+          </span>
+          <ChevronsUpDown
+            className="h-3.5 w-3.5 shrink-0 text-white/80"
+            aria-hidden="true"
+          />
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Positioner
+            side="bottom"
+            align="start"
+            sideOffset={8}
+            className="z-50"
+          >
+            <Popover.Popup className="w-72 rounded-xl border border-border bg-white p-3.5 text-foreground shadow-xl focus:outline-none">
+              <div className="mb-2.5 border-b border-border/70 pb-2">
+                <p className="font-heading text-xs font-bold text-[#002855]">
+                  Switch role &amp; workspace
+                </p>
+              </div>
+              {optionsList}
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
+    );
+  }
+
   return (
     <Popover.Root
       open={open}
@@ -219,7 +290,7 @@ export function ContextSwitcher({
             title={model.activeTriggerLabel}
             aria-label={`Switch role or view: ${model.activeTriggerLabel}`}
             className={cn(
-              "mt-1.5 flex w-full items-center justify-between gap-2 rounded-md border border-border bg-[#f8f9fb] px-2.5 py-2 text-left transition-colors hover:border-[#772583]/40 hover:bg-[#f5edf7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00629b]",
+              "mt-1 flex w-full items-center justify-between gap-2 rounded-md border border-border bg-[#f8f9fb] px-2.5 py-2 text-left transition-colors hover:border-[#772583]/40 hover:bg-[#f5edf7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00629b]",
               className
             )}
           />
@@ -235,11 +306,8 @@ export function ContextSwitcher({
             </span>
           )}
         </span>
-        <ChevronDown
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 text-[#772583] transition-transform duration-150",
-            open && "rotate-180"
-          )}
+        <ChevronsUpDown
+          className="h-3.5 w-3.5 shrink-0 text-[#772583]"
           aria-hidden="true"
         />
       </Popover.Trigger>

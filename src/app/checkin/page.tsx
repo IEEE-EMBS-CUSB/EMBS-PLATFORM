@@ -21,9 +21,11 @@ function getAttendanceDestination(
   if (participantType === "attendee") {
     return "/attendee/attendance";
   }
+  if (membershipRole === "director") {
+    return "/hr";
+  }
   if (
     membershipRole === "master_admin" ||
-    membershipRole === "director" ||
     membershipRole === "hr_admin"
   ) {
     return "/hr/attendance";

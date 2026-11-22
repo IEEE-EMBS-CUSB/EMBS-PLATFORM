@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -29,7 +29,10 @@ const mockFeedback: FeedbackItem[] = [
     memberName: "Salma El-Sayed",
     memberEmail: "salma@cusb.org",
     committeeName: "AI & Machine Learning",
-    content: "Consistently delivering high quality machine learning slides and mentoring juniors.",
+    category: "recognition",
+    pointsDelta: 15,
+    content:
+      "Consistently delivering high quality machine learning slides and mentoring juniors.",
     isPublished: true,
     isWarning: false,
     createdByName: "HR Lead",
@@ -41,16 +44,32 @@ const mockFeedback: FeedbackItem[] = [
     memberName: "Ziad Hany",
     memberEmail: "ziad@cusb.org",
     committeeName: "Web Development",
-    content: "Missed two consecutive committee syncs without prior notification.",
-    isPublished: false,
+    category: "warning",
+    pointsDelta: -10,
+    content: "Official warning: missed two consecutive committee syncs.",
+    isPublished: true,
     isWarning: true,
     createdByName: "HR Admin",
     createdAt: "2026-10-18T16:00:00Z",
   },
+  {
+    id: "fb-3",
+    membershipId: "mem-2",
+    memberName: "Ziad Hany",
+    memberEmail: "ziad@cusb.org",
+    committeeName: "Web Development",
+    category: "internal_note",
+    pointsDelta: 0,
+    content: "Internal HR follow-up note scheduled for next week.",
+    isPublished: false,
+    isWarning: true,
+    createdByName: "HR Officer",
+    createdAt: "2026-10-19T12:00:00Z",
+  },
 ];
 
 describe("HrFeedbackView", () => {
-  it("renders feedback list with recognition and private warning badges", () => {
+  it("renders feedback items with category badges, visibility clarity, and adjacent points bonus/deduction badges", () => {
     render(
       <HrFeedbackView feedbackList={mockFeedback} members={mockMembers} />
     );
@@ -59,65 +78,111 @@ describe("HrFeedbackView", () => {
       screen.getByRole("heading", { name: /feedback & warnings/i })
     ).toBeInTheDocument();
     expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
-    expect(screen.getByText("Ziad Hany")).toBeInTheDocument();
-    expect(screen.getByText(/high quality machine learning slides/i)).toBeInTheDocument();
-    expect(screen.getByText(/missed two consecutive committee syncs/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Ziad Hany").length).toBe(2);
 
-    // Badges
-    expect(screen.getAllByText("Public Recognition")).toHaveLength(2);
-    expect(screen.getByText("HR Warning (Private)")).toBeInTheDocument();
-  });
+    // Adjacent points badges
+    expect(screen.getByText("+15 pts")).toBeInTheDocument();
+    expect(screen.getByText("-10 pts")).toBeInTheDocument();
 
-  it("filters items by tab: all, public recognition, and internal warnings", async () => {
-    const user = userEvent.setup();
-    render(
-      <HrFeedbackView feedbackList={mockFeedback} members={mockMembers} />
-    );
-
-    // Filter to Warnings
-    const warningsTab = screen.getByRole("button", { name: /warnings only/i });
-    await user.click(warningsTab);
-
-    expect(screen.getByText("Ziad Hany")).toBeInTheDocument();
-    expect(screen.queryByText("Salma El-Sayed")).not.toBeInTheDocument();
-
-    // Filter to Public Recognition
-    const publicTab = screen.getByRole("button", { name: /public recognition/i });
-    await user.click(publicTab);
-
-    expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
-    expect(screen.queryByText("Ziad Hany")).not.toBeInTheDocument();
-  });
-
-  it("opens modal and logs a new private HR warning", async () => {
-    const user = userEvent.setup();
-    render(
-      <HrFeedbackView feedbackList={mockFeedback} members={mockMembers} />
-    );
-
-    const addBtn = screen.getByRole("button", { name: /add note \/ warning/i });
-    await user.click(addBtn);
-
+    // Clear visibility explanation (who can & cannot see hidden feedback)
     expect(
-      screen.getByRole("heading", { name: /log feedback or hr warning/i })
+      screen.getByText(/never visible to the member, attendees, or committee heads/i)
     ).toBeInTheDocument();
+  });
 
-    const memberSelect = screen.getByLabelText(/select member/i);
-    await user.selectOptions(memberSelect, "mem-1");
+  it("filters items by Sent to Member, Official Warnings, and Hidden HR Notes", async () => {
+    const user = userEvent.setup();
+    render(
+      <HrFeedbackView feedbackList={mockFeedback} members={mockMembers} />
+    );
 
-    // Select Warning radio
-    const warningRadio = screen.getByLabelText(/internal hr warning \(private\)/i);
-    await user.click(warningRadio);
-
-    const contentInput = screen.getByLabelText(/feedback content/i);
-    await user.type(contentInput, "First formal attendance warning issued via email.");
-
-    const submitBtn = screen.getByRole("button", { name: /save entry/i });
-    await user.click(submitBtn);
-
+    await user.click(screen.getByRole("button", { name: /official warnings/i }));
     expect(
-      screen.queryByRole("heading", { name: /log feedback or hr warning/i })
+      screen.getByText(/missed two consecutive committee syncs/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/high quality machine learning slides/i)
     ).not.toBeInTheDocument();
-    expect(screen.getByText("First formal attendance warning issued via email.")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/internal hr follow-up note/i)
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /hidden hr notes/i }));
+    expect(
+      screen.getByText(/internal hr follow-up note/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/missed two consecutive committee syncs/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses searchable MemberCombobox, defaults bonus/deduction to 0, and submits an Official Warning with deduction", async () => {
+    const user = userEvent.setup();
+    const onAddFeedback = vi
+      .fn()
+      .mockResolvedValue({ ok: true, id: "fb-new-1" });
+
+    render(
+      <HrFeedbackView
+        feedbackList={mockFeedback}
+        members={mockMembers}
+        feedbackCaps={{ maxBonusPoints: 30, maxDeductionPoints: 25 }}
+        canAwardPoints={true}
+        onAddFeedback={onAddFeedback}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /add feedback/i }));
+
+    // Searchable combobox instead of plain <select>
+    const combo = screen.getByRole("combobox");
+    await user.click(combo);
+    await user.type(combo, "Salma");
+    await user.click(screen.getByRole("option", { name: /salma el-sayed/i }));
+
+    // Default bonus/deduction MUST always start at 0
+    const pointsInput = screen.getByLabelText(/bonus \/ deduction/i);
+    expect(pointsInput).toHaveValue(0);
+
+    // Choose Official Warning (sent to warned member)
+    await user.click(screen.getByRole("radio", { name: /official warning/i }));
+
+    // Enter -15 deduction
+    await user.clear(pointsInput);
+    await user.type(pointsInput, "-15");
+
+    await user.type(
+      screen.getByLabelText(/feedback content/i),
+      "Formal warning for repeated unexcused absences."
+    );
+
+    await user.click(screen.getByRole("button", { name: /save entry/i }));
+
+    expect(onAddFeedback).toHaveBeenCalledWith({
+      membershipId: "mem-1",
+      category: "warning",
+      content: "Formal warning for repeated unexcused absences.",
+      pointsDelta: -15,
+    });
+    expect(
+      screen.getByText("Formal warning for repeated unexcused absences.")
+    ).toBeInTheDocument();
+    expect(screen.getByText("-15 pts")).toBeInTheDocument();
+  });
+
+  it("hides bonus/deduction input for Directors (canAwardPoints=false)", async () => {
+    const user = userEvent.setup();
+    render(
+      <HrFeedbackView
+        feedbackList={mockFeedback}
+        members={mockMembers}
+        canAwardPoints={false}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /add feedback/i }));
+    expect(
+      screen.queryByLabelText(/bonus \/ deduction/i)
+    ).not.toBeInTheDocument();
   });
 });

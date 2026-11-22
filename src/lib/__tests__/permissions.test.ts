@@ -8,8 +8,11 @@ import {
   canPublishLeaderboard,
   canManageCommitteeAttendance,
   canManageCommitteeTasks,
+  canManageWorkItem,
   canAwardBonus,
   canGiveFeedback,
+  canIssueFeedbackWarnings,
+  canViewHiddenFeedback,
   canManageCommitteeSessions,
   canViewAllCommittees,
   canAccessHrModule,
@@ -158,11 +161,26 @@ describe("RBAC Permissions Engine", () => {
       expect(canManageCommitteeTasks(hrMemberAiUser, commAi)).toBe(true);
       expect(canManageCommitteeTasks(hrMemberAiUser, commWeb)).toBe(false);
 
-      // Feedback
+      // Feedback: committee head for own committee; hr_member for tracked committee
       expect(canGiveFeedback(headAiUser, commAi)).toBe(true);
       expect(canGiveFeedback(headAiUser, commWeb)).toBe(false);
-      expect(canGiveFeedback(hrMemberAiUser, commAi)).toBe(false);
+      expect(canGiveFeedback(hrMemberAiUser, commAi)).toBe(true);
+      expect(canGiveFeedback(hrMemberAiUser, commWeb)).toBe(false);
       expect(canGiveFeedback(memberAiUser, commAi)).toBe(false);
+
+      // Official warnings & hidden notes allowed for master, director, hr_admin, hr_member (not committee_head)
+      expect(canIssueFeedbackWarnings("master_admin")).toBe(true);
+      expect(canIssueFeedbackWarnings("director")).toBe(true);
+      expect(canIssueFeedbackWarnings("hr_admin")).toBe(true);
+      expect(canIssueFeedbackWarnings("hr_member")).toBe(true);
+      expect(canIssueFeedbackWarnings("committee_head")).toBe(false);
+
+      expect(canViewHiddenFeedback("master_admin")).toBe(true);
+      expect(canViewHiddenFeedback("director")).toBe(true);
+      expect(canViewHiddenFeedback("hr_admin")).toBe(true);
+      expect(canViewHiddenFeedback("hr_member")).toBe(true);
+      expect(canViewHiddenFeedback("committee_head")).toBe(false);
+      expect(canViewHiddenFeedback("member")).toBe(false);
     });
 
     it("allows HR members to create events/sessions for their assigned committee", () => {
@@ -172,9 +190,12 @@ describe("RBAC Permissions Engine", () => {
   });
 
   describe("Bonus / Points Override Permissions", () => {
-    it("allows master and hr admin everywhere, and allows HR member and committee head for their committee", () => {
+    it("allows master and hr admin everywhere, HR member and committee head for their committee, and blocks directors from editing ledger", () => {
       expect(canAwardBonus(masterUser, commAi)).toBe(true);
       expect(canAwardBonus(hrAdminUser, commWeb)).toBe(true);
+
+      // Director has read-only ledger access and CANNOT edit/award points
+      expect(canAwardBonus(directorUser, commAi)).toBe(false);
 
       // HR member can award bonus to members of their committee
       expect(canAwardBonus(hrMemberAiUser, commAi)).toBe(true);
@@ -191,10 +212,10 @@ describe("RBAC Permissions Engine", () => {
 
   describe("HR Operations Portal Access by Module", () => {
     it("determines module visibility for each role in /hr", () => {
-      // Seasons module (ONLY master_admin)
+      // Seasons module (master_admin for lifecycle + settings; hr_admin for settings)
       expect(canAccessHrModule("master_admin", "seasons")).toBe(true);
+      expect(canAccessHrModule("hr_admin", "seasons")).toBe(true);
       expect(canAccessHrModule("director", "seasons")).toBe(false);
-      expect(canAccessHrModule("hr_admin", "seasons")).toBe(false);
       expect(canAccessHrModule("hr_member", "seasons")).toBe(false);
       expect(canAccessHrModule("committee_head", "seasons")).toBe(false);
 
@@ -211,17 +232,17 @@ describe("RBAC Permissions Engine", () => {
       expect(canAccessHrModule("committee_head", "tasks")).toBe(true);
       expect(canAccessHrModule("hr_member", "tasks")).toBe(true);
 
-      // Ledger / Bonus module
+      // Ledger / Bonus module (director has read-only access)
       expect(canAccessHrModule("director", "ledger")).toBe(true);
       expect(canAccessHrModule("hr_admin", "ledger")).toBe(true);
       expect(canAccessHrModule("hr_member", "ledger")).toBe(true);
       expect(canAccessHrModule("committee_head", "ledger")).toBe(true);
 
-      // Feedback module
+      // Feedback module (now includes hr_member)
       expect(canAccessHrModule("director", "feedback")).toBe(true);
       expect(canAccessHrModule("hr_admin", "feedback")).toBe(true);
+      expect(canAccessHrModule("hr_member", "feedback")).toBe(true);
       expect(canAccessHrModule("committee_head", "feedback")).toBe(true);
-      expect(canAccessHrModule("hr_member", "feedback")).toBe(false);
 
       // Publishing module
       expect(canAccessHrModule("master_admin", "publishing")).toBe(true);
@@ -233,29 +254,51 @@ describe("RBAC Permissions Engine", () => {
   });
 
   describe("Task Delegation Hierarchy (Director, Head, HR Admin, HR Member)", () => {
-    it("allows directors to assign tasks to heads and HR admins, and heads to see them", () => {
+    it("allows directors to assign assignments to heads, HR admins, and members — but never grade/manage tasks", () => {
       // Director assigning to Committee Head
-      expect(canAssignTaskToRole("director", "committee_head")).toBe(true);
-      expect(canAssignTask(directorUser, headAiUser)).toBe(true);
+      expect(canAssignTaskToRole("director", "committee_head", "assignment")).toBe(true);
+      expect(canAssignTask(directorUser, headAiUser, "assignment")).toBe(true);
       expect(canReceiveTasksFromRole("committee_head", "director")).toBe(true);
 
-      // Director assigning to HR Admin (HR Admin extends head)
-      expect(canAssignTaskToRole("director", "hr_admin")).toBe(true);
-      expect(canAssignTask(directorUser, hrAdminUser)).toBe(true);
+      // Director assigning to HR Admin
+      expect(canAssignTaskToRole("director", "hr_admin", "assignment")).toBe(true);
+      expect(canAssignTask(directorUser, hrAdminUser, "assignment")).toBe(true);
       expect(canReceiveTasksFromRole("hr_admin", "director")).toBe(true);
 
-      // Director cannot assign tasks directly to regular members
-      expect(canAssignTaskToRole("director", "member")).toBe(false);
-      expect(canAssignTask(directorUser, memberAiUser)).toBe(false);
+      // Director CAN assign assignments directly to regular members too
+      expect(canAssignTaskToRole("director", "member", "assignment")).toBe(true);
+      expect(canAssignTask(directorUser, memberAiUser, "assignment")).toBe(true);
+
+      // Director CANNOT grade or toggle HR tasks
+      expect(canManageWorkItem(directorUser, "assignment", commAi)).toBe(true);
+      expect(canManageWorkItem(directorUser, "task", commAi)).toBe(false);
     });
 
-    it("allows HR admin to assign tasks to HR members, and HR members to receive them", () => {
-      expect(canAssignTaskToRole("hr_admin", "hr_member")).toBe(true);
-      expect(canAssignTask(hrAdminUser, hrMemberAiUser)).toBe(true);
-      expect(canReceiveTasksFromRole("hr_member", "hr_admin")).toBe(true);
+    it("restricts HR admin assignments to HR committee (hr_member) while allowing HR admin tasks to everyone", () => {
+      // Assignments: HR committee (hr_member) only
+      expect(canAssignTaskToRole("hr_admin", "hr_member", "assignment")).toBe(true);
+      expect(canAssignTask(hrAdminUser, hrMemberAiUser, "assignment")).toBe(true);
+      expect(canAssignTaskToRole("hr_admin", "member", "assignment")).toBe(false);
+      expect(canAssignTaskToRole("hr_admin", "committee_head", "assignment")).toBe(false);
+      expect(canAssignTask(hrAdminUser, memberAiUser, "assignment")).toBe(false);
 
-      // HR admin cannot assign tasks directly to regular members outside HR
-      expect(canAssignTaskToRole("hr_admin", "member")).toBe(false);
+      // Tasks: everyone (members, heads, hr_members)
+      expect(canAssignTaskToRole("hr_admin", "hr_member", "task")).toBe(true);
+      expect(canAssignTaskToRole("hr_admin", "member", "task")).toBe(true);
+      expect(canAssignTaskToRole("hr_admin", "committee_head", "task")).toBe(true);
+      expect(canAssignTask(hrAdminUser, headAiUser, "task")).toBe(true);
+      expect(canAssignTask(hrAdminUser, memberAiUser, "task")).toBe(true);
+      expect(canReceiveTasksFromRole("hr_member", "hr_admin")).toBe(true);
+    });
+
+    it("separates work-item management by role (head=assignments, hr_member=tasks)", () => {
+      expect(canManageWorkItem(headAiUser, "assignment", commAi)).toBe(true);
+      expect(canManageWorkItem(headAiUser, "task", commAi)).toBe(false);
+      expect(canManageWorkItem(hrMemberAiUser, "task", commAi)).toBe(true);
+      expect(canManageWorkItem(hrMemberAiUser, "assignment", commAi)).toBe(false);
+      expect(canManageWorkItem(hrAdminUser, "task", commWeb)).toBe(true);
+      expect(canManageWorkItem(hrAdminUser, "assignment", "comm-hr")).toBe(true);
+      expect(canManageWorkItem(hrAdminUser, "assignment", commWeb)).toBe(false);
     });
 
     it("allows committee head to assign tasks to members in their committee", () => {

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canManageCommitteeSessions,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/permissions";
 import { normalizeSeasonSettings } from "@/lib/season-settings";
 import { upsertScoreLedgerEntry } from "@/db/ledger";
+import { deduplicateRecipientsByPerson } from "./tasks.service";
 import {
   assertMonthNotPublished,
   formatMonthInCairo,
@@ -17,6 +18,112 @@ import {
   resolveActiveSeason,
   sanitizeDbError,
 } from "./helpers";
+
+export type SessionAttendanceStatus = "on_time" | "late" | "excused" | "absent";
+
+export interface SessionRosterRow {
+  membershipId: string;
+  fullName: string;
+  email: string;
+  committeeName: string;
+  role: MembershipRole;
+  status: SessionAttendanceStatus;
+  pointsAwarded: number;
+  checkedInAt: string | null;
+  overrideReason: string | null;
+}
+
+/**
+ * Pure source-of-truth check for whether a session's check-in window is currently live.
+ * Returns false immediately once `checkinEndsAt` / `checkinExpiresAt` has passed,
+ * even if the raw database `checkin_open` boolean has not been lazily closed yet.
+ */
+export function isSessionCheckinLive(
+  session: {
+    checkinOpen: boolean;
+    checkinEndsAt?: Date | string | null;
+    checkinExpiresAt?: Date | string | null;
+  },
+  now: Date = new Date()
+): boolean {
+  if (!session.checkinOpen) return false;
+  const deadlineRaw = session.checkinEndsAt ?? session.checkinExpiresAt;
+  if (!deadlineRaw) return true;
+  const deadline =
+    deadlineRaw instanceof Date ? deadlineRaw : new Date(deadlineRaw);
+  if (Number.isNaN(deadline.getTime())) return true;
+  return now.getTime() <= deadline.getTime();
+}
+
+/**
+ * Deterministically maps a manual HR attendance status to DB fields and points.
+ */
+export function computePointsForAttendanceStatus(input: {
+  status: SessionAttendanceStatus;
+  basePoints: number;
+  punctualityBonus: number;
+  isAttendee: boolean;
+}): {
+  dbStatus: "present" | "excused" | "absent";
+  isPunctual: boolean;
+  pointsAwarded: number;
+} {
+  const { status, basePoints, punctualityBonus, isAttendee } = input;
+  switch (status) {
+    case "on_time":
+      return {
+        dbStatus: "present",
+        isPunctual: true,
+        pointsAwarded: isAttendee ? 0 : basePoints + punctualityBonus,
+      };
+    case "late":
+      return {
+        dbStatus: "present",
+        isPunctual: false,
+        pointsAwarded: isAttendee ? 0 : basePoints,
+      };
+    case "excused":
+      return {
+        dbStatus: "excused",
+        isPunctual: false,
+        pointsAwarded: 0,
+      };
+    case "absent":
+    default:
+      return {
+        dbStatus: "absent",
+        isPunctual: false,
+        pointsAwarded: 0,
+      };
+  }
+}
+
+/**
+ * Lazily closes any expired live check-ins for a season so DB state stays consistent
+ * without needing an external cron daemon.
+ */
+export async function closeExpiredSessionsForSeason(
+  seasonId: string,
+  now: Date = new Date()
+): Promise<void> {
+  try {
+    await db
+      .update(schema.branchSessions)
+      .set({
+        checkinOpen: false,
+        checkinCode: null,
+      })
+      .where(
+        and(
+          eq(schema.branchSessions.seasonId, seasonId),
+          eq(schema.branchSessions.checkinOpen, true),
+          sql`COALESCE(${schema.branchSessions.checkinEndsAt}, ${schema.branchSessions.checkinExpiresAt}) < ${now}`
+        )
+      );
+  } catch {
+    // Non-fatal lazy cleanup
+  }
+}
 
 function generate6DigitCode(): string {
   return crypto.randomInt(100000, 1000000).toString();
@@ -238,18 +345,15 @@ export async function toggleSessionCheckinAsActor(
 
 export async function rotateSessionCheckinCodeAsActor(
   sessionId: string,
-  windowMinutes: number,
+  _windowMinutes: number,
   actor: AttendanceActor
 ): Promise<{
   ok: boolean;
+  expired?: boolean;
   error?: string;
   checkinCode?: string | null;
   checkinExpiresAt?: Date | null;
 }> {
-  if (!Number.isFinite(windowMinutes) || windowMinutes < 1 || windowMinutes > 720) {
-    return { ok: false, error: "Check-in window must be between 1 and 720 minutes." };
-  }
-
   try {
     const [session] = await db
       .select()
@@ -275,21 +379,27 @@ export async function rotateSessionCheckinCodeAsActor(
       };
     }
 
-    if (!session.checkinOpen) {
-      return { ok: false, error: "Session check-in is not currently open." };
+    const now = new Date();
+    if (!isSessionCheckinLive(session, now)) {
+      if (session.checkinOpen) {
+        await db
+          .update(schema.branchSessions)
+          .set({ checkinOpen: false, checkinCode: null })
+          .where(eq(schema.branchSessions.id, sessionId));
+      }
+      return {
+        ok: false,
+        expired: true,
+        error: "This check-in window has expired and was automatically closed.",
+      };
     }
 
+    // Only rotate the 6-digit code — NEVER extend checkinEndsAt / checkinExpiresAt!
     const code = generate6DigitCode();
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + windowMinutes * 60_000);
-
     const [updated] = await db
       .update(schema.branchSessions)
       .set({
         checkinCode: code,
-        checkinStartsAt: now,
-        checkinEndsAt: expiresAt,
-        checkinExpiresAt: expiresAt,
       })
       .where(eq(schema.branchSessions.id, sessionId))
       .returning();
@@ -297,12 +407,344 @@ export async function rotateSessionCheckinCodeAsActor(
     return {
       ok: true,
       checkinCode: updated.checkinCode,
-      checkinExpiresAt: updated.checkinExpiresAt,
+      checkinExpiresAt: updated.checkinEndsAt ?? updated.checkinExpiresAt,
     };
   } catch (err: unknown) {
     return {
       ok: false,
       error: sanitizeDbError(err, "Failed to rotate check-in code."),
+    };
+  }
+}
+
+export async function extendSessionCheckinWindowAsActor(
+  sessionId: string,
+  extraMinutes: number,
+  actor: AttendanceActor
+): Promise<CreateSessionResult> {
+  if (!Number.isFinite(extraMinutes) || extraMinutes < 1 || extraMinutes > 240) {
+    return { ok: false, error: "Extension must be between 1 and 240 minutes." };
+  }
+
+  try {
+    const [session] = await db
+      .select()
+      .from(schema.branchSessions)
+      .where(eq(schema.branchSessions.id, sessionId))
+      .limit(1);
+    if (!session) return { ok: false, error: "Session not found." };
+
+    const seasonRes = await resolveActiveSeason(session.seasonId);
+    if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
+
+    const permCtx = {
+      id: actor.profile.id,
+      email: actor.profile.email ?? "",
+      role: actor.profile.role,
+      committeeId: actor.profile.committeeId,
+      trackedCommitteeId: actor.profile.trackedCommitteeId,
+    };
+    if (!canManageCommitteeSessions(permCtx, session.committeeId)) {
+      return {
+        ok: false,
+        error: "Unauthorized: you cannot extend check-in for this session.",
+      };
+    }
+
+    const now = new Date();
+    const currentEnd = session.checkinEndsAt ?? session.checkinExpiresAt;
+    const baseTime =
+      currentEnd && currentEnd.getTime() > now.getTime()
+        ? currentEnd.getTime()
+        : now.getTime();
+    const nextEnd = new Date(baseTime + extraMinutes * 60_000);
+    const code = session.checkinCode ?? generate6DigitCode();
+
+    const [updated] = await db
+      .update(schema.branchSessions)
+      .set({
+        checkinOpen: true,
+        checkinCode: code,
+        checkinStartsAt: session.checkinStartsAt ?? now,
+        checkinEndsAt: nextEnd,
+        checkinExpiresAt: nextEnd,
+      })
+      .where(eq(schema.branchSessions.id, sessionId))
+      .returning();
+
+    return {
+      ok: true,
+      checkinOpen: updated.checkinOpen,
+      checkinCode: updated.checkinCode,
+      checkinExpiresAt: updated.checkinEndsAt ?? updated.checkinExpiresAt,
+    };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to extend check-in window."),
+    };
+  }
+}
+
+export async function getSessionAttendanceRosterAsActor(
+  sessionId: string,
+  actor: AttendanceActor
+): Promise<{
+  ok: boolean;
+  error?: string;
+  roster?: SessionRosterRow[];
+}> {
+  try {
+    const [session] = await db
+      .select()
+      .from(schema.branchSessions)
+      .where(eq(schema.branchSessions.id, sessionId))
+      .limit(1);
+    if (!session) return { ok: false, error: "Session not found." };
+
+    const permCtx = {
+      id: actor.profile.id,
+      email: actor.profile.email ?? "",
+      role: actor.profile.role,
+      committeeId: actor.profile.committeeId,
+      trackedCommitteeId: actor.profile.trackedCommitteeId,
+    };
+    if (!canManageCommitteeSessions(permCtx, session.committeeId)) {
+      return {
+        ok: false,
+        error: "Unauthorized: you can only inspect attendance for your assigned committee.",
+      };
+    }
+
+    const [rawMembers, dbCommittees, existingRecords] = await Promise.all([
+      db
+        .select({
+          id: schema.rosterMemberships.id,
+          personId: schema.rosterMemberships.personId,
+          fullName: schema.persons.fullName,
+          email: schema.persons.email,
+          committeeId: schema.rosterMemberships.committeeId,
+          role: schema.rosterMemberships.role,
+        })
+        .from(schema.rosterMemberships)
+        .innerJoin(
+          schema.persons,
+          eq(schema.rosterMemberships.personId, schema.persons.id)
+        )
+        .where(
+          session.committeeId
+            ? and(
+                eq(schema.rosterMemberships.seasonId, session.seasonId),
+                eq(schema.rosterMemberships.committeeId, session.committeeId),
+                eq(schema.rosterMemberships.isActive, true),
+                eq(schema.persons.isActive, true),
+                ne(schema.rosterMemberships.role, "attendee")
+              )
+            : and(
+                eq(schema.rosterMemberships.seasonId, session.seasonId),
+                eq(schema.rosterMemberships.isActive, true),
+                eq(schema.persons.isActive, true),
+                ne(schema.rosterMemberships.role, "attendee")
+              )
+        )
+        .orderBy(asc(schema.persons.fullName)),
+      db
+        .select({ id: schema.committees.id, name: schema.committees.name })
+        .from(schema.committees)
+        .where(eq(schema.committees.seasonId, session.seasonId)),
+      db
+        .select()
+        .from(schema.attendanceRecords)
+        .where(eq(schema.attendanceRecords.sessionId, session.id)),
+    ]);
+
+    const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
+    const recordByMembership = new Map(
+      existingRecords.map((r) => [r.membershipId, r])
+    );
+
+    // Deduplicate branch-wide sessions by personId so each human appears once
+    const allowedIds = new Set(
+      deduplicateRecipientsByPerson(
+        rawMembers.map((m) => ({
+          id: m.id,
+          personId: m.personId,
+          role: m.role as MembershipRole,
+        }))
+      )
+    );
+    // Keep any membership that already has an attendance record for this session
+    for (const rec of existingRecords) {
+      allowedIds.add(rec.membershipId);
+    }
+
+    const roster: SessionRosterRow[] = rawMembers
+      .filter((m) => allowedIds.has(m.id))
+      .map((m) => {
+        const rec = recordByMembership.get(m.id);
+        let status: SessionAttendanceStatus = "absent";
+        if (rec) {
+          if (rec.status === "excused") {
+            status = "excused";
+          } else if (rec.status === "absent") {
+            status = "absent";
+          } else {
+            status = rec.isPunctual ? "on_time" : "late";
+          }
+        }
+        return {
+          membershipId: m.id,
+          fullName: m.fullName,
+          email: m.email,
+          committeeName: m.committeeId
+            ? commMap.get(m.committeeId) ?? "Unassigned"
+            : "Branch-wide",
+          role: m.role as MembershipRole,
+          status,
+          pointsAwarded: rec?.pointsAwarded ?? 0,
+          checkedInAt: rec?.checkedInAt ? rec.checkedInAt.toISOString() : null,
+          overrideReason: rec?.overrideReason ?? null,
+        };
+      });
+
+    return { ok: true, roster };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to load session attendance roster."),
+    };
+  }
+}
+
+export async function setSessionMemberAttendanceAsActor(
+  input: {
+    sessionId: string;
+    membershipId: string;
+    status: SessionAttendanceStatus;
+    overrideReason?: string;
+  },
+  actor: AttendanceActor
+): Promise<{
+  ok: boolean;
+  error?: string;
+  pointsAwarded?: number;
+  status?: SessionAttendanceStatus;
+}> {
+  try {
+    const [session] = await db
+      .select()
+      .from(schema.branchSessions)
+      .where(eq(schema.branchSessions.id, input.sessionId))
+      .limit(1);
+    if (!session) return { ok: false, error: "Session not found." };
+
+    const seasonRes = await resolveActiveSeason(session.seasonId);
+    if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
+
+    const permCtx = {
+      id: actor.profile.id,
+      email: actor.profile.email ?? "",
+      role: actor.profile.role,
+      committeeId: actor.profile.committeeId,
+      trackedCommitteeId: actor.profile.trackedCommitteeId,
+    };
+    if (!canManageCommitteeSessions(permCtx, session.committeeId)) {
+      return {
+        ok: false,
+        error: "Unauthorized: you can only edit attendance for your assigned committee.",
+      };
+    }
+
+    const [member] = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(
+        and(
+          eq(schema.rosterMemberships.id, input.membershipId),
+          eq(schema.rosterMemberships.seasonId, session.seasonId),
+          eq(schema.rosterMemberships.isActive, true)
+        )
+      )
+      .limit(1);
+    if (!member) {
+      return { ok: false, error: "Active member not found in this season." };
+    }
+
+    const isAttendee = member.role === "attendee";
+    const monthKey = formatMonthInCairo(session.startsAt);
+    if (!isAttendee) {
+      const monthGuard = await assertMonthNotPublished(
+        session.seasonId,
+        monthKey
+      );
+      if (!monthGuard.ok) return { ok: false, error: monthGuard.error };
+    }
+
+    const { dbStatus, isPunctual, pointsAwarded } =
+      computePointsForAttendanceStatus({
+        status: input.status,
+        basePoints: session.basePoints,
+        punctualityBonus: session.punctualityBonus,
+        isAttendee,
+      });
+
+    const reasonText =
+      input.overrideReason?.trim() || "Manual HR attendance update";
+
+    const [record] = await db
+      .insert(schema.attendanceRecords)
+      .values({
+        sessionId: session.id,
+        membershipId: member.id,
+        checkedInAt: new Date(),
+        status: dbStatus,
+        isPunctual,
+        pointsAwarded,
+        overrideReason: reasonText,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.attendanceRecords.sessionId,
+          schema.attendanceRecords.membershipId,
+        ],
+        set: {
+          status: dbStatus,
+          isPunctual,
+          pointsAwarded,
+          overrideReason: reasonText,
+        },
+      })
+      .returning();
+
+    if (!isAttendee) {
+      const statusLabel =
+        input.status === "on_time"
+          ? "On Time"
+          : input.status === "late"
+            ? "Late"
+            : input.status === "excused"
+              ? "Excused"
+              : "Absent";
+
+      await upsertScoreLedgerEntry(db, {
+        seasonId: session.seasonId,
+        membershipId: member.id,
+        month: monthKey,
+        sourceType: "attendance",
+        sourceId: record.id,
+        postingScope: session.committeeId ? "committee" : "open",
+        committeeId: session.committeeId,
+        points: pointsAwarded,
+        reason: `Attendance: ${session.title} (${statusLabel})`,
+        createdBy: actor.profile.id,
+      });
+    }
+
+    return { ok: true, pointsAwarded, status: input.status };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to update attendance status."),
     };
   }
 }

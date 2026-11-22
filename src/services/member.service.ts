@@ -40,6 +40,8 @@ function formatAuthorRoleLabel(role?: string | null): string {
       return "Chapter Director";
     case "hr_admin":
       return "HR Lead";
+    case "hr_member":
+      return "HR Officer";
     case "committee_head":
       return "Committee Head";
     default:
@@ -515,16 +517,33 @@ export async function getMemberAttendance(
       .orderBy(desc(schema.branchSessions.startsAt));
 
     if (records.length > 0) {
-      return records.map(({ record, session }) => ({
-        id: record.id,
-        month: session.startsAt.toISOString().slice(0, 7) as MonthKey,
-        title: session.title,
-        date: session.startsAt.toISOString().slice(0, 10),
-        sessionType: "workshop" as const,
-        status: "attended" as const,
-        arrival: record.isPunctual ? ("on_time" as const) : ("late" as const),
-        bonusPoints: record.pointsAwarded,
-      }));
+      return records.map(({ record, session }) => {
+        const status: MemberAttendanceRecord["status"] =
+          record.status === "excused"
+            ? "excused"
+            : record.status === "absent"
+              ? "absent"
+              : "attended";
+        return {
+          id: record.id,
+          month: session.startsAt.toISOString().slice(0, 7) as MonthKey,
+          title: session.title,
+          date: session.startsAt.toISOString().slice(0, 10),
+          sessionType: "workshop" as const,
+          status,
+          arrival:
+            status === "attended"
+              ? record.isPunctual
+                ? ("on_time" as const)
+                : ("late" as const)
+              : undefined,
+          excuseReason:
+            status === "excused"
+              ? (record.overrideReason ?? undefined)
+              : undefined,
+          bonusPoints: record.pointsAwarded,
+        };
+      });
     }
   } catch {
     // Graceful fallback
@@ -556,6 +575,10 @@ export async function getMemberTasks(memberId: string): Promise<MemberTask[]> {
           : new Date().toISOString().slice(0, 7)) as MonthKey,
         title: task.title,
         workType: task.workType === "task" ? ("task" as const) : ("assignment" as const),
+        completionMode:
+          task.completionMode === "hr_only"
+            ? ("hr_only" as const)
+            : ("self_report" as const),
         status: submission.gradedAt
           ? ("completed" as const)
           : submission.submittedAt
@@ -661,14 +684,17 @@ export async function getMemberFeedback(
     const scope = await resolvePersonSeasonScope(memberId);
     const membershipIds = scope?.membershipIds ?? [memberId];
 
+    // Data-layer privacy: hidden HR notes (isPublished === false) are ALWAYS
+    // filtered at the SQL query layer and never returned to members/attendees.
+    // Published Official Warnings (isPublished === true, category === "warning")
+    // ARE delivered to the warned member.
     const feedbackRows = await db
       .select()
       .from(schema.hrFeedback)
       .where(
         and(
           inArray(schema.hrFeedback.membershipId, membershipIds),
-          eq(schema.hrFeedback.isPublished, true),
-          eq(schema.hrFeedback.isWarning, false)
+          eq(schema.hrFeedback.isPublished, true)
         )
       )
       .orderBy(desc(schema.hrFeedback.createdAt));
@@ -696,17 +722,29 @@ export async function getMemberFeedback(
       }
     }
 
-    return feedbackRows.map((f) => ({
-      id: f.id,
-      month: f.createdAt.toISOString().slice(0, 7) as MonthKey,
-      publishedAt: f.createdAt.toISOString().slice(0, 10),
-      authorRole: formatAuthorRoleLabel(
-        f.createdBy ? authorRoleMap.get(f.createdBy) : null
-      ),
-      reviewType: "recognition" as const,
-      message: f.content,
-      visibility: "published" as const,
-    }));
+    return feedbackRows.map((f) => {
+      const reviewType: PublishedFeedback["reviewType"] =
+        f.category === "warning" || f.isWarning
+          ? "warning"
+          : f.category === "excused_absence"
+            ? "excused_absence"
+            : f.category === "other"
+              ? "other"
+              : "recognition";
+
+      return {
+        id: f.id,
+        month: f.createdAt.toISOString().slice(0, 7) as MonthKey,
+        publishedAt: f.createdAt.toISOString().slice(0, 10),
+        authorRole: formatAuthorRoleLabel(
+          f.createdBy ? authorRoleMap.get(f.createdBy) : null
+        ),
+        reviewType,
+        message: f.content,
+        pointsDelta: f.pointsDelta ?? 0,
+        visibility: "published" as const,
+      };
+    });
   } catch {
     // Graceful fallback
   }

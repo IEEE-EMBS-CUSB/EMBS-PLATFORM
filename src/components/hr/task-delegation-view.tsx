@@ -5,10 +5,11 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock,
+  Lock,
   Send,
+  User,
   UserCheck,
   Users,
-  User,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,11 @@ import {
   getDefaultWorkTypeForRole,
   type WorkItemType,
 } from "@/lib/permissions";
+import {
+  DEFAULT_SEASON_SETTINGS,
+  type SeasonTaskSettings,
+  type TaskCompletionMode,
+} from "@/lib/season-settings";
 import {
   createTaskAction,
   type TaskTargetGroup,
@@ -54,6 +60,7 @@ export interface CreateTaskPayload {
   dueAt: string;
   maxPoints: number;
   workType: WorkItemType;
+  completionMode?: TaskCompletionMode;
   targetType?: TaskTargetType;
   targetGroup?: TaskTargetGroup;
   targetCommitteeId?: string | null;
@@ -69,10 +76,65 @@ interface TaskDelegationViewProps {
   currentUserId: string;
   currentUserCommitteeId?: string | null;
   defaultMaxPoints?: number;
+  taskDefaults?: SeasonTaskSettings;
   assignedToMe?: AssignedTaskItem[];
   eligibleMembers?: EligibleAssignee[];
   committees?: CommitteeOption[];
   onCreateTask?: (payload: CreateTaskPayload) => void | Promise<void>;
+}
+
+interface TargetGroupOption {
+  value: TaskTargetGroup;
+  label: string;
+}
+
+function getTargetGroupOptions(
+  role: MembershipRole,
+  workType: WorkItemType
+): TargetGroupOption[] {
+  if (role === "master_admin") {
+    return [
+      { value: "everyone", label: "Everyone (All Chapter Members)" },
+      { value: "all_heads", label: "All Committee Heads" },
+      { value: "all_members", label: "All Regular Members" },
+      { value: "all_hr_members", label: "HR Committee (All HR Officers)" },
+      { value: "committee_all", label: "Committee: All (Heads & Members)" },
+      { value: "committee_heads", label: "Committee: Heads Only" },
+      { value: "committee_members", label: "Committee: Members Only" },
+    ];
+  }
+
+  if (role === "director") {
+    return [
+      { value: "all_heads", label: "All Committee Heads" },
+      { value: "all_members", label: "All Regular Members" },
+      { value: "everyone", label: "Everyone (Heads & Members in Scope)" },
+      { value: "committee_all", label: "Committee: All (Heads & Members)" },
+      { value: "committee_heads", label: "Committee: Heads Only" },
+      { value: "committee_members", label: "Committee: Members Only" },
+    ];
+  }
+
+  if (role === "hr_admin") {
+    if (workType === "assignment") {
+      return [
+        { value: "all_hr_members", label: "HR Committee (All HR Officers)" },
+      ];
+    }
+    return [
+      { value: "everyone", label: "Everyone (All Chapter Members)" },
+      { value: "all_heads", label: "All Committee Heads" },
+      { value: "all_members", label: "All Regular Members" },
+      { value: "all_hr_members", label: "HR Committee (All HR Officers)" },
+      { value: "committee_all", label: "Committee: All (Heads & Members)" },
+      { value: "committee_heads", label: "Committee: Heads Only" },
+      { value: "committee_members", label: "Committee: Members Only" },
+    ];
+  }
+
+  return [
+    { value: "committee_members", label: "All Members of My Committee" },
+  ];
 }
 
 export function TaskDelegationView({
@@ -80,6 +142,7 @@ export function TaskDelegationView({
   currentUserId,
   currentUserCommitteeId = null,
   defaultMaxPoints = 100,
+  taskDefaults = DEFAULT_SEASON_SETTINGS.tasks,
   assignedToMe = [],
   eligibleMembers = [],
   committees: initialCommittees,
@@ -102,21 +165,19 @@ export function TaskDelegationView({
   const isCommitteeScopedCreator =
     currentUserRole === "committee_head" || currentUserRole === "hr_member";
 
-  const [targetType, setTargetType] = useState<TaskTargetType>("specific_person");
+  const targetGroupOptions = useMemo(
+    () => getTargetGroupOptions(currentUserRole, effectiveWorkType),
+    [currentUserRole, effectiveWorkType]
+  );
+
+  const [targetType, setTargetType] =
+    useState<TaskTargetType>("specific_person");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [selectedAssignee, setSelectedAssignee] = useState("");
-  const defaultTargetGroup: TaskTargetGroup =
-    currentUserRole === "committee_head" || currentUserRole === "hr_member"
-      ? "committee_members"
-      : currentUserRole === "director"
-        ? "all_heads"
-        : currentUserRole === "hr_admin"
-          ? "all_members"
-          : "everyone";
-
-  const [targetGroup, setTargetGroup] =
-    useState<TaskTargetGroup>(defaultTargetGroup);
+  const [targetGroup, setTargetGroup] = useState<TaskTargetGroup>(
+    () => targetGroupOptions[0]?.value ?? "committee_members"
+  );
   const [targetCommitteeId, setTargetCommitteeId] = useState<string>(
     currentUserCommitteeId ?? ""
   );
@@ -125,10 +186,25 @@ export function TaskDelegationView({
     d.setDate(d.getDate() + 7);
     return d.toISOString().slice(0, 10);
   });
-  const [maxPoints, setMaxPoints] = useState(defaultMaxPoints);
+  const [maxPoints, setMaxPoints] = useState(() =>
+    effectiveWorkType === "task"
+      ? taskDefaults.defaultTaskPoints
+      : defaultMaxPoints
+  );
+  const [pointsManuallyEdited, setPointsManuallyEdited] = useState(false);
+  const [completionMode, setCompletionMode] = useState<TaskCompletionMode>(
+    taskDefaults.defaultCompletionMode
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const effectiveTargetGroup = useMemo<TaskTargetGroup>(() => {
+    if (targetGroupOptions.some((opt) => opt.value === targetGroup)) {
+      return targetGroup;
+    }
+    return targetGroupOptions[0]?.value ?? "committee_members";
+  }, [targetGroupOptions, targetGroup]);
 
   const committees = useMemo(() => {
     if (initialCommittees && initialCommittees.length > 0) {
@@ -157,10 +233,24 @@ export function TaskDelegationView({
           email: "",
           role: m.role,
           committeeId: m.committeeId ?? null,
-        }
+        },
+        effectiveWorkType
       )
     );
-  }, [eligibleMembers, currentUserRole, currentUserId, currentUserCommitteeId]);
+  }, [
+    eligibleMembers,
+    currentUserRole,
+    currentUserId,
+    currentUserCommitteeId,
+    effectiveWorkType,
+  ]);
+
+  const effectiveSelectedAssignee = useMemo(() => {
+    if (!selectedAssignee) return "";
+    return assignableMembers.some((m) => m.id === selectedAssignee)
+      ? selectedAssignee
+      : "";
+  }, [selectedAssignee, assignableMembers]);
 
   const canAssignAny = useMemo(() => {
     const roles: MembershipRole[] = [
@@ -170,8 +260,10 @@ export function TaskDelegationView({
       "hr_member",
       "member",
     ];
-    return roles.some((r) => canAssignTaskToRole(currentUserRole, r));
-  }, [currentUserRole]);
+    return roles.some((r) =>
+      canAssignTaskToRole(currentUserRole, r, effectiveWorkType)
+    );
+  }, [currentUserRole, effectiveWorkType]);
 
   const roleLabels: Record<MembershipRole, string> = {
     master_admin: "Master",
@@ -184,20 +276,20 @@ export function TaskDelegationView({
   };
 
   const isCommitteeGroup =
-    targetGroup === "committee_all" ||
-    targetGroup === "committee_heads" ||
-    targetGroup === "committee_members";
+    effectiveTargetGroup === "committee_all" ||
+    effectiveTargetGroup === "committee_heads" ||
+    effectiveTargetGroup === "committee_members";
 
   const formHeading = (() => {
     switch (currentUserRole) {
       case "director":
-        return "Delegate Assignments to Heads & HR Admin";
+        return "Delegate Assignments to Heads & Members";
       case "committee_head":
         return "Create Committee Assignments";
       case "hr_member":
         return "Assign Committee HR Tasks";
       case "hr_admin":
-        return "Create Tasks & Assignments";
+        return "Create Tasks & HR Assignments";
       case "master_admin":
         return "Create Chapter Tasks & Assignments";
       default:
@@ -205,11 +297,24 @@ export function TaskDelegationView({
     }
   })();
 
+  const handleSwitchWorkType = (nextType: WorkItemType) => {
+    setWorkType(nextType);
+    const nextOptions = getTargetGroupOptions(currentUserRole, nextType);
+    if (!nextOptions.some((opt) => opt.value === targetGroup)) {
+      setTargetGroup(nextOptions[0]?.value ?? "committee_members");
+    }
+    if (!pointsManuallyEdited) {
+      setMaxPoints(
+        nextType === "task" ? taskDefaults.defaultTaskPoints : defaultMaxPoints
+      );
+    }
+  };
+
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
-    if (targetType === "specific_person" && !selectedAssignee) return;
+    if (targetType === "specific_person" && !effectiveSelectedAssignee) return;
 
     if (
       targetType === "group" &&
@@ -230,10 +335,13 @@ export function TaskDelegationView({
       dueAt,
       maxPoints,
       workType: effectiveWorkType,
+      completionMode: effectiveWorkType === "task" ? completionMode : undefined,
       targetType,
       assignedToMembershipId:
-        targetType === "specific_person" ? selectedAssignee : undefined,
-      targetGroup: targetType === "group" ? targetGroup : undefined,
+        targetType === "specific_person"
+          ? effectiveSelectedAssignee
+          : undefined,
+      targetGroup: targetType === "group" ? effectiveTargetGroup : undefined,
       targetCommitteeId:
         targetType === "group" && isCommitteeGroup
           ? targetCommitteeId || currentUserCommitteeId || null
@@ -249,7 +357,9 @@ export function TaskDelegationView({
           targetType,
         });
         if (!res.ok) {
-          setErrorMessage(res.error || `Failed to create ${singularLabel.toLowerCase()}.`);
+          setErrorMessage(
+            res.error || `Failed to create ${singularLabel.toLowerCase()}.`
+          );
           return;
         }
       }
@@ -280,7 +390,8 @@ export function TaskDelegationView({
               Assigned to You
             </h2>
             <p className="text-xs text-muted-foreground">
-              Assignments from leadership and tasks from HR assigned to your role.
+              Assignments from leadership and tasks from HR assigned to your
+              role.
             </p>
           </div>
 
@@ -298,8 +409,8 @@ export function TaskDelegationView({
                         <Badge
                           className={
                             itemIsTask
-                              ? "bg-[#772583] text-white text-[11px] font-semibold"
-                              : "bg-[#00629b] text-white text-[11px] font-semibold"
+                              ? "bg-[#772583] text-[11px] font-semibold text-white"
+                              : "bg-[#00629b] text-[11px] font-semibold text-white"
                           }
                         >
                           {itemIsTask ? "Task" : "Assignment"}
@@ -311,7 +422,7 @@ export function TaskDelegationView({
                           {item.status.replace("_", " ")}
                         </Badge>
                       </div>
-                      <span className="font-mono text-xs font-bold text-[#002855] tabular-nums">
+                      <span className="font-mono text-xs font-bold tabular-nums text-[#002855]">
                         {item.maxPoints} pts
                       </span>
                     </div>
@@ -321,13 +432,20 @@ export function TaskDelegationView({
                   </CardHeader>
                   <CardContent className="space-y-2 pt-0 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1.5 text-foreground/85">
-                      <UserCheck className="h-3.5 w-3.5 text-[#00629b]" aria-hidden="true" />
+                      <UserCheck
+                        className="h-3.5 w-3.5 text-[#00629b]"
+                        aria-hidden="true"
+                      />
                       <span>
-                        Assigned by {roleLabels[item.assignerRole]} {item.assignedByName}
+                        Assigned by {roleLabels[item.assignerRole]}{" "}
+                        {item.assignedByName}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <Clock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                      <Clock
+                        className="h-3.5 w-3.5 text-muted-foreground"
+                        aria-hidden="true"
+                      />
                       <span>
                         Due {new Date(item.dueAt).toLocaleDateString()}
                       </span>
@@ -354,8 +472,8 @@ export function TaskDelegationView({
                     <Badge
                       className={
                         isAssignment
-                          ? "bg-[#ebf3f8] text-[#00629b] text-[11px] font-semibold"
-                          : "bg-[#f5edf7] text-[#5a1b63] text-[11px] font-semibold"
+                          ? "bg-[#ebf3f8] text-[11px] font-semibold text-[#00629b]"
+                          : "bg-[#f5edf7] text-[11px] font-semibold text-[#5a1b63]"
                       }
                     >
                       {singularLabel}s only
@@ -363,11 +481,15 @@ export function TaskDelegationView({
                   )}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {canChooseWorkType
-                    ? "Master Admin and HR Admin can issue both leadership Assignments and HR Tasks."
-                    : isAssignment
-                      ? "Director and Committee Head deliverables are recorded as Assignments."
-                      : "HR deliverables for your committee are recorded as Tasks."}
+                  {currentUserRole === "hr_admin"
+                    ? isAssignment
+                      ? "HR Admin assignments go to your HR committee officers. Switch to Task to assign chapter-wide tasks to everyone or heads-only."
+                      : "HR Tasks can be assigned chapter-wide to everyone, heads-only, members, or specific committees."
+                    : currentUserRole === "master_admin"
+                      ? "Master Admin can issue both rubric-graded Assignments and check-off HR Tasks."
+                      : isAssignment
+                        ? "Director and Committee Head deliverables are recorded as rubric-graded Assignments."
+                        : "HR deliverables for your tracked committee are recorded as check-off Tasks."}
                 </p>
               </div>
 
@@ -380,7 +502,7 @@ export function TaskDelegationView({
                   >
                     <button
                       type="button"
-                      onClick={() => setWorkType("assignment")}
+                      onClick={() => handleSwitchWorkType("assignment")}
                       className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
                         effectiveWorkType === "assignment"
                           ? "bg-[#00629b] text-white shadow-xs"
@@ -391,7 +513,7 @@ export function TaskDelegationView({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setWorkType("task")}
+                      onClick={() => handleSwitchWorkType("task")}
                       className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
                         effectiveWorkType === "task"
                           ? "bg-[#772583] text-white shadow-xs"
@@ -487,7 +609,7 @@ export function TaskDelegationView({
                         id="task-assignee-select"
                         aria-label="Assign to"
                         required
-                        value={selectedAssignee}
+                        value={effectiveSelectedAssignee}
                         onChange={(e) => setSelectedAssignee(e.target.value)}
                         className="block h-10 w-full appearance-none truncate rounded-lg border border-border bg-white py-2 pr-9 pl-3 text-xs leading-normal font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                       >
@@ -518,55 +640,17 @@ export function TaskDelegationView({
                         id="task-group-select"
                         aria-label="Target group"
                         required
-                        value={targetGroup}
+                        value={effectiveTargetGroup}
                         onChange={(e) =>
                           setTargetGroup(e.target.value as TaskTargetGroup)
                         }
                         className="block h-10 w-full appearance-none truncate rounded-lg border border-border bg-white py-2 pr-9 pl-3 text-xs leading-normal font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                       >
-                        {currentUserRole === "master_admin" ? (
-                          <>
-                            <option value="everyone">
-                              Everyone (All Chapter Members)
-                            </option>
-                            <option value="all_heads">All Committee Heads</option>
-                            <option value="all_members">
-                              All Regular Members
-                            </option>
-                            <option value="committee_all">
-                              Committee: All (Heads & Members)
-                            </option>
-                            <option value="committee_heads">
-                              Committee: Heads Only
-                            </option>
-                            <option value="committee_members">
-                              Committee: Members Only
-                            </option>
-                          </>
-                        ) : currentUserRole === "director" ? (
-                          <>
-                            <option value="all_heads">All Committee Heads</option>
-                            <option value="committee_heads">
-                              Committee: Heads Only
-                            </option>
-                          </>
-                        ) : currentUserRole === "hr_admin" ? (
-                          <>
-                            <option value="all_members">
-                              All Regular Members
-                            </option>
-                            <option value="committee_members">
-                              Committee: Members Only
-                            </option>
-                            <option value="committee_all">
-                              Committee: All (Heads & Members)
-                            </option>
-                          </>
-                        ) : (
-                          <option value="committee_members">
-                            All Members of My Committee
+                        {targetGroupOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
                           </option>
-                        )}
+                        ))}
                       </select>
                       <ChevronDown
                         className="pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
@@ -611,13 +695,62 @@ export function TaskDelegationView({
                   </div>
                 )}
 
+              {/* Task Completion Mode Selector (Self-Report vs HR-Only) */}
+              {!isAssignment && (
+                <div className="rounded-lg border border-border/80 bg-[#f8f9fb] p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-heading text-xs font-bold text-[#002855]">
+                        Task Completion Mode
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {completionMode === "hr_only"
+                          ? "HR-Only: only HR or the assigner can mark this task completed. Members see a read-only status."
+                          : "Self-Report: members can check off this task on their portal, or HR can toggle it."}
+                      </p>
+                    </div>
+                    <div
+                      role="group"
+                      aria-label="Task completion mode"
+                      className="inline-flex shrink-0 rounded-lg border border-border bg-white p-0.5"
+                    >
+                      <button
+                        type="button"
+                        aria-pressed={completionMode === "self_report"}
+                        onClick={() => setCompletionMode("self_report")}
+                        className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
+                          completionMode === "self_report"
+                            ? "bg-[#772583] text-white shadow-xs"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        Self-Report
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={completionMode === "hr_only"}
+                        onClick={() => setCompletionMode("hr_only")}
+                        className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
+                          completionMode === "hr_only"
+                            ? "bg-[#002855] text-white shadow-xs"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        <Lock className="h-3 w-3" aria-hidden="true" />
+                        HR-Only
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid gap-4 sm:grid-cols-4">
                 <div className="sm:col-span-2">
                   <label
                     htmlFor="task-desc-input"
                     className="block font-heading text-xs font-bold text-[#002855]"
                   >
-                    Details & Guidelines
+                    Details &amp; Guidelines
                   </label>
                   <Input
                     id="task-desc-input"
@@ -650,7 +783,7 @@ export function TaskDelegationView({
                     htmlFor="task-points-input"
                     className="block font-heading text-xs font-bold text-[#002855]"
                   >
-                    Max Points
+                    {isAssignment ? "Max Points" : "Task Points"}
                   </label>
                   <Input
                     id="task-points-input"
@@ -658,9 +791,10 @@ export function TaskDelegationView({
                     min={1}
                     max={500}
                     value={maxPoints}
-                    onChange={(e) =>
-                      setMaxPoints(parseInt(e.target.value, 10) || 100)
-                    }
+                    onChange={(e) => {
+                      setPointsManuallyEdited(true);
+                      setMaxPoints(parseInt(e.target.value, 10) || 15);
+                    }}
                     className="mt-1 h-10 text-sm"
                   />
                 </div>
@@ -672,7 +806,8 @@ export function TaskDelegationView({
                   disabled={
                     isSubmitting ||
                     !title.trim() ||
-                    (targetType === "specific_person" && !selectedAssignee) ||
+                    (targetType === "specific_person" &&
+                      !effectiveSelectedAssignee) ||
                     (targetType === "group" &&
                       isCommitteeGroup &&
                       !isCommitteeScopedCreator &&

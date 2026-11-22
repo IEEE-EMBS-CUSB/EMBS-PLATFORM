@@ -63,7 +63,7 @@ describe("TaskDelegationView Component", () => {
     expect(screen.getByText(/Assigned by Director Khaled Mansour/i)).toBeInTheDocument();
   });
 
-  it("allows a Director to create assignments for Committee Heads and HR Admins without type toggle", async () => {
+  it("allows a Director to create assignments for Committee Heads, HR Admins, and Members without type toggle", async () => {
     const user = userEvent.setup();
     const handleCreateTask = vi.fn();
 
@@ -77,19 +77,19 @@ describe("TaskDelegationView Component", () => {
       />
     );
 
-    expect(screen.getByText(/Delegate Assignments to Heads/i)).toBeInTheDocument();
+    expect(screen.getByText(/Delegate Assignments/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^task$/i })).not.toBeInTheDocument();
 
     const titleInput = screen.getByLabelText(/assignment title/i);
     await user.type(titleInput, "Finalize Midterm Curriculum");
 
     const assigneeSelect = screen.getByLabelText(/assign to/i);
-    // Director can assign to Committee Heads and HR Admins, but not regular members
+    // Director can now assign assignments to Committee Heads, HR Admins, AND regular members
     expect(screen.getByRole("option", { name: /Salma El-Sayed \(Head\)/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /Sara Hassan \(HR Admin\)/i })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: /Omar Tarek \(Member\)/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Omar Tarek \(Member\)/i })).toBeInTheDocument();
 
-    await user.selectOptions(assigneeSelect, "m-head-1");
+    await user.selectOptions(assigneeSelect, "m-mem-1");
 
     const submitBtn = screen.getByRole("button", { name: /create assignment/i });
     await user.click(submitBtn);
@@ -97,13 +97,13 @@ describe("TaskDelegationView Component", () => {
     expect(handleCreateTask).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Finalize Midterm Curriculum",
-        assignedToMembershipId: "m-head-1",
+        assignedToMembershipId: "m-mem-1",
         workType: "assignment",
       })
     );
   });
 
-  it("allows HR Admin and Master Admin to switch between Assignment and Task types", async () => {
+  it("scopes HR Admin assignments to HR committee while letting HR Admin assign tasks to everyone including heads-only with HR-only mode", async () => {
     const user = userEvent.setup();
     const handleCreateTask = vi.fn();
 
@@ -126,11 +126,12 @@ describe("TaskDelegationView Component", () => {
     expect(assignmentBtn).toBeInTheDocument();
     expect(taskBtn).toBeInTheDocument();
 
-    // HR Admin assigns to HR Member
+    // Under Assignment mode, HR Admin can ONLY assign to HR Members
+    await user.click(assignmentBtn);
     expect(screen.getByRole("option", { name: /Laila Amr \(HR Member\)/i })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Salma El-Sayed/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Omar Tarek/i })).not.toBeInTheDocument();
 
-    await user.click(assignmentBtn);
     await user.type(screen.getByLabelText(/assignment title/i), "Audit Sheet Review");
     await user.selectOptions(screen.getByLabelText(/assign to/i), "m-hr-mem");
     await user.click(screen.getByRole("button", { name: /create assignment/i }));
@@ -140,6 +141,32 @@ describe("TaskDelegationView Component", () => {
         title: "Audit Sheet Review",
         assignedToMembershipId: "m-hr-mem",
         workType: "assignment",
+      })
+    );
+
+    // Switch to Task mode: HR Admin can target everyone, including Heads-Only group, and choose HR-Only verification
+    await user.click(taskBtn);
+    expect(screen.getByRole("option", { name: /Salma El-Sayed \(Head\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Omar Tarek \(Member\)/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^group$/i }));
+    const groupSelect = screen.getByLabelText(/target group/i);
+    expect(screen.getByRole("option", { name: /all committee heads/i })).toBeInTheDocument();
+    await user.selectOptions(groupSelect, "all_heads");
+
+    // Pick HR-Only completion mode
+    await user.click(screen.getByRole("button", { name: /hr-only/i }));
+
+    await user.type(screen.getByLabelText(/task title/i), "Submit Monthly Head Report");
+    await user.click(screen.getByRole("button", { name: /create group task/i }));
+
+    expect(handleCreateTask).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: "Submit Monthly Head Report",
+        workType: "task",
+        targetType: "group",
+        targetGroup: "all_heads",
+        completionMode: "hr_only",
       })
     );
   });

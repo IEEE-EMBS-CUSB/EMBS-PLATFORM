@@ -19,8 +19,9 @@ The platform is a database-backed management, recognition, and portal system for
    - There are no public sign-ups or self-registrations.
    - Authentication uses email and password (stored with scrypt hashing and enforced password changes on first login), eliminating reliance on external email delivery services.
 4. **Data-layer privacy**:
-   - Internal HR notes and warnings (`is_published === false` or `is_warning === true`) are filtered at the database query layer.
-   - Private records are never returned to members or attendees in any query, API route, Server Action, or serialized component payload.
+   - Hidden HR notes (`is_published === false`, `category === "internal_note"`) are filtered at the database query layer and are never returned to members, attendees, committee heads, or the subject person across any of their hats.
+   - Official Warnings (`category === "warning"`, `is_published === true`) are delivered directly to the warned member's portal alongside Public Recognitions, Excused Absences, and General Notes.
+   - Feedback entries may optionally carry a signed `points_delta` bonus/deduction (default `0`, capped by `seasons.settings_json.feedback`), which posts atomically to `score_ledger`.
 5. **Deterministic score derivation**:
    - Member scores flow through `score_ledger` and are derived deterministically.
    - Published monthly rankings are permanently frozen into immutable records in `monthly_snapshots`.
@@ -54,11 +55,11 @@ The platform enforces a 7-tier role model implemented in [`src/lib/permissions.t
 
 | Role | Operational Scope | Key Permissions |
 | --- | --- | --- |
-| **`master_admin`** | Full Chapter | Exclusive control over season lifecycle, adding/removing committees, roster whitelist management (add/remove), assigning all roles, and global task assignment. |
-| **`director`** | High Leadership ("Head of Heads") | Chapter-wide visibility. Delegates tasks down to Committee Heads and HR Admins, awards point bonuses, and writes member/leader feedback. |
-| **`hr_admin`** | Chapter Operations | Operational control across committees. Assigns HR members to committees, delegates tasks to HR members, configures scoring rubrics, manages sessions, and publishes monthly leaderboard snapshots. |
-| **`hr_member`** | Committee-Scoped HR | Embedded within an assigned committee. Manages attendance logs, awards committee bonus points, and logs committee events. Receives tasks from HR Admin. |
-| **`committee_head`** | Single Committee | Creates committee sessions with timed live check-in windows, delegates and grades committee member tasks, awards bonuses, and submits member feedback. Receives tasks from Director. |
+| **`master_admin`** | Full Chapter | Exclusive control over season lifecycle, adding/removing committees, roster whitelist management (add/remove), assigning all roles, and global task/assignment creation. |
+| **`director`** | Track or Chapter Leadership | Supervises managed track (or chapter if executive). Delegates **Assignments** to Committee Heads, HR Admin, and Members (does not grade HR tasks). Views track-scoped Points Ledger in **read-only** audit mode; logs feedback/warnings without point edits. |
+| **`hr_admin`** | Chapter Operations | Configures active season scoring & operational settings (`/hr/seasons`), assigns HR officers to committees, assigns **Assignments** to HR committee (`hr_member`) and **Tasks** to everyone (including heads-only), manages attendance, points ledger, feedback/warnings, and publishes monthly leaderboards. |
+| **`hr_member`** | Committee-Scoped HR | Embedded within a tracked committee (`trackedCommitteeId`). Manages attendance sessions & per-session attendance sheets, creates/verifies committee HR tasks (`self_report` or `hr_only`), manages committee ledger overrides, and logs feedback, official warnings, and hidden HR notes for their tracked committee. |
+| **`committee_head`** | Single Committee | Creates committee sessions with auto-closing check-in windows and attendance sheets, delegates and grades committee member **Assignments**, awards committee bonuses, and submits member-visible feedback. Receives assignments from Director. |
 | **`member`** | Member Portal | Accesses personal dashboard (`/member`), tracks real-time points from `score_ledger`, views meeting attendance streaks, submits deliverables, and checks in to live sessions via 6-digit codes. |
 | **`attendee`** | Attendee Portal | Accesses workshop/track dashboard (`/attendee`), tracking session attendance and assignments without exposure to internal member rankings or HR notes. |
 

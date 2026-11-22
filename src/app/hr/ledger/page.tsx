@@ -137,16 +137,20 @@ export default async function HrLedgerPage() {
     // DB offline
   }
 
+  const isReadOnly = profile.role === "director";
+
   return (
     <PointsLedgerView
       entries={entries}
-      members={members}
+      members={isReadOnly ? [] : members}
       currentUserName={profile.fullName}
       defaultMonth={defaultMonth}
+      readOnly={isReadOnly}
+      scopedTrackName={profile.managedTrackName ?? undefined}
       canChooseOpenScope={
         profile.role === "master_admin" || profile.role === "hr_admin"
       }
-      onAddEntry={addManualLedgerEntryAction}
+      onAddEntry={isReadOnly ? undefined : addManualLedgerEntryAction}
     />
   );
 }

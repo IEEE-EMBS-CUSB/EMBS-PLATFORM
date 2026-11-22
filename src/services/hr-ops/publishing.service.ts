@@ -260,6 +260,20 @@ export async function getSnapshotForPublishingPage(month: string) {
     .limit(1);
 
   if (existing && existing.status === "published") {
+    let publishedByName: string | undefined;
+    if (existing.publishedBy) {
+      const [publisher] = await db
+        .select({ fullName: schema.persons.fullName })
+        .from(schema.rosterMemberships)
+        .innerJoin(
+          schema.persons,
+          eq(schema.rosterMemberships.personId, schema.persons.id)
+        )
+        .where(eq(schema.rosterMemberships.id, existing.publishedBy))
+        .limit(1);
+      publishedByName = publisher?.fullName;
+    }
+
     const json = existing.snapshotJson as StoredSnapshotPayload;
     const overallEntries = json.overallEntries ?? json.entries ?? [];
     const committeeEntries = json.committeeEntries ?? {};
@@ -274,6 +288,7 @@ export async function getSnapshotForPublishingPage(month: string) {
       publishedAt: existing.publishedAt
         ? existing.publishedAt.toISOString().slice(0, 10)
         : undefined,
+      publishedByName,
       overallEntries,
       committeeEntries,
       headsEntries,
@@ -285,13 +300,16 @@ export async function getSnapshotForPublishingPage(month: string) {
     month,
     status: "draft" as const,
     publishedAt: undefined,
+    publishedByName: undefined,
     overallEntries: draft.overallEntries,
     committeeEntries: draft.committeeEntries,
     headsEntries: draft.headsEntries,
   };
 }
 
-export async function getAvailableMonthsForPublishingPage(): Promise<string[]> {
+export async function getPublishingMonthOptions(): Promise<
+  Array<{ month: string; status: "draft" | "published" }>
+> {
   const seasonRes = await resolveActiveSeason();
   if (!seasonRes.ok) return [];
   const seasonId = seasonRes.season.id;
@@ -302,13 +320,28 @@ export async function getAvailableMonthsForPublishingPage(): Promise<string[]> {
       .from(schema.scoreLedger)
       .where(eq(schema.scoreLedger.seasonId, seasonId)),
     db
-      .select({ month: schema.monthlySnapshots.month })
+      .select({
+        month: schema.monthlySnapshots.month,
+        status: schema.monthlySnapshots.status,
+      })
       .from(schema.monthlySnapshots)
       .where(eq(schema.monthlySnapshots.seasonId, seasonId)),
   ]);
 
-  const months = new Set<string>();
-  for (const r of ledgerRows) months.add(r.month);
-  for (const r of snapshotRows) months.add(r.month);
-  return Array.from(months).sort().reverse();
+  const statusMap = new Map<string, "draft" | "published">();
+  for (const r of ledgerRows) {
+    if (!statusMap.has(r.month)) statusMap.set(r.month, "draft");
+  }
+  for (const r of snapshotRows) {
+    statusMap.set(r.month, r.status === "published" ? "published" : "draft");
+  }
+
+  return Array.from(statusMap.entries())
+    .map(([month, status]) => ({ month, status }))
+    .sort((a, b) => b.month.localeCompare(a.month));
+}
+
+export async function getAvailableMonthsForPublishingPage(): Promise<string[]> {
+  const options = await getPublishingMonthOptions();
+  return options.map((o) => o.month);
 }

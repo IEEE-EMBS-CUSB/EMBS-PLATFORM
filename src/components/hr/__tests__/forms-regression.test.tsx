@@ -32,6 +32,6 @@ describe("TaskSubmitForm", () => {
         submissionUrl: "https://github.com/embs/pcb",
       });
     });
-    expect(screen.getByRole("status")).toHaveTextContent(/submitted/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/submitted successfully/i);
   });
 });

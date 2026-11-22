@@ -34,7 +34,7 @@ describe("RoleOperationalDashboard Component", () => {
     expect(screen.getByText(/Committee Leadership Console/i)).toBeInTheDocument();
     expect(screen.getByText("AI and Machine Learning")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /create committee assignments/i })).toHaveAttribute("href", "/hr/tasks");
-    expect(screen.getByRole("link", { name: /grade deliverables/i })).toHaveAttribute("href", "/hr/tasks");
+    expect(screen.getByRole("link", { name: /grade deliverables/i })).toHaveAttribute("href", "/hr/tasks#grading");
     expect(screen.getByRole("link", { name: /award committee bonus/i })).toHaveAttribute("href", "/hr/ledger");
 
     // Must NOT contain restricted modules

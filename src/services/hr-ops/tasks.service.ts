@@ -5,7 +5,7 @@ import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canAssignTask,
   canCreateWorkType,
-  canManageCommitteeTasks,
+  canManageWorkItem,
   getDefaultWorkTypeForRole,
   getOperationalCommitteeScope,
   type WorkItemType,
@@ -17,7 +17,9 @@ import {
 import {
   calculateRubricPoints,
   normalizeSeasonSettings,
+  type TaskCompletionMode,
 } from "@/lib/season-settings";
+import { ensureHrCommitteeForSeason } from "./committees.service";
 import {
   assertMonthNotPublished,
   formatMonthInCairo,
@@ -34,6 +36,7 @@ export type TaskTargetGroup =
   | "everyone"
   | "all_heads"
   | "all_members"
+  | "all_hr_members"
   | "committee_all"
   | "committee_heads"
   | "committee_members";
@@ -44,11 +47,83 @@ export interface CreateTaskInput {
   dueAt: string;
   maxPoints?: number;
   workType?: WorkItemType;
+  completionMode?: TaskCompletionMode;
   targetType: TaskTargetType;
   assignedToMembershipId?: string;
   targetGroup?: TaskTargetGroup;
   targetCommitteeId?: string | null;
   seasonId?: string;
+}
+
+/**
+ * Pure check for whether a member is allowed to self-check a work item on their portal.
+ * Only tasks explicitly configured with `completionMode === "self_report"` are self-checkable.
+ */
+export function isTaskSelfReportable(task: {
+  workType: string;
+  completionMode?: string | null;
+}): boolean {
+  if (task.workType !== "task") return false;
+  return (task.completionMode ?? "self_report") === "self_report";
+}
+
+/**
+ * Pure role + workType + group-target policy validation for task/assignment broadcasting.
+ */
+export function validateTaskGroupPermission(
+  actorRole: MembershipRole,
+  workType: WorkItemType,
+  targetGroup: TaskTargetGroup
+): { ok: true } | { ok: false; error: string } {
+  if (!canCreateWorkType(actorRole, workType)) {
+    const allowedLabel = actorRole === "hr_member" ? "tasks" : "assignments";
+    return {
+      ok: false,
+      error: `Unauthorized: your role can only create ${allowedLabel}.`,
+    };
+  }
+
+  if (actorRole === "master_admin") {
+    return { ok: true };
+  }
+
+  if (actorRole === "director") {
+    if (targetGroup === "all_hr_members") {
+      return {
+        ok: false,
+        error: "Unauthorized: Directors cannot broadcast directly to all HR members.",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (actorRole === "hr_admin") {
+    if (workType === "assignment") {
+      if (targetGroup !== "all_hr_members") {
+        return {
+          ok: false,
+          error:
+            "Unauthorized: HR Admin can only issue Assignments to their own committee (Human Resources).",
+        };
+      }
+      return { ok: true };
+    }
+    // HR Admin can issue Tasks to everyone, including heads-only groups
+    return { ok: true };
+  }
+
+  if (actorRole === "committee_head" || actorRole === "hr_member") {
+    if (targetGroup !== "committee_members") {
+      return {
+        ok: false,
+        error:
+          "Unauthorized: you can only assign group items to members of your operational committee.",
+      };
+    }
+    return { ok: true };
+  }
+
+  return { ok: false, error: "Unauthorized." };
 }
 
 export interface TaskActor {
@@ -204,6 +279,13 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
     const seasonRes = await resolveActiveSeason(input.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
     const seasonId = seasonRes.season.id;
+    const seasonSettings = normalizeSeasonSettings(seasonRes.season.settingsJson);
+    const completionMode: TaskCompletionMode =
+      workType === "task"
+        ? input.completionMode === "hr_only" || input.completionMode === "self_report"
+          ? input.completionMode
+          : seasonSettings.tasks.defaultCompletionMode
+        : "self_report";
     const directorTrackCommitteeIds = await getDirectorTrackCommitteeIds(
       seasonId,
       actorRole,
@@ -258,14 +340,17 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
           email: member.email,
           role: member.role as MembershipRole,
           committeeId: member.committeeId,
-        }
+        },
+        workType
       );
 
       if (!allowed) {
         return {
           ok: false,
           error:
-            "Unauthorized: your role cannot assign tasks to this recipient.",
+            actorRole === "hr_admin" && workType === "assignment"
+              ? "Unauthorized: HR Admin can only give Assignments to HR committee members."
+              : "Unauthorized: your role cannot assign this work item to this recipient.",
         };
       }
 
@@ -276,7 +361,7 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         return {
           ok: false,
           error:
-            "Unauthorized: Track Directors can only assign to heads within their assigned committee track.",
+            "Unauthorized: Track Directors can only assign within their assigned committee track.",
         };
       }
 
@@ -287,50 +372,45 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         return { ok: false, error: "Target group type is required." };
       }
 
-      // Role-level group broadcast restrictions
-      if (
-        isCommitteeScopedCreator &&
-        (input.targetGroup === "everyone" ||
-          input.targetGroup === "all_heads" ||
-          input.targetGroup === "all_members")
-      ) {
-        return {
-          ok: false,
-          error:
-            "Unauthorized: committee-scoped roles cannot assign items across all committees.",
-        };
+      const groupPerm = validateTaskGroupPermission(
+        actorRole,
+        workType,
+        input.targetGroup
+      );
+      if (!groupPerm.ok) {
+        return { ok: false, error: groupPerm.error };
       }
 
-      if (isCommitteeScopedCreator && input.targetGroup !== "committee_members") {
-        return {
-          ok: false,
-          error:
-            "Unauthorized: you can only assign group items to members of your own committee.",
-        };
-      }
-
-      if (actorRole === "director" && input.targetGroup !== "all_heads" && input.targetGroup !== "committee_heads") {
-        return {
-          ok: false,
-          error:
-            "Unauthorized: Directors can only broadcast group assignments to Committee Heads.",
-        };
-      }
-
-      if (
-        actorRole === "hr_admin" &&
-        (input.targetGroup === "everyone" ||
-          input.targetGroup === "all_heads" ||
-          input.targetGroup === "committee_heads")
-      ) {
-        return {
-          ok: false,
-          error:
-            "Unauthorized: HR Admin cannot broadcast to executive leadership or committee heads.",
-        };
-      }
-
-      if (
+      if (input.targetGroup === "all_hr_members") {
+        const hrComm = await ensureHrCommitteeForSeason(seasonId);
+        taskCommitteeId = hrComm.id;
+        const hrMembers = await db
+          .select({
+            id: schema.rosterMemberships.id,
+            personId: schema.rosterMemberships.personId,
+            role: schema.rosterMemberships.role,
+          })
+          .from(schema.rosterMemberships)
+          .innerJoin(
+            schema.persons,
+            eq(schema.rosterMemberships.personId, schema.persons.id)
+          )
+          .where(
+            and(
+              eq(schema.rosterMemberships.seasonId, seasonId),
+              eq(schema.rosterMemberships.role, "hr_member"),
+              eq(schema.rosterMemberships.isActive, true),
+              eq(schema.persons.isActive, true)
+            )
+          );
+        targetMembershipIds = deduplicateRecipientsByPerson(
+          hrMembers.map((m) => ({
+            id: m.id,
+            personId: m.personId,
+            role: m.role as MembershipRole,
+          }))
+        );
+      } else if (
         input.targetGroup === "committee_all" ||
         input.targetGroup === "committee_heads" ||
         input.targetGroup === "committee_members"
@@ -362,41 +442,70 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         taskCommitteeId = commId;
 
         const commMembers = await db
-          .select()
+          .select({
+            id: schema.rosterMemberships.id,
+            personId: schema.rosterMemberships.personId,
+            role: schema.rosterMemberships.role,
+          })
           .from(schema.rosterMemberships)
+          .innerJoin(
+            schema.persons,
+            eq(schema.rosterMemberships.personId, schema.persons.id)
+          )
           .where(
             and(
               eq(schema.rosterMemberships.seasonId, seasonId),
               eq(schema.rosterMemberships.committeeId, commId),
               eq(schema.rosterMemberships.isActive, true),
+              eq(schema.persons.isActive, true),
               ne(schema.rosterMemberships.role, "attendee")
             )
           );
 
-        if (input.targetGroup === "committee_heads") {
-          targetMembershipIds = commMembers
-            .filter((m) => m.role === "committee_head")
-            .map((m) => m.id);
-        } else if (input.targetGroup === "committee_members") {
-          targetMembershipIds = commMembers
-            .filter((m) => m.role === "member")
-            .map((m) => m.id);
-        } else {
-          targetMembershipIds = commMembers.map((m) => m.id);
-        }
+        const filteredComm =
+          input.targetGroup === "committee_heads"
+            ? commMembers.filter((m) => m.role === "committee_head")
+            : input.targetGroup === "committee_members"
+              ? commMembers.filter((m) => m.role === "member")
+              : commMembers;
+
+        targetMembershipIds = deduplicateRecipientsByPerson(
+          filteredComm.map((m) => ({
+            id: m.id,
+            personId: m.personId,
+            role: m.role as MembershipRole,
+          }))
+        );
       } else if (input.targetGroup === "everyone") {
         const allMembers = await db
-          .select()
+          .select({
+            id: schema.rosterMemberships.id,
+            personId: schema.rosterMemberships.personId,
+            role: schema.rosterMemberships.role,
+            committeeId: schema.rosterMemberships.committeeId,
+          })
           .from(schema.rosterMemberships)
+          .innerJoin(
+            schema.persons,
+            eq(schema.rosterMemberships.personId, schema.persons.id)
+          )
           .where(
             and(
               eq(schema.rosterMemberships.seasonId, seasonId),
               eq(schema.rosterMemberships.isActive, true),
+              eq(schema.persons.isActive, true),
               ne(schema.rosterMemberships.role, "attendee")
             )
           );
+        const scopedAll = directorTrackCommitteeIds
+          ? allMembers.filter(
+              (m) =>
+                m.committeeId !== null &&
+                directorTrackCommitteeIds.has(m.committeeId)
+            )
+          : allMembers;
         targetMembershipIds = deduplicateRecipientsByPerson(
-          allMembers.map((m) => ({
+          scopedAll.map((m) => ({
             id: m.id,
             personId: m.personId,
             role: m.role as MembershipRole,
@@ -404,13 +513,23 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         );
       } else if (input.targetGroup === "all_heads") {
         const allHeads = await db
-          .select()
+          .select({
+            id: schema.rosterMemberships.id,
+            personId: schema.rosterMemberships.personId,
+            role: schema.rosterMemberships.role,
+            committeeId: schema.rosterMemberships.committeeId,
+          })
           .from(schema.rosterMemberships)
+          .innerJoin(
+            schema.persons,
+            eq(schema.rosterMemberships.personId, schema.persons.id)
+          )
           .where(
             and(
               eq(schema.rosterMemberships.seasonId, seasonId),
               eq(schema.rosterMemberships.role, "committee_head"),
-              eq(schema.rosterMemberships.isActive, true)
+              eq(schema.rosterMemberships.isActive, true),
+              eq(schema.persons.isActive, true)
             )
           );
         const scopedHeads = directorTrackCommitteeIds
@@ -427,17 +546,34 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         );
       } else if (input.targetGroup === "all_members") {
         const allRegular = await db
-          .select()
+          .select({
+            id: schema.rosterMemberships.id,
+            personId: schema.rosterMemberships.personId,
+            role: schema.rosterMemberships.role,
+            committeeId: schema.rosterMemberships.committeeId,
+          })
           .from(schema.rosterMemberships)
+          .innerJoin(
+            schema.persons,
+            eq(schema.rosterMemberships.personId, schema.persons.id)
+          )
           .where(
             and(
               eq(schema.rosterMemberships.seasonId, seasonId),
               eq(schema.rosterMemberships.role, "member"),
-              eq(schema.rosterMemberships.isActive, true)
+              eq(schema.rosterMemberships.isActive, true),
+              eq(schema.persons.isActive, true)
             )
           );
+        const scopedRegular = directorTrackCommitteeIds
+          ? allRegular.filter(
+              (m) =>
+                m.committeeId !== null &&
+                directorTrackCommitteeIds.has(m.committeeId)
+            )
+          : allRegular;
         targetMembershipIds = deduplicateRecipientsByPerson(
-          allRegular.map((m) => ({
+          scopedRegular.map((m) => ({
             id: m.id,
             personId: m.personId,
             role: m.role as MembershipRole,
@@ -453,6 +589,20 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
       };
     }
 
+    const UUID_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let resolvedCreatedBy: string | null = null;
+    if (actor.profile.id && UUID_RE.test(actor.profile.id)) {
+      const [creatorRow] = await db
+        .select({ id: schema.rosterMemberships.id })
+        .from(schema.rosterMemberships)
+        .where(eq(schema.rosterMemberships.id, actor.profile.id))
+        .limit(1);
+      if (creatorRow) {
+        resolvedCreatedBy = creatorRow.id;
+      }
+    }
+
     const [task] = await db
       .insert(schema.tasks)
       .values({
@@ -463,8 +613,10 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         dueAt: new Date(input.dueAt),
         maxPoints,
         workType,
+        completionMode,
         targetType: input.targetType ?? null,
         targetGroup: input.targetGroup ?? null,
+        createdBy: resolvedCreatedBy,
       })
       .returning();
 
@@ -520,6 +672,13 @@ export async function gradeTaskSubmissionAsActor(
       .where(eq(schema.tasks.id, submission.taskId))
       .limit(1);
     if (!task) return { ok: false, error: "Task not found." };
+    if (task.workType === "task") {
+      return {
+        ok: false,
+        error:
+          "Tasks are completed via checklist rather than rubric grading.",
+      };
+    }
 
     const seasonRes = await resolveActiveSeason(task.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
@@ -532,17 +691,25 @@ export async function gradeTaskSubmissionAsActor(
     if (!member) return { ok: false, error: "Assignee record not found." };
 
     const scopeCommitteeId = task.committeeId ?? member.committeeId;
+    let effectiveActorCommitteeId = actor.profile.committeeId;
+    if (actor.profile.role === "hr_admin" && !effectiveActorCommitteeId) {
+      const hrComm = await ensureHrCommitteeForSeason(task.seasonId);
+      effectiveActorCommitteeId = hrComm.id;
+    }
     const permCtx = {
       id: actor.profile.id,
       email: actor.profile.email ?? "",
       role: actor.profile.role,
-      committeeId: actor.profile.committeeId,
+      committeeId: effectiveActorCommitteeId,
       trackedCommitteeId: actor.profile.trackedCommitteeId,
     };
-    if (!canManageCommitteeTasks(permCtx, scopeCommitteeId)) {
+    if (!canManageWorkItem(permCtx, "assignment", scopeCommitteeId)) {
       return {
         ok: false,
-        error: "Unauthorized: you can only grade tasks for your assigned committee.",
+        error:
+          actor.profile.role === "hr_admin"
+            ? "Unauthorized: HR Admin can only grade Assignments for the HR committee."
+            : "Unauthorized: you can only grade assignments for your assigned scope.",
       };
     }
 
@@ -664,10 +831,13 @@ export async function toggleTaskCompletionAsActor(
       committeeId: actor.profile.committeeId,
       trackedCommitteeId: actor.profile.trackedCommitteeId,
     };
-    if (!canManageCommitteeTasks(permCtx, scopeCommitteeId)) {
+    if (!canManageWorkItem(permCtx, "task", scopeCommitteeId)) {
       return {
         ok: false,
-        error: "Unauthorized: you can only manage tasks for your assigned committee.",
+        error:
+          actor.profile.role === "director"
+            ? "Unauthorized: tasks remain HR's responsibility and cannot be graded or checked off by Directors."
+            : "Unauthorized: you can only manage HR tasks for your assigned scope.",
       };
     }
 
@@ -978,6 +1148,14 @@ export async function toggleMemberTaskCompletion(
         ok: false,
         error:
           "Assignments require submitting a link for grading and cannot be checked off directly.",
+      };
+    }
+
+    if (!isTaskSelfReportable(task)) {
+      return {
+        ok: false,
+        error:
+          "This task is verified by HR only and cannot be self-checked from the member portal.",
       };
     }
 

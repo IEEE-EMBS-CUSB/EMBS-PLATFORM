@@ -255,8 +255,10 @@ export default async function HrOverviewPage() {
       currentUserRole={profile.role}
       userName={profile.fullName}
       committeeName={
-        profile.committeeName ??
-        (profile.managedTrackName ? `${profile.managedTrackName} Track` : undefined)
+        profile.role === "hr_member"
+          ? profile.trackedCommitteeName ?? undefined
+          : (profile.committeeName ??
+            (profile.managedTrackName ? `${profile.managedTrackName} Track` : undefined))
       }
       assignedTasks={assignedTasks}
       kpis={kpis}

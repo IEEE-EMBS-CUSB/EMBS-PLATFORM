@@ -5,18 +5,22 @@ import {
   Archive,
   Check,
   CheckCircle,
+  CheckSquare,
   Copy,
   Layers,
   Lock,
+  Megaphone,
   Pencil,
   Play,
   Plus,
+  QrCode,
   RotateCcw,
   Settings2,
   ShieldCheck,
   Sliders,
   Sparkles,
   Trash2,
+  Trophy,
   Users,
   X,
 } from "lucide-react";
@@ -24,14 +28,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canManageCommittees,
@@ -44,6 +40,7 @@ import {
   normalizeSeasonSettings,
   validateSeasonSettings,
   type SeasonSettings,
+  type TaskCompletionMode,
 } from "@/lib/season-settings";
 
 export interface SeasonTrackSummary {
@@ -124,7 +121,7 @@ interface SeasonManagerViewProps {
   ) => Promise<{ ok: boolean; error?: string } | void>;
 }
 
-type SettingsTab = "grading" | "tracks" | "rubrics";
+type SettingsTab = "grading" | "tracks";
 
 function parseNonNegativeInt(raw: string, fallback = 0): number {
   const n = parseInt(raw, 10);
@@ -143,8 +140,6 @@ export function SeasonManagerView({
   onAddTrack,
   onRenameTrack,
   onDeleteTrack,
-  onAddRubric,
-  onRemoveRubric,
 }: SeasonManagerViewProps) {
   const [seasons, setSeasons] = useState<SeasonItem[]>(() =>
     initialSeasons.map((s) => ({
@@ -185,14 +180,6 @@ export function SeasonManagerView({
   const [editTrackName, setEditTrackName] = useState("");
   const [editTrackDesc, setEditTrackDesc] = useState("");
 
-  // Rubric editor state
-  const [newRubricName, setNewRubricName] = useState("");
-  const [newRubricMax, setNewRubricMax] = useState(20);
-  const [newRubricWeight, setNewRubricWeight] = useState("1.0");
-  const [newRubricLeadersOnly, setNewRubricLeadersOnly] = useState(false);
-  const [rubricError, setRubricError] = useState<string | null>(null);
-  const [isSavingRubric, setIsSavingRubric] = useState(false);
-
   // Modals state
   const [cloneModalOpen, setCloneModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -227,7 +214,6 @@ export function SeasonManagerView({
     setSettingsMessage(null);
     setSettingsError(null);
     setTrackError(null);
-    setRubricError(null);
     setEditingTrackId(null);
   };
 
@@ -620,93 +606,6 @@ export function SeasonManagerView({
     }
   };
 
-  const handleAddRubricSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inspectedSeason || !newRubricName.trim()) {
-      setRubricError("Rubric name is required.");
-      return;
-    }
-    setIsSavingRubric(true);
-    setRubricError(null);
-    try {
-      let createdId = `rub-${Date.now()}`;
-      if (onAddRubric) {
-        const res = await onAddRubric({
-          name: newRubricName.trim(),
-          maxPoints: newRubricMax,
-          weight: newRubricWeight,
-          leadersOnly: newRubricLeadersOnly,
-          seasonId: inspectedSeason.id,
-        });
-        if (res && !res.ok) {
-          setRubricError(res.error ?? "Failed to add rubric.");
-          return;
-        }
-        if (res && res.rubricId) createdId = res.rubricId;
-      }
-      setSeasons((prev) =>
-        prev.map((s) =>
-          s.id === inspectedSeason.id
-            ? {
-                ...s,
-                rubrics: [
-                  ...(s.rubrics ?? []),
-                  {
-                    id: createdId,
-                    name: newRubricName.trim(),
-                    maxPoints: newRubricMax,
-                    weight: newRubricWeight,
-                    leadersOnly: newRubricLeadersOnly,
-                  },
-                ],
-              }
-            : s
-        )
-      );
-      setNewRubricName("");
-      setNewRubricMax(20);
-      setNewRubricWeight("1.0");
-      setNewRubricLeadersOnly(false);
-    } catch (err: unknown) {
-      setRubricError(
-        err instanceof Error ? err.message : "Failed to add rubric."
-      );
-    } finally {
-      setIsSavingRubric(false);
-    }
-  };
-
-  const handleRemoveRubric = async (rubricId: string) => {
-    if (!inspectedSeason) return;
-    setIsSavingRubric(true);
-    setRubricError(null);
-    try {
-      if (onRemoveRubric) {
-        const res = await onRemoveRubric(rubricId);
-        if (res && !res.ok) {
-          setRubricError(res.error ?? "Failed to remove rubric.");
-          return;
-        }
-      }
-      setSeasons((prev) =>
-        prev.map((s) =>
-          s.id === inspectedSeason.id
-            ? {
-                ...s,
-                rubrics: (s.rubrics ?? []).filter((r) => r.id !== rubricId),
-              }
-            : s
-        )
-      );
-    } catch (err: unknown) {
-      setRubricError(
-        err instanceof Error ? err.message : "Failed to remove rubric."
-      );
-    } finally {
-      setIsSavingRubric(false);
-    }
-  };
-
   const perfectScorePreview = calculateRubricPoints({
     effortScore: 5,
     qualityScore: 5,
@@ -721,7 +620,15 @@ export function SeasonManagerView({
 
   return (
     <div className="space-y-8">
-      {!canManage && (
+      {!canManage && canEditSettings && (
+        <div className="rounded-lg border border-[#00629b]/25 bg-[#ebf3f8] p-3 text-xs text-[#002855]">
+          <strong>HR Head Settings Access:</strong> You can configure Attendance,
+          Tasks, Assignments, Feedback Bonus/Deduction Caps, and Leaderboard
+          rules for active and draft seasons. Creating or archiving seasons is
+          managed by Master Admin.
+        </div>
+      )}
+      {!canManage && !canEditSettings && (
         <div className="rounded-lg border border-[#ffc627]/40 bg-[#fffbeb] p-3 text-xs text-[#92400e]">
           <strong>Master Authority Required:</strong> Only the Master
           Administrator has authority to create, clone, or transition seasons.
@@ -892,7 +799,7 @@ export function SeasonManagerView({
                   {season.name}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="flex flex-1 flex-col justify-between space-y-4 pt-0">
                 <div className="grid grid-cols-3 gap-2 border-y border-border/70 py-3 text-xs">
                   <div>
                     <span className="text-muted-foreground">Tracks</span>
@@ -1016,8 +923,9 @@ export function SeasonManagerView({
                   </Badge>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Every attendance rule, rubric weight, tier threshold, and
-                  committee track for {inspectedSeason.name} lives here.
+                  Every attendance rule, task default, assignment grading weight,
+                  feedback cap, leaderboard tier, and committee track for{" "}
+                  {inspectedSeason.name} lives here.
                 </p>
               </div>
 
@@ -1031,7 +939,7 @@ export function SeasonManagerView({
                       : "text-foreground/80 hover:bg-white hover:text-[#002855]"
                   }`}
                 >
-                  Grading & Attendance
+                  Scoring &amp; Rules
                 </button>
                 <button
                   type="button"
@@ -1043,17 +951,6 @@ export function SeasonManagerView({
                   }`}
                 >
                   Committee Tracks ({inspectedSeason.tracks?.length ?? 0})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSettingsTab("rubrics")}
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    settingsTab === "rubrics"
-                      ? "bg-[#772583] text-white"
-                      : "text-foreground/80 hover:bg-white hover:text-[#002855]"
-                  }`}
-                >
-                  Scoring Rubrics ({inspectedSeason.rubrics?.length ?? 0})
                 </button>
               </div>
             </div>
@@ -1086,15 +983,20 @@ export function SeasonManagerView({
                   </div>
                 )}
 
-                {/* Attendance & Check-in Section */}
-                <section className="space-y-3">
-                  <div>
-                    <h3 className="font-heading text-sm font-bold text-[#002855]">
-                      Attendance & QR Check-in Defaults
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      Pre-filled whenever HR or Heads open a new session check-in.
-                    </p>
+                {/* 1. Attendance & Check-in Rules */}
+                <section className="space-y-3 rounded-xl border border-border bg-[#f8f9fb]/60 p-4 sm:p-5">
+                  <div className="flex items-start gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e3f5f6] text-[#007377]">
+                      <QrCode className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h3 className="font-heading text-sm font-bold text-[#002855]">
+                        Attendance &amp; Check-In Rules
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        Applied automatically when creating sessions and scoring on-time vs. late arrivals in Attendance.
+                      </p>
+                    </div>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <div>
@@ -1242,16 +1144,99 @@ export function SeasonManagerView({
                   </div>
                 </section>
 
-                {/* Assignment & Task Grading Weights */}
-                <section className="space-y-3 border-t border-border/70 pt-5">
-                  <div>
-                    <h3 className="font-heading text-sm font-bold text-[#002855]">
-                      Assignment & Task Grading Formula (1–5 Rubric Scale)
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      Controls how Effort, Quality, and Timeliness ratings
-                      translate into points in bulk grading and the score ledger.
-                    </p>
+                {/* 2. HR Tasks (Check-off Work) */}
+                <section className="space-y-3 rounded-xl border border-border bg-[#f8f9fb]/60 p-4 sm:p-5">
+                  <div className="flex items-start gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f5edf7] text-[#772583]">
+                      <CheckSquare className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h3 className="font-heading text-sm font-bold text-[#002855]">
+                        Tasks (HR Check-Off Work)
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        Defaults for HR check-off tasks. Tasks award their flat point value on completion (no 1–5 rubric).
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label
+                        htmlFor="setting-task-default-points"
+                        className="block text-xs font-semibold text-foreground/85"
+                      >
+                        Default Task Points
+                      </label>
+                      <Input
+                        id="setting-task-default-points"
+                        type="number"
+                        min={1}
+                        max={1000}
+                        disabled={settingsReadOnly}
+                        value={draftSettings.tasks.defaultTaskPoints}
+                        onChange={(e) =>
+                          setDraftSettings((prev) => ({
+                            ...prev,
+                            tasks: {
+                              ...prev.tasks,
+                              defaultTaskPoints: parseNonNegativeInt(
+                                e.target.value,
+                                1
+                              ),
+                            },
+                          }))
+                        }
+                        className="mt-1 h-9 bg-white text-xs font-semibold tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="setting-task-completion-mode"
+                        className="block text-xs font-semibold text-foreground/85"
+                      >
+                        Default Completion Mode
+                      </label>
+                      <select
+                        id="setting-task-completion-mode"
+                        disabled={settingsReadOnly}
+                        value={draftSettings.tasks.defaultCompletionMode}
+                        onChange={(e) =>
+                          setDraftSettings((prev) => ({
+                            ...prev,
+                            tasks: {
+                              ...prev.tasks,
+                              defaultCompletionMode: e.target
+                                .value as TaskCompletionMode,
+                            },
+                          }))
+                        }
+                        className="mt-1 flex h-9 w-full rounded-md border border-input bg-white px-3 text-xs font-semibold text-[#002855] focus-visible:outline-2 focus-visible:outline-[#772583] disabled:opacity-60"
+                      >
+                        <option value="self_report">
+                          Self-Report (Member or HR can check off)
+                        </option>
+                        <option value="hr_only">
+                          HR-Only (Only HR assigner can mark complete)
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                </section>
+
+                {/* 3. Assignments (Rubric-Graded Deliverables) */}
+                <section className="space-y-3 rounded-xl border border-border bg-[#f8f9fb]/60 p-4 sm:p-5">
+                  <div className="flex items-start gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
+                      <Sliders className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h3 className="font-heading text-sm font-bold text-[#002855]">
+                        Assignments (1–5 Rubric Grading Criteria)
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        Controls how Effort, Quality, and Timeliness ratings translate into points when grading link-submitted assignments.
+                      </p>
+                    </div>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div>
@@ -1380,16 +1365,96 @@ export function SeasonManagerView({
                   </div>
                 </section>
 
-                {/* Leaderboard & Activity Tiers */}
-                <section className="space-y-3 border-t border-border/70 pt-5">
-                  <div>
-                    <h3 className="font-heading text-sm font-bold text-[#002855]">
-                      Leaderboard & Member Activity Tiers
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      Thresholds must strictly increase (Bronze &lt; Silver &lt;
-                      Gold &lt; Diamond).
-                    </p>
+                {/* 4. Feedback Bonus & Deduction Caps */}
+                <section className="space-y-3 rounded-xl border border-border bg-[#f8f9fb]/60 p-4 sm:p-5">
+                  <div className="flex items-start gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f5edf7] text-[#5a1b63]">
+                      <Megaphone className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h3 className="font-heading text-sm font-bold text-[#002855]">
+                        Feedback Bonus &amp; Deduction Caps
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        Feedback entries always default to 0 pts. These caps limit optional bonus or deduction adjustments attached to a feedback note.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label
+                        htmlFor="setting-feedback-max-bonus"
+                        className="block text-xs font-semibold text-foreground/85"
+                      >
+                        Max Bonus per Feedback (pts)
+                      </label>
+                      <Input
+                        id="setting-feedback-max-bonus"
+                        type="number"
+                        min={0}
+                        max={500}
+                        disabled={settingsReadOnly}
+                        value={draftSettings.feedback.maxBonusPoints}
+                        onChange={(e) =>
+                          setDraftSettings((prev) => ({
+                            ...prev,
+                            feedback: {
+                              ...prev.feedback,
+                              maxBonusPoints: parseNonNegativeInt(
+                                e.target.value
+                              ),
+                            },
+                          }))
+                        }
+                        className="mt-1 h-9 bg-white text-xs font-semibold tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="setting-feedback-max-deduction"
+                        className="block text-xs font-semibold text-foreground/85"
+                      >
+                        Max Deduction per Feedback (pts)
+                      </label>
+                      <Input
+                        id="setting-feedback-max-deduction"
+                        type="number"
+                        min={0}
+                        max={500}
+                        disabled={settingsReadOnly}
+                        value={draftSettings.feedback.maxDeductionPoints}
+                        onChange={(e) =>
+                          setDraftSettings((prev) => ({
+                            ...prev,
+                            feedback: {
+                              ...prev.feedback,
+                              maxDeductionPoints: parseNonNegativeInt(
+                                e.target.value
+                              ),
+                            },
+                          }))
+                        }
+                        className="mt-1 h-9 bg-white text-xs font-semibold tabular-nums"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                {/* 5. Leaderboard & Activity Tiers */}
+                <section className="space-y-3 rounded-xl border border-border bg-[#f8f9fb]/60 p-4 sm:p-5">
+                  <div className="flex items-start gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#eaf5dd] text-[#1e6b0a]">
+                      <Trophy className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h3 className="font-heading text-sm font-bold text-[#002855]">
+                        Leaderboard &amp; Member Activity Tiers
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        Thresholds must strictly increase (Bronze &lt; Silver &lt;
+                        Gold &lt; Diamond).
+                      </p>
+                    </div>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <div>
@@ -1647,9 +1712,9 @@ export function SeasonManagerView({
                                     : "committees"}
                                 </Badge>
                                 {track.directorNames.length > 0 ? (
-                                  track.directorNames.map((dir) => (
+                                  track.directorNames.map((dir, dirIdx) => (
                                     <Badge
-                                      key={dir}
+                                      key={`${track.id}-${dir}-${dirIdx}`}
                                       className="bg-[#f5edf7] text-[#5a1b63] text-[11px] font-semibold"
                                     >
                                       <span>Director:</span>
@@ -1752,158 +1817,6 @@ export function SeasonManagerView({
                         <span>Add Track</span>
                       </Button>
                     </div>
-                  </form>
-                )}
-              </div>
-            )}
-
-            {settingsTab === "rubrics" && (
-              <div className="space-y-4">
-                {rubricError && (
-                  <div
-                    role="alert"
-                    className="rounded-lg border border-[#ba0c2f]/30 bg-[#ba0c2f]/10 p-3 text-xs font-semibold text-[#ba0c2f]"
-                  >
-                    {rubricError}
-                  </div>
-                )}
-
-                <div className="overflow-hidden rounded-lg border border-border">
-                  <Table>
-                    <TableHeader className="bg-[#f8f9fb]">
-                      <TableRow>
-                        <TableHead className="font-heading text-xs font-bold text-[#002855]">
-                          Rubric Category
-                        </TableHead>
-                        <TableHead className="font-heading text-xs font-bold text-[#002855]">
-                          Max Points
-                        </TableHead>
-                        <TableHead className="font-heading text-xs font-bold text-[#002855]">
-                          Weight
-                        </TableHead>
-                        <TableHead className="font-heading text-xs font-bold text-[#002855]">
-                          Scope
-                        </TableHead>
-                        {!settingsReadOnly && (
-                          <TableHead className="w-16 text-right font-heading text-xs font-bold text-[#002855]">
-                            Action
-                          </TableHead>
-                        )}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(inspectedSeason.rubrics ?? []).map((r) => (
-                        <TableRow key={r.id}>
-                          <TableCell className="text-xs font-semibold text-[#002855]">
-                            {r.name}
-                          </TableCell>
-                          <TableCell className="font-heading text-xs font-bold tabular-nums">
-                            {r.maxPoints} pts
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground tabular-nums">
-                            x{r.weight}
-                          </TableCell>
-                          <TableCell>
-                            {r.leadersOnly ? (
-                              <Badge className="bg-[#ffc627]/30 text-[#002855] text-[11px] font-semibold">
-                                Leaders only
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">
-                                All members
-                              </span>
-                            )}
-                          </TableCell>
-                          {!settingsReadOnly && (
-                            <TableCell className="text-right">
-                              <button
-                                type="button"
-                                disabled={isSavingRubric}
-                                aria-label={`Remove rubric ${r.name}`}
-                                onClick={() => handleRemoveRubric(r.id)}
-                                className="rounded p-1 text-muted-foreground hover:bg-[#ba0c2f]/10 hover:text-[#ba0c2f]"
-                              >
-                                <Trash2
-                                  className="h-3.5 w-3.5"
-                                  aria-hidden="true"
-                                />
-                              </button>
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      ))}
-                      {(inspectedSeason.rubrics ?? []).length === 0 && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={settingsReadOnly ? 4 : 5}
-                            className="py-6 text-center text-xs text-muted-foreground"
-                          >
-                            No scoring rubrics defined for this season yet.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                {!settingsReadOnly && (
-                  <form
-                    onSubmit={handleAddRubricSubmit}
-                    className="rounded-lg border border-dashed border-border bg-[#f8f9fb] p-4"
-                  >
-                    <p className="font-heading text-xs font-bold text-[#002855]">
-                      Add Scoring Rubric to {inspectedSeason.name}
-                    </p>
-                    <div className="mt-2.5 grid gap-2 sm:grid-cols-12">
-                      <Input
-                        aria-label="Season rubric name"
-                        placeholder="e.g. Technical Delivery Quality"
-                        value={newRubricName}
-                        onChange={(e) => setNewRubricName(e.target.value)}
-                        className="h-9 bg-white text-xs sm:col-span-5"
-                      />
-                      <Input
-                        aria-label="Season rubric max points"
-                        type="number"
-                        min={1}
-                        max={1000}
-                        value={newRubricMax}
-                        onChange={(e) =>
-                          setNewRubricMax(
-                            parseNonNegativeInt(e.target.value, 1)
-                          )
-                        }
-                        className="h-9 bg-white text-xs tabular-nums sm:col-span-2"
-                      />
-                      <Input
-                        aria-label="Season rubric weight"
-                        type="number"
-                        step="0.1"
-                        min="0.1"
-                        max="10"
-                        value={newRubricWeight}
-                        onChange={(e) => setNewRubricWeight(e.target.value)}
-                        className="h-9 bg-white text-xs tabular-nums sm:col-span-2"
-                      />
-                      <Button
-                        type="submit"
-                        disabled={isSavingRubric}
-                        className="h-9 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63] sm:col-span-3"
-                      >
-                        Add Rubric
-                      </Button>
-                    </div>
-                    <label className="mt-2.5 inline-flex items-center gap-2 text-xs text-foreground">
-                      <input
-                        type="checkbox"
-                        checked={newRubricLeadersOnly}
-                        onChange={(e) =>
-                          setNewRubricLeadersOnly(e.target.checked)
-                        }
-                        className="h-4 w-4 rounded border-border"
-                      />
-                      <span>Leaders only (Committee Heads & Officers)</span>
-                    </label>
                   </form>
                 )}
               </div>

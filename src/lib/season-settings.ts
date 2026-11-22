@@ -6,11 +6,23 @@ export interface SeasonAttendanceSettings {
   qrRotationSeconds: number;
 }
 
+export type TaskCompletionMode = "self_report" | "hr_only";
+
+export interface SeasonTaskSettings {
+  defaultTaskPoints: number;
+  defaultCompletionMode: TaskCompletionMode;
+}
+
 export interface SeasonGradingSettings {
   effortWeight: number;
   qualityWeight: number;
   timelinessWeight: number;
   defaultMaxPoints: number;
+}
+
+export interface SeasonFeedbackSettings {
+  maxBonusPoints: number;
+  maxDeductionPoints: number;
 }
 
 export interface SeasonTierThresholds {
@@ -27,7 +39,9 @@ export interface SeasonLeaderboardSettings {
 
 export interface SeasonSettings {
   attendance: SeasonAttendanceSettings;
+  tasks: SeasonTaskSettings;
   grading: SeasonGradingSettings;
+  feedback: SeasonFeedbackSettings;
   leaderboard: SeasonLeaderboardSettings;
 }
 
@@ -39,11 +53,19 @@ export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
     defaultCheckinWindowMinutes: 30,
     qrRotationSeconds: 60,
   },
+  tasks: {
+    defaultTaskPoints: 15,
+    defaultCompletionMode: "self_report",
+  },
   grading: {
     effortWeight: 10,
     qualityWeight: 8,
     timelinessWeight: 2,
     defaultMaxPoints: 100,
+  },
+  feedback: {
+    maxBonusPoints: 50,
+    maxDeductionPoints: 50,
   },
   leaderboard: {
     publicTopN: 10,
@@ -101,9 +123,17 @@ export function normalizeSeasonSettings(raw?: unknown): SeasonSettings {
     obj.attendance && typeof obj.attendance === "object"
       ? (obj.attendance as Record<string, unknown>)
       : {};
+  const tsk =
+    obj.tasks && typeof obj.tasks === "object"
+      ? (obj.tasks as Record<string, unknown>)
+      : {};
   const grd =
     obj.grading && typeof obj.grading === "object"
       ? (obj.grading as Record<string, unknown>)
+      : {};
+  const fbk =
+    obj.feedback && typeof obj.feedback === "object"
+      ? (obj.feedback as Record<string, unknown>)
       : {};
   const lb =
     obj.leaderboard && typeof obj.leaderboard === "object"
@@ -137,6 +167,14 @@ export function normalizeSeasonSettings(raw?: unknown): SeasonSettings {
         DEFAULT_SEASON_SETTINGS.attendance.qrRotationSeconds
       ),
     },
+    tasks: {
+      defaultTaskPoints: asFiniteInt(
+        tsk.defaultTaskPoints,
+        DEFAULT_SEASON_SETTINGS.tasks.defaultTaskPoints
+      ),
+      defaultCompletionMode:
+        tsk.defaultCompletionMode === "hr_only" ? "hr_only" : "self_report",
+    },
     grading: {
       effortWeight: asFiniteInt(
         grd.effortWeight,
@@ -153,6 +191,16 @@ export function normalizeSeasonSettings(raw?: unknown): SeasonSettings {
       defaultMaxPoints: asFiniteInt(
         grd.defaultMaxPoints,
         DEFAULT_SEASON_SETTINGS.grading.defaultMaxPoints
+      ),
+    },
+    feedback: {
+      maxBonusPoints: asFiniteInt(
+        fbk.maxBonusPoints,
+        DEFAULT_SEASON_SETTINGS.feedback.maxBonusPoints
+      ),
+      maxDeductionPoints: asFiniteInt(
+        fbk.maxDeductionPoints,
+        DEFAULT_SEASON_SETTINGS.feedback.maxDeductionPoints
       ),
     },
     leaderboard: {
@@ -185,7 +233,7 @@ export function normalizeSeasonSettings(raw?: unknown): SeasonSettings {
 export function validateSeasonSettings(
   settings: SeasonSettings
 ): { ok: true } | { ok: false; error: string } {
-  const { attendance, grading, leaderboard } = settings;
+  const { attendance, tasks, grading, feedback, leaderboard } = settings;
 
   if (attendance.defaultBasePoints < 0 || attendance.defaultBasePoints > 500) {
     return { ok: false, error: "Session base points must be between 0 and 500." };
@@ -224,6 +272,22 @@ export function validateSeasonSettings(
     };
   }
 
+  if (tasks.defaultTaskPoints < 1 || tasks.defaultTaskPoints > 1000) {
+    return {
+      ok: false,
+      error: "Default task points must be between 1 and 1000.",
+    };
+  }
+  if (
+    tasks.defaultCompletionMode !== "self_report" &&
+    tasks.defaultCompletionMode !== "hr_only"
+  ) {
+    return {
+      ok: false,
+      error: "Default task completion mode must be self_report or hr_only.",
+    };
+  }
+
   if (
     grading.effortWeight < 0 ||
     grading.effortWeight > 100 ||
@@ -249,6 +313,19 @@ export function validateSeasonSettings(
     return {
       ok: false,
       error: "Default max deliverable points must be between 1 and 1000.",
+    };
+  }
+
+  if (feedback.maxBonusPoints < 0 || feedback.maxBonusPoints > 500) {
+    return {
+      ok: false,
+      error: "Feedback max bonus cap must be between 0 and 500.",
+    };
+  }
+  if (feedback.maxDeductionPoints < 0 || feedback.maxDeductionPoints > 500) {
+    return {
+      ok: false,
+      error: "Feedback max deduction cap must be between 0 and 500.",
     };
   }
 

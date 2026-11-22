@@ -83,4 +83,102 @@ describe("AttendanceManagerView Component", () => {
       })
     );
   });
+
+  it("auto-marks sessions with an expired checkinExpiresAt as Closed even if checkinOpen is true", () => {
+    const expiredSession = {
+      id: "sess-expired",
+      title: "Expired Check-In Meeting",
+      committeeName: "Branch-wide",
+      startsAt: new Date("2026-09-01T10:00:00Z"),
+      checkinOpen: true,
+      checkinCode: "112233",
+      checkinExpiresAt: new Date("2020-01-01T00:00:00Z"),
+      basePoints: 10,
+      punctualityBonus: 5,
+      attendanceCount: 5,
+    };
+
+    render(<AttendanceManagerView sessions={[expiredSession]} />);
+
+    expect(screen.getByText("Closed")).toBeInTheDocument();
+    expect(screen.queryByText("Check-in Open")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /open live check-in/i })
+    ).toBeDisabled();
+  });
+
+  it("opens the keyboard-friendly attendance roster for a session and allows manual On Time / Late / Excused / Absent toggles", async () => {
+    const user = userEvent.setup();
+    const onLoadRoster = vi.fn().mockResolvedValue({
+      ok: true,
+      roster: [
+        {
+          membershipId: "m-1",
+          fullName: "Salma El-Sayed",
+          email: "salma@cu.edu.eg",
+          committeeName: "AI and Machine Learning",
+          role: "committee_head",
+          status: "absent",
+          pointsAwarded: 0,
+          checkedInAt: null,
+          overrideReason: null,
+        },
+        {
+          membershipId: "m-2",
+          fullName: "Omar Tarek",
+          email: "omar@cu.edu.eg",
+          committeeName: "AI and Machine Learning",
+          role: "member",
+          status: "on_time",
+          pointsAwarded: 15,
+          checkedInAt: "2026-09-12T16:02:00.000Z",
+          overrideReason: null,
+        },
+      ],
+    });
+    const onSetAttendance = vi
+      .fn()
+      .mockResolvedValue({ ok: true, pointsAwarded: 10 });
+
+    render(
+      <AttendanceManagerView
+        sessions={sampleSessions}
+        onLoadSessionRoster={onLoadRoster}
+        onSetMemberAttendance={onSetAttendance}
+      />
+    );
+
+    const rosterButtons = screen.getAllByRole("button", {
+      name: /attendance sheet/i,
+    });
+    await user.click(rosterButtons[1]);
+
+    expect(onLoadRoster).toHaveBeenCalledWith("sess-2");
+    expect(await screen.findByText("Salma El-Sayed")).toBeInTheDocument();
+    expect(screen.getByText("Omar Tarek")).toBeInTheDocument();
+
+    // Click "Late" for Salma
+    const lateBtn = screen.getByRole("button", {
+      name: /mark salma el-sayed as late/i,
+    });
+    await user.click(lateBtn);
+
+    expect(onSetAttendance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-2",
+        membershipId: "m-1",
+        status: "late",
+      })
+    );
+
+    // Keyboard navigation: ArrowDown to Omar (index 1) and press 'e' for Excused
+    await user.keyboard("{ArrowDown}e");
+    expect(onSetAttendance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-2",
+        membershipId: "m-2",
+        status: "excused",
+      })
+    );
+  });
 });

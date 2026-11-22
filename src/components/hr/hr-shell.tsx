@@ -3,13 +3,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Crown,
-  Menu,
-  MoreHorizontal,
-  Shield,
-  Trophy,
-} from "lucide-react";
+import { Menu, MoreHorizontal, Trophy } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { EmbsMark } from "@/components/brand/embs-mark";
 import {
@@ -20,7 +14,6 @@ import {
 } from "@/components/hr/hr-nav";
 import { ContextSwitcher } from "@/components/layout/context-switcher";
 import { NavLinkPendingIndicator } from "@/components/layout/nav-link-pending";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -47,45 +40,14 @@ export interface HrShellProps {
   children: ReactNode;
 }
 
-const ROLE_META: Record<
-  MembershipRole,
-  { label: string; headerBadge: string; sidebarBadge: string }
-> = {
-  master_admin: {
-    label: "Master Authority",
-    headerBadge: "bg-[#002855] text-[#ffc627] border-[#ffc627]/40",
-    sidebarBadge: "bg-[#002855] text-[#ffc627]",
-  },
-  director: {
-    label: "Director Console",
-    headerBadge: "bg-[#5a1b63] text-white border-white/20",
-    sidebarBadge: "bg-[#5a1b63] text-white",
-  },
-  hr_admin: {
-    label: "HR Administration",
-    headerBadge: "bg-white/15 text-white border-white/20",
-    sidebarBadge: "bg-[#772583] text-white",
-  },
-  hr_member: {
-    label: "Committee HR",
-    headerBadge: "bg-[#007377] text-white border-white/20",
-    sidebarBadge: "bg-[#007377] text-white",
-  },
-  committee_head: {
-    label: "Head Console",
-    headerBadge: "bg-[#00629b] text-white border-white/20",
-    sidebarBadge: "bg-[#00629b] text-white",
-  },
-  member: {
-    label: "Member",
-    headerBadge: "bg-white/15 text-white border-white/20",
-    sidebarBadge: "bg-muted text-foreground",
-  },
-  attendee: {
-    label: "Attendee",
-    headerBadge: "bg-white/15 text-white border-white/20",
-    sidebarBadge: "bg-muted text-foreground",
-  },
+const ROLE_LABELS: Record<MembershipRole, string> = {
+  master_admin: "Master Admin",
+  director: "Director",
+  hr_admin: "HR Admin",
+  hr_member: "HR Member",
+  committee_head: "Committee Head",
+  member: "Member",
+  attendee: "Attendee",
 };
 
 export function HrShell({
@@ -101,7 +63,6 @@ export function HrShell({
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const isMaster = currentUserRole === "master_admin";
   const resolvedTab = activeTab ?? resolveHrTabFromPathname(pathname);
   const visibleItems = getVisibleHrNavItems(currentUserRole);
   const hasOverflowTabs = visibleItems.length > 4;
@@ -112,20 +73,17 @@ export function HrShell({
     hasOverflowTabs &&
     visibleItems.slice(4).some((item) => item.key === resolvedTab);
 
-  const currentRoleInfo = ROLE_META[currentUserRole] ?? {
-    label: "HR Operations",
-    headerBadge: "bg-white/15 text-white border-white/20",
-    sidebarBadge: "bg-[#772583] text-white",
-  };
+  const roleLabel = ROLE_LABELS[currentUserRole] ?? "HR Operations";
   const fallbackContextLabel = userCommitteeName
-    ? `${currentRoleInfo.label} · ${userCommitteeName}`
-    : currentRoleInfo.label;
-  const hasInteractiveContextSwitcher = buildContextPickerModel({
+    ? `${roleLabel} · ${userCommitteeName}`
+    : roleLabel;
+
+  const pickerModel = buildContextPickerModel({
     contexts,
     activeMembershipId,
     activePortal: "hr",
     fallbackLabel: fallbackContextLabel,
-  }).isInteractive;
+  });
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -136,10 +94,10 @@ export function HrShell({
         Skip to main content
       </a>
 
-      {/* Locked IEEE EMBS solid #772583 header */}
+      {/* Locked IEEE EMBS solid #772583 header with unified Hat Switcher */}
       <header className="sticky top-0 z-30 border-b border-[#5a1b63] bg-[#772583] text-white">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             <Link
               href="/"
               className="shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
@@ -147,36 +105,22 @@ export function HrShell({
               <EmbsMark inverted />
             </Link>
             <div
-              className="hidden h-5 w-px bg-white/25 sm:block"
+              className="h-5 w-px shrink-0 bg-white/25"
               aria-hidden="true"
             />
-            <div className="hidden items-center gap-2 sm:flex min-w-0">
-              <Badge
-                className={cn(
-                  "shrink-0 gap-1 border text-xs font-bold",
-                  currentRoleInfo.headerBadge
-                )}
-              >
-                {isMaster ? (
-                  <Crown
-                    className="h-3 w-3 text-[#ffc627]"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <Shield className="h-3 w-3" aria-hidden="true" />
-                )}
-                {currentRoleInfo.label}
-              </Badge>
-              <span className="hidden truncate text-xs text-white/75 md:inline">
-                Season:{" "}
-                <strong className="font-semibold text-white">
-                  {activeSeasonName}
-                </strong>
-              </span>
-            </div>
+            <ContextSwitcher
+              contexts={contexts}
+              activeMembershipId={activeMembershipId}
+              activePortal="hr"
+              variant="header"
+              fallbackLabel={fallbackContextLabel}
+            />
+            <span className="hidden truncate text-xs text-white/75 lg:inline">
+              · <strong className="font-semibold text-white">{activeSeasonName}</strong>
+            </span>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <Link
               href="/leaderboards"
               className="hidden items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-white/90 transition-colors hover:bg-white/15 hover:text-white md:inline-flex"
@@ -212,36 +156,12 @@ export function HrShell({
                       {userName}
                     </p>
                   )}
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <Badge
-                      className={cn(
-                        "text-[11px] font-semibold",
-                        currentRoleInfo.sidebarBadge
-                      )}
-                    >
-                      {currentRoleInfo.label}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {activeSeasonName}
-                    </span>
-                  </div>
-                  {userCommitteeName && !hasInteractiveContextSwitcher && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {userCommitteeName}
-                    </p>
-                  )}
-                  {hasInteractiveContextSwitcher && (
-                    <div className="mt-2.5">
-                      <ContextSwitcher
-                        contexts={contexts}
-                        activeMembershipId={activeMembershipId}
-                        activePortal="hr"
-                        variant="mobile"
-                        fallbackLabel={fallbackContextLabel}
-                        onSwitched={() => setMobileOpen(false)}
-                      />
-                    </div>
-                  )}
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {pickerModel.activeTriggerLabel}
+                  </p>
+                  <p className="mt-1 text-[11px] font-medium text-[#00629b]">
+                    {activeSeasonName}
+                  </p>
                 </div>
                 <div className="mt-4">
                   <HrNav
@@ -267,21 +187,6 @@ export function HrShell({
         </div>
       </header>
 
-      {/* Mobile 1-tap context switcher bar (only shown when user has multiple views/roles) */}
-      {hasInteractiveContextSwitcher && (
-        <div className="border-b border-border bg-[#f8f9fb] px-4 py-2 lg:hidden">
-          <div className="mx-auto max-w-7xl">
-            <ContextSwitcher
-              contexts={contexts}
-              activeMembershipId={activeMembershipId}
-              activePortal="hr"
-              variant="mobile"
-              fallbackLabel={fallbackContextLabel}
-            />
-          </div>
-        </div>
-      )}
-
       {/* Persistent desktop sidebar + main operational workspace */}
       <div className="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 pt-5 pb-24 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8 lg:py-8">
         <aside className="hidden lg:block">
@@ -292,15 +197,10 @@ export function HrShell({
                   {userName}
                 </p>
               )}
-              <ContextSwitcher
-                contexts={contexts}
-                activeMembershipId={activeMembershipId}
-                activePortal="hr"
-                variant="desktop"
-                fallbackLabel={fallbackContextLabel}
-                className="mt-1"
-              />
-              <p className="mt-1.5 text-[11px] font-medium text-[#00629b]">
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {pickerModel.activeHeading}
+              </p>
+              <p className="mt-1 text-[11px] font-medium text-[#00629b]">
                 {activeSeasonName}
               </p>
             </div>

@@ -40,6 +40,20 @@ export function generatePreassignedPassword(seasonYear = "2026"): string {
 }
 
 /**
+ * Resolves the server-side default temporary password for newly added roster members
+ * and HR/Master password resets. Reads `DEFAULT_MEMBER_PASSWORD` at call time so
+ * operators can update it via environment configuration without code changes.
+ * Falls back to a random pre-assigned password when unset.
+ */
+export function getDefaultMemberPassword(): string {
+  const configured = process.env.DEFAULT_MEMBER_PASSWORD?.trim();
+  if (configured && configured.length > 0) {
+    return configured;
+  }
+  return generatePreassignedPassword();
+}
+
+/**
  * Validates new password strength when user sets their password on first login.
  */
 export function isPasswordStrong(password: string): { valid: boolean; reason?: string } {

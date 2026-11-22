@@ -153,6 +153,65 @@ describe("BulkTaskGradingView Component", () => {
     expect(checkbox).toBeChecked();
   });
 
+  it("displays an HR-Only verification badge on hr_only tasks and syncs submissions when props refresh", () => {
+    const { rerender } = render(
+      <BulkTaskGradingView
+        task={{
+          id: "t-hr-only",
+          title: "Verify Lab Safety Sign-Off",
+          workType: "task",
+          completionMode: "hr_only",
+          committeeName: "Biomedical",
+          maxPoints: 15,
+        }}
+        submissions={[
+          {
+            submissionId: "sub-1",
+            membershipId: "m-1",
+            memberName: "Nourhan Khaled",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: null,
+            notes: "",
+            completed: false,
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText("HR-Only")).toBeInTheDocument();
+
+    rerender(
+      <BulkTaskGradingView
+        task={{
+          id: "t-hr-only",
+          title: "Verify Lab Safety Sign-Off",
+          workType: "task",
+          completionMode: "hr_only",
+          committeeName: "Biomedical",
+          maxPoints: 15,
+        }}
+        submissions={[
+          {
+            submissionId: "sub-1",
+            membershipId: "m-1",
+            memberName: "Nourhan Khaled",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: 15,
+            notes: "",
+            completed: true,
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("checkbox")).toBeChecked();
+    expect(screen.getByText("15 pts")).toBeInTheDocument();
+  });
+
   it("saves graded rows while skipping unsubmitted blank rows, and rejects partially filled rows", async () => {
     const user = userEvent.setup();
     const onGrade = vi.fn().mockResolvedValue({ ok: true });

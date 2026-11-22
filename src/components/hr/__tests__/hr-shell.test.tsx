@@ -27,7 +27,7 @@ describe("HrShell Component", () => {
     mockPathname = "/hr";
   });
 
-  it("renders unified brand header and sidebar ContextSwitcher for committee heads without labeling personal work 'Member'", async () => {
+  it("renders unified brand header with top-bar ContextSwitcher for committee heads without labeling personal work 'Member'", async () => {
     const user = userEvent.setup();
     render(
       <HrShell
@@ -50,7 +50,6 @@ describe("HrShell Component", () => {
     );
 
     expect(screen.getAllByText("Salma El-Sayed").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Head Console/i).length).toBeGreaterThan(0);
 
     expect(
       screen.getByRole("button", { name: /log out/i })
@@ -60,12 +59,7 @@ describe("HrShell Component", () => {
     expect(screen.queryByText(/member view/i)).not.toBeInTheDocument();
 
     const header = screen.getByRole("banner");
-    expect(
-      within(header).queryByRole("button", { name: /switch role or view/i })
-    ).not.toBeInTheDocument();
-
-    const sidebar = screen.getByRole("complementary");
-    const switcher = within(sidebar).getByRole("button", {
+    const switcher = within(header).getByRole("button", {
       name: /switch role or view: ai and machine learning · head · manage committee/i,
     });
     await user.click(switcher);
@@ -86,7 +80,7 @@ describe("HrShell Component", () => {
     expect(screen.queryByRole("link", { name: /events/i })).not.toBeInTheDocument();
   });
 
-  it("gives hr_member a sidebar ContextSwitcher with My work and Track <Committee>", async () => {
+  it("gives hr_member a top-bar ContextSwitcher with My work and Track <Committee>", async () => {
     const user = userEvent.setup();
     render(
       <HrShell
@@ -108,8 +102,8 @@ describe("HrShell Component", () => {
       </HrShell>
     );
 
-    const sidebar = screen.getByRole("complementary");
-    const switcher = within(sidebar).getByRole("button", {
+    const header = screen.getByRole("banner");
+    const switcher = within(header).getByRole("button", {
       name: /switch role or view: hr · member · track pr/i,
     });
     await user.click(switcher);
@@ -146,11 +140,10 @@ describe("HrShell Component", () => {
     );
 
     expect(screen.getAllByText("Master Administrator").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Master Authority/i).length).toBeGreaterThan(0);
-    const sidebar = screen.getByRole("complementary");
-    expect(within(sidebar).getByText("Master Admin")).toBeInTheDocument();
+    const header = screen.getByRole("banner");
+    expect(within(header).getByText("Master Admin")).toBeInTheDocument();
     expect(
-      within(sidebar).queryByRole("button", { name: /switch role or view/i })
+      within(header).queryByRole("button", { name: /switch role or view/i })
     ).not.toBeInTheDocument();
 
     expect(

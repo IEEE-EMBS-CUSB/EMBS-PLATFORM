@@ -247,4 +247,115 @@ describe("RosterManagerView Component", () => {
       })
     );
   });
+
+  it("uses uniform white styling for director selector, removes Super Admin/Committee HR tags, supports multi-facet filters, and integrates search-to-add with directory autofill & multi-role clarity", async () => {
+    const user = userEvent.setup();
+    const richMembers = [
+      {
+        id: "m-master",
+        personId: "p-master",
+        fullName: "Master User",
+        email: "master@cu.edu.eg",
+        committeeId: null,
+        committeeName: "Unassigned",
+        role: "master_admin" as const,
+        isActive: true,
+      },
+      {
+        id: "m-dir",
+        personId: "p-dir",
+        fullName: "Karim Director",
+        email: "karim@cu.edu.eg",
+        committeeId: null,
+        committeeName: "Unassigned",
+        managedTrackId: "trk-tech",
+        managedTrackName: "Technical",
+        trackId: "trk-tech",
+        role: "director" as const,
+        isActive: true,
+      },
+      {
+        id: "m-hr-1",
+        personId: "p-multi",
+        fullName: "Laila MultiHat",
+        email: "laila@cu.edu.eg",
+        committeeId: "comm-ai-ml",
+        committeeName: "Tracks AI and Machine Learning",
+        trackId: "trk-tech",
+        role: "hr_member" as const,
+        isActive: true,
+      },
+      {
+        id: "m-mem-2",
+        personId: "p-multi",
+        fullName: "Laila MultiHat",
+        email: "laila@cu.edu.eg",
+        committeeId: "comm-graphic",
+        committeeName: "Graphic Design",
+        trackId: "trk-creative",
+        role: "member" as const,
+        isActive: true,
+      },
+    ];
+
+    render(
+      <RosterManagerView
+        members={richMembers}
+        peopleDirectory={[
+          { id: "p-alumni", fullName: "Youssef Alumni", email: "youssef@cu.edu.eg" },
+        ]}
+        availableCommittees={[
+          { id: "comm-ai-ml", name: "AI and Machine Learning", trackId: "trk-tech" },
+          { id: "comm-graphic", name: "Graphic Design", trackId: "trk-creative" },
+        ]}
+        availableTracks={[
+          { id: "trk-tech", name: "Technical" },
+          { id: "trk-creative", name: "Creative" },
+        ]}
+        currentUserRole="master_admin"
+      />
+    );
+
+    // Unnecessary tags removed
+    expect(screen.queryByText("Super Admin")).not.toBeInTheDocument();
+    expect(screen.queryByText("Committee HR")).not.toBeInTheDocument();
+
+    // Uniform white styling on director selector
+    const dirSelect = screen.getByLabelText(/assign director track for karim director/i);
+    expect(dirSelect.className).toContain("bg-white");
+    expect(dirSelect.className).not.toContain("bg-[#f5edf7]");
+
+    // Multi-role indicator visible for Laila MultiHat
+    expect(screen.getAllByText("2 roles").length).toBe(2);
+
+    // Highlighted HR Officer Committee Assignments section visible
+    expect(screen.getByText(/HR Officer Committee Assignments/i)).toBeInTheDocument();
+
+    // Filter by role = director
+    await user.selectOptions(screen.getByLabelText("Filter by role"), "director");
+    expect(screen.getByText("Karim Director")).toBeInTheDocument();
+    expect(screen.queryByText("Master User")).not.toBeInTheDocument();
+
+    // Reset filters
+    await user.click(screen.getByRole("button", { name: /reset filters/i }));
+    expect(screen.getByText("Master User")).toBeInTheDocument();
+
+    // Search for existing person in peopleDirectory (not yet in season) -> click to autofill Add modal
+    const searchInput = screen.getByPlaceholderText(/search by name or email/i);
+    await user.type(searchInput, "Youssef");
+    const autofillBtn = screen.getByRole("button", { name: /Youssef Alumni/i });
+    await user.click(autofillBtn);
+
+    expect(screen.getByLabelText(/full name/i)).toHaveValue("Youssef Alumni");
+    expect(screen.getByLabelText(/email address/i)).toHaveValue("youssef@cu.edu.eg");
+    await user.click(screen.getByRole("button", { name: /close add member modal/i }));
+
+    // Search for non-existent member -> inline Add button prefills modal
+    await user.clear(searchInput);
+    await user.type(searchInput, "brandnew@cu.edu.eg");
+    await user.click(
+      screen.getByRole("button", { name: /add .*brandnew@cu\.edu\.eg.* as new member/i })
+    );
+    expect(screen.getByLabelText(/email address/i)).toHaveValue("brandnew@cu.edu.eg");
+  });
 });

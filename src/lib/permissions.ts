@@ -205,19 +205,68 @@ export function canManageCommitteeTasks(
 }
 
 /**
+ * Checks whether a user can manage (grade/check-off) a specific work item kind for a committee:
+ * - master_admin: both assignments and tasks chapter-wide
+ * - director: assignments only (tasks remain HR's responsibility)
+ * - hr_admin: tasks chapter-wide; assignments for HR committee only
+ * - committee_head: assignments for their own committee only
+ * - hr_member: tasks for their tracked committee only
+ */
+export function canManageWorkItem(
+  user: UserPermissionContext,
+  workType: WorkItemType,
+  committeeId: string | null
+): boolean {
+  if (user.role === "master_admin") {
+    return true;
+  }
+
+  if (user.role === "director") {
+    return workType === "assignment";
+  }
+
+  if (user.role === "hr_admin") {
+    if (workType === "task") {
+      return true;
+    }
+    return (
+      user.committeeId !== null &&
+      committeeId !== null &&
+      user.committeeId === committeeId
+    );
+  }
+
+  if (user.role === "committee_head") {
+    return (
+      workType === "assignment" &&
+      user.committeeId !== null &&
+      user.committeeId === committeeId
+    );
+  }
+
+  if (user.role === "hr_member") {
+    const scopeId = getOperationalCommitteeScope(user);
+    return (
+      workType === "task" &&
+      scopeId !== null &&
+      scopeId === committeeId
+    );
+  }
+
+  return false;
+}
+
+/**
  * Award bonus or point overrides in score_ledger.
- * Master, Director, and HR Admin can award across all committees.
+ * Master and HR Admin can award across all committees.
  * HR Member and Committee Head can award only to members in their operational committee.
+ * Directors have read-only access to the points ledger and cannot edit points.
  */
 export function canAwardBonus(
   user: UserPermissionContext,
   targetMemberCommitteeId: string | null
 ): boolean {
-  if (
-    user.role === "master_admin" ||
-    user.role === "director" ||
-    user.role === "hr_admin"
-  ) {
+  if (user.role === "master_admin" || user.role === "hr_admin") {
     return true;
   }
   if (user.role === "hr_member" || user.role === "committee_head") {
@@ -228,10 +277,35 @@ export function canAwardBonus(
 }
 
 /**
+ * Check whether a role can issue official member warnings or log hidden internal HR notes.
+ */
+export function canIssueFeedbackWarnings(role: MembershipRole): boolean {
+  return (
+    role === "master_admin" ||
+    role === "director" ||
+    role === "hr_admin" ||
+    role === "hr_member"
+  );
+}
+
+/**
+ * Check whether a role can view hidden (unpublished) internal HR feedback notes
+ * within their operational scope. Never granted to committee heads, members, or attendees.
+ */
+export function canViewHiddenFeedback(role: MembershipRole): boolean {
+  return (
+    role === "master_admin" ||
+    role === "director" ||
+    role === "hr_admin" ||
+    role === "hr_member"
+  );
+}
+
+/**
  * Submit feedback and reviews for members.
- * Master, Director, and HR Admin can submit for all members (including private HR warnings).
- * Committee Head can submit for members of their committee.
- * HR Members do not submit feedback.
+ * Master, Director (track-scoped in services), and HR Admin can submit across their scope.
+ * HR Member can submit for members of their tracked committee.
+ * Committee Head can submit member-visible non-warning feedback for members of their committee.
  */
 export function canGiveFeedback(
   user: UserPermissionContext,
@@ -244,10 +318,9 @@ export function canGiveFeedback(
   ) {
     return true;
   }
-  if (user.role === "committee_head") {
-    return (
-      user.committeeId !== null && user.committeeId === targetMemberCommitteeId
-    );
+  if (user.role === "committee_head" || user.role === "hr_member") {
+    const scopeId = getOperationalCommitteeScope(user);
+    return scopeId !== null && scopeId === targetMemberCommitteeId;
   }
   return false;
 }
@@ -261,8 +334,8 @@ export function canAccessHrModule(
 ): boolean {
   switch (moduleName) {
     case "seasons":
-      // Only master_admin can manage seasons
-      return role === "master_admin";
+      // Master manages lifecycle + settings; HR Admin configures season settings
+      return role === "master_admin" || role === "hr_admin";
 
     case "committees":
       return (
@@ -312,6 +385,7 @@ export function canAccessHrModule(
         role === "master_admin" ||
         role === "director" ||
         role === "hr_admin" ||
+        role === "hr_member" ||
         role === "committee_head"
       );
 
@@ -323,16 +397,21 @@ export function canAccessHrModule(
 /**
  * Checks if a role is permitted to assign tasks/assignments to a target role.
  * Hierarchy:
- * - master_admin: can assign to anyone (director, committee_head, hr_admin, hr_member, member)
- * - director: sits above heads, can give assignments to committee_head and hr_admin
- * - hr_admin: can give tasks/assignments to hr_member
+ * - master_admin: can assign both assignments and tasks to anyone
+ * - director: can give assignments to committee_head, hr_admin, and member (within track)
+ * - hr_admin: can give assignments ONLY to hr_member; can give tasks to everyone (committee_head, hr_member, member, director)
  * - committee_head: can give assignments to members in their committee
- * - hr_member: can give tasks to members in their committee
+ * - hr_member: can give tasks to members in their tracked committee
  */
 export function canAssignTaskToRole(
   assignerRole: MembershipRole,
-  targetRole: MembershipRole
+  targetRole: MembershipRole,
+  workType?: WorkItemType
 ): boolean {
+  if (workType && !canCreateWorkType(assignerRole, workType)) {
+    return false;
+  }
+
   if (assignerRole === "master_admin") {
     return (
       targetRole === "director" ||
@@ -344,11 +423,30 @@ export function canAssignTaskToRole(
   }
 
   if (assignerRole === "director") {
-    return targetRole === "committee_head" || targetRole === "hr_admin";
+    return (
+      targetRole === "committee_head" ||
+      targetRole === "hr_admin" ||
+      targetRole === "member"
+    );
   }
 
   if (assignerRole === "hr_admin") {
-    return targetRole === "hr_member";
+    if (workType === "assignment") {
+      return targetRole === "hr_member";
+    }
+    if (workType === "task") {
+      return (
+        targetRole === "committee_head" ||
+        targetRole === "hr_member" ||
+        targetRole === "member" ||
+        targetRole === "director"
+      );
+    }
+    return (
+      targetRole === "hr_member" ||
+      targetRole === "committee_head" ||
+      targetRole === "member"
+    );
   }
 
   if (assignerRole === "committee_head" || assignerRole === "hr_member") {
@@ -363,24 +461,21 @@ export function canAssignTaskToRole(
  */
 export function canReceiveTasksFromRole(
   targetRole: MembershipRole,
-  assignerRole: MembershipRole
+  assignerRole: MembershipRole,
+  workType?: WorkItemType
 ): boolean {
-  return canAssignTaskToRole(assignerRole, targetRole);
+  return canAssignTaskToRole(assignerRole, targetRole, workType);
 }
 
 /**
  * Validates whether an assigner user can assign a task/assignment to a specific target user.
- * Enforces role hierarchy and committee boundaries:
- * - master_admin: branch-wide
- * - director: to heads and HR admins
- * - hr_admin: to HR members
- * - committee_head & hr_member: to members in their committee
  */
 export function canAssignTask(
   assigner: UserPermissionContext,
-  target: UserPermissionContext
+  target: UserPermissionContext,
+  workType?: WorkItemType
 ): boolean {
-  if (!canAssignTaskToRole(assigner.role, target.role)) {
+  if (!canAssignTaskToRole(assigner.role, target.role, workType)) {
     return false;
   }
 
@@ -389,7 +484,10 @@ export function canAssignTask(
   }
 
   if (assigner.role === "hr_admin") {
-    return target.role === "hr_member";
+    if (workType === "assignment") {
+      return target.role === "hr_member";
+    }
+    return true;
   }
 
   if (assigner.role === "committee_head" || assigner.role === "hr_member") {

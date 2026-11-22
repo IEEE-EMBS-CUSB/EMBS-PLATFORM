@@ -150,7 +150,7 @@ function buildViewsForContext(
           key: `${ctx.membershipId}:manage`,
           membershipId: ctx.membershipId,
           viewMode: "manage",
-          label: "Manage track",
+          label: ctx.managedTrackName ? "Manage track" : "Chapter console",
           href: "/hr",
           isActive: isActiveMembership && activePortal === "hr",
         },

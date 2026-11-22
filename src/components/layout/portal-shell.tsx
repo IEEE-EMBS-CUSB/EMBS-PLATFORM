@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import {
-  Award,
   BarChart3,
   CalendarCheck,
   CheckSquare,
@@ -78,12 +77,6 @@ const MEMBER_NAV_ITEMS: readonly NavItem[] = [
     icon: CheckSquare,
   },
   {
-    href: "/member/evaluations",
-    label: "Evaluations",
-    mobileLabel: "Eval",
-    icon: Award,
-  },
-  {
     href: "/member/feedback",
     label: "Feedback",
     mobileLabel: "Feedback",
@@ -145,12 +138,13 @@ export function PortalShell({
       : currentUserRole === "committee_head" || currentUserRole === "hr_member"
         ? "My work"
         : "Member portal";
-  const hasInteractiveContextSwitcher = buildContextPickerModel({
+
+  const pickerModel = buildContextPickerModel({
     contexts,
     activeMembershipId,
     activePortal: portalType,
     fallbackLabel: subtitle,
-  }).isInteractive;
+  });
 
   function isActive(item: NavItem): boolean {
     if (item.exact) return pathname === item.href;
@@ -197,10 +191,10 @@ export function PortalShell({
         Skip to main content
       </a>
 
-      {/* Solid #772583 portal top bar — pixel-locked with HrShell (max-w-7xl, h-16) */}
+      {/* Solid #772583 portal top bar with unified Hat Switcher */}
       <header className="sticky top-0 z-30 border-b border-[#5a1b63] bg-[#772583] text-white">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             <Link
               href="/"
               className="shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
@@ -209,15 +203,19 @@ export function PortalShell({
             </Link>
 
             <span
-              className="hidden h-5 w-px bg-white/25 sm:inline-block"
+              className="h-5 w-px shrink-0 bg-white/25"
               aria-hidden="true"
             />
-            <span className="hidden text-xs font-semibold text-white/85 sm:inline-block">
-              {portalLabel}
-            </span>
+            <ContextSwitcher
+              contexts={contexts}
+              activeMembershipId={activeMembershipId}
+              activePortal={portalType}
+              variant="header"
+              fallbackLabel={portalLabel}
+            />
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <Link
               href="/leaderboards"
               className="hidden items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-white/90 transition-colors hover:bg-white/15 hover:text-white md:inline-flex"
@@ -250,22 +248,9 @@ export function PortalShell({
                   <p className="font-heading text-sm font-bold text-[#002855]">
                     {userName}
                   </p>
-                  {hasInteractiveContextSwitcher ? (
-                    <div className="mt-2">
-                      <ContextSwitcher
-                        contexts={contexts}
-                        activeMembershipId={activeMembershipId}
-                        activePortal={portalType}
-                        variant="mobile"
-                        fallbackLabel={subtitle}
-                        onSwitched={() => setMobileOpen(false)}
-                      />
-                    </div>
-                  ) : (
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {subtitle}
-                    </p>
-                  )}
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {pickerModel.activeTriggerLabel || subtitle}
+                  </p>
                 </div>
                 <div className="mt-4">
                   {navList(() => setMobileOpen(false))}
@@ -287,22 +272,7 @@ export function PortalShell({
         </div>
       </header>
 
-      {/* Mobile 1-tap context switcher bar (only shown when user has multiple views/roles) */}
-      {hasInteractiveContextSwitcher && (
-        <div className="border-b border-border bg-[#f8f9fb] px-4 py-2 lg:hidden">
-          <div className="mx-auto max-w-7xl">
-            <ContextSwitcher
-              contexts={contexts}
-              activeMembershipId={activeMembershipId}
-              activePortal={portalType}
-              variant="mobile"
-              fallbackLabel={subtitle}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Main workspace grid — pixel-locked with HrShell (max-w-7xl, 240px sidebar, lg:py-8) */}
+      {/* Main workspace grid */}
       <div className="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 pt-5 pb-24 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8 lg:py-8">
         <aside className="hidden lg:block">
           <div className="sticky top-24 space-y-4 rounded-lg border border-border bg-white p-4">
@@ -310,14 +280,9 @@ export function PortalShell({
               <p className="font-heading text-sm font-bold text-[#002855]">
                 {userName}
               </p>
-              <ContextSwitcher
-                contexts={contexts}
-                activeMembershipId={activeMembershipId}
-                activePortal={portalType}
-                variant="desktop"
-                fallbackLabel={subtitle}
-                className="mt-1"
-              />
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {pickerModel.activeHeading || subtitle}
+              </p>
             </div>
             {navList()}
           </div>

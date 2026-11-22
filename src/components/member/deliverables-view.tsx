@@ -155,12 +155,26 @@ export function MemberDeliverablesView({
                   )}
 
                   {isTask ? (
-                    <TaskCheckToggle
-                      taskId={item.id}
-                      title={item.title}
-                      maxPoints={item.maxPoints}
-                      initialCompleted={item.status === "completed"}
-                    />
+                    item.completionMode === "hr_only" ? (
+                      <span
+                        className={
+                          item.status === "completed"
+                            ? "inline-flex items-center rounded-full bg-[#eef8e0] px-2.5 py-1 text-xs font-semibold text-[#2f600b]"
+                            : "inline-flex items-center rounded-full bg-[#f5edf7] px-2.5 py-1 text-xs font-semibold text-[#5a1b63]"
+                        }
+                      >
+                        {item.status === "completed"
+                          ? "Verified by HR"
+                          : "Pending HR verification"}
+                      </span>
+                    ) : (
+                      <TaskCheckToggle
+                        taskId={item.id}
+                        title={item.title}
+                        maxPoints={item.maxPoints}
+                        initialCompleted={item.status === "completed"}
+                      />
+                    )
                   ) : (
                     item.status !== "completed" && (
                       <TaskSubmitForm
@@ -247,12 +261,26 @@ export function MemberDeliverablesView({
                       </TableCell>
                       <TableCell className="whitespace-nowrap py-3.5 text-sm text-muted-foreground tabular-nums">
                         {isTask ? (
-                          <TaskCheckToggle
-                            taskId={item.id}
-                            title={item.title}
-                            maxPoints={item.maxPoints}
-                            initialCompleted={item.status === "completed"}
-                          />
+                          item.completionMode === "hr_only" ? (
+                            <span
+                              className={
+                                item.status === "completed"
+                                  ? "inline-flex items-center rounded-full bg-[#eef8e0] px-2.5 py-0.5 text-xs font-semibold text-[#2f600b]"
+                                  : "inline-flex items-center rounded-full bg-[#f5edf7] px-2.5 py-0.5 text-xs font-semibold text-[#5a1b63]"
+                              }
+                            >
+                              {item.status === "completed"
+                                ? "Verified by HR"
+                                : "Pending HR verification"}
+                            </span>
+                          ) : (
+                            <TaskCheckToggle
+                              taskId={item.id}
+                              title={item.title}
+                              maxPoints={item.maxPoints}
+                              initialCompleted={item.status === "completed"}
+                            />
+                          )
                         ) : item.effort !== null ? (
                           <>
                             Effort {item.effort}/5

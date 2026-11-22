@@ -1,40 +1,50 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
-import { FeedbackList } from "@/components/data-display/feedback-list";
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { FeedbackList } from "../feedback-list";
 import type { PublishedFeedback } from "@/types";
 
-const SAMPLE_FEEDBACK: PublishedFeedback[] = [
-  {
-    id: "fb-1",
-    month: "2026-10",
-    publishedAt: "2026-10-28",
-    authorRole: "HR Lead",
-    reviewType: "recognition",
-    message: "Led the signal filtering workshop smoothly.",
-    decision: "+2 bonus points logged",
-    visibility: "published",
-  },
-];
-
 describe("FeedbackList", () => {
-  afterEach(() => {
-    cleanup();
-  });
+  it("renders member-visible official warnings and attached points bonus/deduction pills", () => {
+    const items: PublishedFeedback[] = [
+      {
+        id: "fb-warn",
+        month: "2026-11",
+        publishedAt: "2026-11-18",
+        authorRole: "HR Officer",
+        reviewType: "warning",
+        message: "Official warning for missing two committee meetings.",
+        pointsDelta: -10,
+        visibility: "published",
+      },
+      {
+        id: "fb-rec",
+        month: "2026-11",
+        publishedAt: "2026-11-15",
+        authorRole: "HR Lead",
+        reviewType: "recognition",
+        message: "Outstanding work mentoring new members.",
+        pointsDelta: 15,
+        visibility: "published",
+      },
+      {
+        id: "fb-zero",
+        month: "2026-11",
+        publishedAt: "2026-11-12",
+        authorRole: "Committee Head",
+        reviewType: "excused_absence",
+        message: "Midterm exam excuse logged.",
+        pointsDelta: 0,
+        visibility: "published",
+      },
+    ];
 
-  it("renders published feedback reviewer role, HR review type, message, and outcome", () => {
-    render(<FeedbackList items={SAMPLE_FEEDBACK} />);
+    render(<FeedbackList items={items} />);
 
-    expect(screen.getByText("HR Lead")).toBeInTheDocument();
-    expect(
-      screen.getByText("Led the signal filtering workshop smoothly.")
-    ).toBeInTheDocument();
-    expect(screen.getByText(/recognition/i)).toBeInTheDocument();
-    expect(screen.getByText(/\+2 bonus points logged/i)).toBeInTheDocument();
-  });
-
-  it("renders an empty state when no feedback has been published", () => {
-    render(<FeedbackList items={[]} />);
-
-    expect(screen.getByText(/no published feedback yet/i)).toBeInTheDocument();
+    expect(screen.getByText("Warning")).toBeInTheDocument();
+    expect(screen.getByText("Recognition")).toBeInTheDocument();
+    expect(screen.getByText("Excused absence")).toBeInTheDocument();
+    expect(screen.getByText("-10 pts")).toBeInTheDocument();
+    expect(screen.getByText("+15 pts")).toBeInTheDocument();
+    expect(screen.queryByText("0 pts")).not.toBeInTheDocument();
   });
 });

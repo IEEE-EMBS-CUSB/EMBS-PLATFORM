@@ -24,7 +24,7 @@ describe("PortalShell", () => {
     cleanup();
   });
 
-  it("renders all member navigation links, user name, plain label for single-context members, and visible logout without exposing member IDs", () => {
+  it("renders all active member navigation links (excluding retired Evaluations), user name, plain label for single-context members, and visible logout without exposing member IDs", () => {
     render(
       <PortalShell
         portalType="member"
@@ -59,9 +59,9 @@ describe("PortalShell", () => {
       screen.getByRole("button", { name: /more sections/i })
     ).toBeInTheDocument();
 
-    const sidebar = screen.getByRole("complementary");
+    const header = screen.getByRole("banner");
     expect(
-      within(sidebar).queryByRole("button", { name: /switch role or view/i })
+      within(header).queryByRole("button", { name: /switch role or view/i })
     ).not.toBeInTheDocument();
 
     for (const label of [
@@ -70,7 +70,6 @@ describe("PortalShell", () => {
       "Attendance",
       "Assignments",
       "Tasks",
-      "Evaluations",
       "Feedback",
     ]) {
       expect(
@@ -79,11 +78,14 @@ describe("PortalShell", () => {
     }
 
     expect(
+      screen.queryByRole("link", { name: /evaluations/i })
+    ).not.toBeInTheDocument();
+    expect(
       screen.queryByRole("link", { name: /activities/i })
     ).not.toBeInTheDocument();
   });
 
-  it("places ContextSwitcher in sidebar (not header) for committee heads on /member and keeps role labeled Head", async () => {
+  it("places unified interactive ContextSwitcher in top bar for committee heads on /member and keeps role labeled Head", async () => {
     const user = userEvent.setup();
     render(
       <PortalShell
@@ -107,15 +109,10 @@ describe("PortalShell", () => {
     );
 
     const header = screen.getByRole("banner");
-    expect(
-      within(header).queryByRole("button", { name: /switch role or view/i })
-    ).not.toBeInTheDocument();
     expect(within(header).queryByText(/member portal/i)).not.toBeInTheDocument();
-    expect(within(header).getByText("My work")).toBeInTheDocument();
     expect(screen.queryByText(/leader view/i)).not.toBeInTheDocument();
 
-    const sidebar = screen.getByRole("complementary");
-    const switcher = within(sidebar).getByRole("button", {
+    const switcher = within(header).getByRole("button", {
       name: /switch role or view: ai and machine learning · head · my work/i,
     });
     await user.click(switcher);

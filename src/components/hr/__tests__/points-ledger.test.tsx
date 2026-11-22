@@ -126,9 +126,11 @@ describe("PointsLedgerView", () => {
       screen.getByRole("heading", { name: /log point adjustment/i })
     ).toBeInTheDocument();
 
-    // Select member
-    const memberSelect = screen.getByLabelText(/select member/i);
-    await user.selectOptions(memberSelect, "mem-1");
+    // Select member via searchable combobox
+    const combo = screen.getByRole("combobox", { name: /select member/i });
+    await user.click(combo);
+    await user.type(combo, "Salma");
+    await user.click(screen.getByRole("option", { name: /salma el-sayed/i }));
 
     // Enter points delta
     const pointsInput = screen.getByLabelText(/points adjustment/i);
@@ -144,8 +146,30 @@ describe("PointsLedgerView", () => {
     await user.click(submitBtn);
 
     // Modal closes and entry is listed
-    expect(screen.queryByRole("heading", { name: /log point adjustment/i })).not.toBeInTheDocument();
-    expect(screen.getByText("Exceptional hackathon mentorship")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /log point adjustment/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Exceptional hackathon mentorship")
+    ).toBeInTheDocument();
     expect(screen.getByText("+20 pts")).toBeInTheDocument();
+  });
+
+  it("renders read-only audit view without Adjust Points button for Directors", () => {
+    render(
+      <PointsLedgerView
+        entries={mockEntries}
+        members={mockMembers}
+        readOnly={true}
+        scopedTrackName="Technical Track"
+      />
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /adjust points/i })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/read-only audit view/i)).toBeInTheDocument();
+    expect(screen.getByText(/technical track/i)).toBeInTheDocument();
+    expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
   });
 });

@@ -68,12 +68,24 @@ export async function addManualLedgerEntryAsActor(
 
   try {
     const [member] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        seasonId: schema.rosterMemberships.seasonId,
+        personId: schema.rosterMemberships.personId,
+        committeeId: schema.rosterMemberships.committeeId,
+        role: schema.rosterMemberships.role,
+        isActive: schema.rosterMemberships.isActive,
+        personIsActive: schema.persons.isActive,
+      })
       .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
       .where(eq(schema.rosterMemberships.id, input.membershipId))
       .limit(1);
 
-    if (!member || !member.isActive) {
+    if (!member || !member.isActive || !member.personIsActive) {
       return { ok: false, error: "Active member not found." };
     }
     if (member.role === "attendee") {
@@ -99,7 +111,10 @@ export async function addManualLedgerEntryAsActor(
     if (!canAwardBonus(permCtx, member.committeeId)) {
       return {
         ok: false,
-        error: "Unauthorized: cannot award points to this member.",
+        error:
+          actor.profile.role === "director"
+            ? "Unauthorized: Directors have read-only access to the points ledger and cannot edit points."
+            : "Unauthorized: cannot award points to this member.",
       };
     }
 

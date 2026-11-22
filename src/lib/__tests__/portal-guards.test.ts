@@ -216,12 +216,14 @@ describe("portal-guards", () => {
         managedTrackId: null,
       };
 
-      await expect(requireHrModule("feedback")).rejects.toThrow("REDIRECT:/hr");
       await expect(requireHrModule("roster")).rejects.toThrow("REDIRECT:/hr");
       await expect(requireHrModule("seasons")).rejects.toThrow("REDIRECT:/hr");
+      await expect(requireHrModule("publishing")).rejects.toThrow("REDIRECT:/hr");
 
-      const allowed = await requireHrModule("attendance");
-      expect(allowed.profile.role).toBe("hr_member");
+      const allowedAttendance = await requireHrModule("attendance");
+      expect(allowedAttendance.profile.role).toBe("hr_member");
+      const allowedFeedback = await requireHrModule("feedback");
+      expect(allowedFeedback.profile.role).toBe("hr_member");
     });
   });
 });

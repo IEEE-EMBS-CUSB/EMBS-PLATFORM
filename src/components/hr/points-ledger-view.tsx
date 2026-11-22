@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import {
+  ArrowDownRight,
+  ArrowUpRight,
+  Eye,
   Plus,
   Search,
   X,
-  ArrowUpRight,
-  ArrowDownRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { MemberCombobox } from "@/components/ui/member-combobox";
 import {
   Table,
   TableBody,
@@ -47,6 +49,8 @@ interface PointsLedgerViewProps {
   currentUserName?: string;
   defaultMonth?: string;
   canChooseOpenScope?: boolean;
+  readOnly?: boolean;
+  scopedTrackName?: string;
   onAddEntry?: (input: {
     membershipId: string;
     points: number;
@@ -62,20 +66,25 @@ export function PointsLedgerView({
   currentUserName = "HR Team",
   defaultMonth,
   canChooseOpenScope = false,
+  readOnly = false,
+  scopedTrackName,
   onAddEntry,
 }: PointsLedgerViewProps) {
   const resolvedDefaultMonth =
     defaultMonth ?? new Date().toISOString().slice(0, 7);
 
   const [entries, setEntries] = useState(initialEntries);
+  const [prevInitialEntries, setPrevInitialEntries] = useState(initialEntries);
+  if (initialEntries !== prevInitialEntries) {
+    setPrevInitialEntries(initialEntries);
+    setEntries(initialEntries);
+  }
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // New adjustment form state
-  const [selectedMemberId, setSelectedMemberId] = useState(
-    members[0]?.id || ""
-  );
+  const [selectedMemberId, setSelectedMemberId] = useState("");
   const [pointsDelta, setPointsDelta] = useState("10");
   const [month, setMonth] = useState(resolvedDefaultMonth);
   const [postingScope, setPostingScope] = useState<"committee" | "open">(
@@ -218,23 +227,44 @@ export function PointsLedgerView({
             Point Override Ledger
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Deterministic audit trail for all point transactions and manual adjustments.
+            {readOnly
+              ? "Deterministic read-only audit trail for points across your managed committees."
+              : "Deterministic audit trail for all point transactions and manual adjustments."}
           </p>
         </div>
 
-        <Button
-          type="button"
-          disabled={members.length === 0}
-          onClick={() => {
-            setFormError(null);
-            setIsModalOpen(true);
-          }}
-          className="inline-flex h-10 shrink-0 items-center gap-2 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          <span>Adjust Points</span>
-        </Button>
+        {!readOnly && (
+          <Button
+            type="button"
+            disabled={members.length === 0}
+            onClick={() => {
+              setFormError(null);
+              setSelectedMemberId("");
+              setIsModalOpen(true);
+            }}
+            className="inline-flex h-10 shrink-0 items-center gap-2 bg-[#772583] px-4 text-xs font-semibold text-white hover:bg-[#5a1b63]"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            <span>Adjust Points</span>
+          </Button>
+        )}
       </div>
+
+      {readOnly && (
+        <div className="flex items-start gap-3 rounded-lg border border-[#00629b]/25 bg-[#f0f6fa] p-4 text-xs text-[#002855]">
+          <Eye
+            className="mt-0.5 h-4 w-4 shrink-0 text-[#00629b]"
+            aria-hidden="true"
+          />
+          <div>
+            <span className="font-bold">Read-Only Audit View:</span>{" "}
+            {scopedTrackName
+              ? `Showing points ledger entries filtered to ${scopedTrackName}. `
+              : "Showing points ledger entries across your managed committees. "}
+            Manual point overrides are managed by HR and Master Admin.
+          </div>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <Card className="border-border">
@@ -388,19 +418,17 @@ export function PointsLedgerView({
                 >
                   Select Member
                 </label>
-                <select
-                  id="memberSelect"
-                  value={selectedMemberId}
-                  onChange={(e) => setSelectedMemberId(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b]"
-                  required
-                >
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.fullName} ({m.committeeName})
-                    </option>
-                  ))}
-                </select>
+                <div className="mt-1">
+                  <MemberCombobox
+                    id="memberSelect"
+                    ariaLabel="Select member"
+                    options={members}
+                    value={selectedMemberId}
+                    onChange={setSelectedMemberId}
+                    placeholder="Type a member's name, email, or committee..."
+                    required
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

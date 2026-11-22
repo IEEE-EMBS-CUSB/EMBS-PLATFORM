@@ -9,7 +9,7 @@ import {
 import {
   hashPassword,
   verifyPassword,
-  generatePreassignedPassword,
+  getDefaultMemberPassword,
   isPasswordStrong,
 } from "@/lib/password";
 
@@ -339,7 +339,7 @@ export async function resetPersonPassword(params: {
 }): Promise<{ ok: boolean; tempPassword: string }> {
   const {
     personId,
-    tempPassword = generatePreassignedPassword(),
+    tempPassword = getDefaultMemberPassword(),
     updatePerson,
   } = params;
   const newHash = hashPassword(tempPassword);

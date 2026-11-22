@@ -170,7 +170,7 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5">
+              <CardContent className="p-4 sm:p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Assigned Tasks</p>
                 <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
                   {kpis.assignedTasksCount}
@@ -179,7 +179,7 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5">
+              <CardContent className="p-4 sm:p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Pending Grading</p>
                 <p className="mt-1 font-heading text-2xl font-bold text-[#772583] tabular-nums">
                   {kpis.pendingGradingCount}
@@ -188,7 +188,7 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5">
+              <CardContent className="p-4 sm:p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Avg Member Points</p>
                 <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
                   {kpis.avgMemberPoints}
@@ -199,18 +199,18 @@ export function RoleOperationalDashboard({
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
                   <CheckSquare className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Committee Assignments & Bulk Grading
+                  Committee Assignments &amp; Bulk Grading
                 </h3>
                 <p className="text-xs text-muted-foreground">
                   Create committee assignments or tab across Effort, Quality, and Timeliness to grade members.
                 </p>
-                <div className="flex flex-col gap-2 pt-1">
+                <div className="mt-auto flex flex-col gap-2 pt-2">
                   <Link
                     href="/hr/tasks"
                     className={buttonVariants({
@@ -221,7 +221,7 @@ export function RoleOperationalDashboard({
                     Create Committee Assignments
                   </Link>
                   <Link
-                    href="/hr/tasks"
+                    href="/hr/tasks#grading"
                     className={buttonVariants({
                       variant: "outline",
                       size: "sm",
@@ -234,18 +234,18 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f5edf7] text-[#772583]">
                   <FileSpreadsheet className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Committee Bonus & Points
+                  Committee Bonus &amp; Points
                 </h3>
                 <p className="text-xs text-muted-foreground">
                   Award custom bonus points with required justifications to members in your committee.
                 </p>
-                <div className="pt-1">
+                <div className="mt-auto pt-2">
                   <Link
                     href="/hr/ledger"
                     className={buttonVariants({
@@ -259,18 +259,18 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#007377]">
                   <Megaphone className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Member Feedback & Reviews
+                  Member Feedback &amp; Reviews
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Write constructive evaluations and public shoutouts for your committee members.
+                  Send public recognitions, excused-absence notes, and committee feedback to your members.
                 </p>
-                <div className="pt-1">
+                <div className="mt-auto pt-2">
                   <Link
                     href="/hr/feedback"
                     className={buttonVariants({
@@ -310,79 +310,85 @@ export function RoleOperationalDashboard({
               </Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Welcome back, Director {userName}. Supervise all {kpis.committeeCount || "chapter"} committees, assign deliverables directly to Committee Heads and HR Admins, and review chapter standings.
+              Welcome back, Director {userName}. Supervise your {kpis.committeeCount || "chapter"} committees, assign deliverables to Committee Heads and Members, and audit track standings.
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#5a1b63]/10 text-[#5a1b63]">
                   <CheckSquare className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Heads Assignment Delegation
+                  Assignments Delegation
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Issue deadlines, roadmaps, and assignments to Committee Heads and HR Administrators.
+                  Issue deadlines, roadmaps, and assignments to Committee Heads, HR Admin, and Members.
                 </p>
-                <Link
-                  href="/hr/tasks"
-                  className={buttonVariants({
-                    size: "sm",
-                    className: "w-full bg-[#5a1b63] text-xs font-semibold text-white hover:bg-[#002855]",
-                  })}
-                >
-                  Delegate Assignments to Heads
-                </Link>
+                <div className="mt-auto pt-2">
+                  <Link
+                    href="/hr/tasks"
+                    className={buttonVariants({
+                      size: "sm",
+                      className: "w-full bg-[#5a1b63] text-xs font-semibold text-white hover:bg-[#002855]",
+                    })}
+                  >
+                    Delegate Assignments to Heads &amp; Members
+                  </Link>
+                </div>
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
                   <Layers className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Committees & Rubrics Review
+                  Committees &amp; Tracks Review
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Review Technical, Creative, Operations, and custom committee tracks along with scoring rubrics for the active season.
+                  Review Technical, Creative, Operations, and custom committee tracks for the active season.
                 </p>
-                <Link
-                  href="/hr/committees"
-                  className={buttonVariants({
-                    variant: "outline",
-                    size: "sm",
-                    className: "w-full text-xs font-semibold",
-                  })}
-                >
-                  Review Committees
-                </Link>
+                <div className="mt-auto pt-2">
+                  <Link
+                    href="/hr/committees"
+                    className={buttonVariants({
+                      variant: "outline",
+                      size: "sm",
+                      className: "w-full text-xs font-semibold",
+                    })}
+                  >
+                    Review Committees
+                  </Link>
+                </div>
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f5edf7] text-[#772583]">
                   <FileSpreadsheet className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Points Ledger Audit
+                  Points Ledger Audit (Read-Only)
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Inspect score derivation, bonus logs, and branch-wide activity records.
+                  Inspect score derivation, bonus logs, and activity records filtered to your committees.
                 </p>
-                <Link
-                  href="/hr/ledger"
-                  className={buttonVariants({
-                    variant: "outline",
-                    size: "sm",
-                    className: "w-full text-xs font-semibold",
-                  })}
-                >
-                  Points Ledger
-                </Link>
+                <div className="mt-auto pt-2">
+                  <Link
+                    href="/hr/ledger"
+                    className={buttonVariants({
+                      variant: "outline",
+                      size: "sm",
+                      className: "w-full text-xs font-semibold",
+                    })}
+                  >
+                    Points Ledger
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -428,7 +434,7 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5">
+              <CardContent className="p-4 sm:p-5">
                 <p className="text-xs font-semibold text-muted-foreground">HR Officers</p>
                 <p className="mt-1 font-heading text-2xl font-bold text-[#007377] tabular-nums">
                   {kpis.hrOfficers}
@@ -437,7 +443,7 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5">
+              <CardContent className="p-4 sm:p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Attendance Sessions</p>
                 <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
                   {kpis.sessionsCount}
@@ -446,7 +452,7 @@ export function RoleOperationalDashboard({
               </CardContent>
             </Card>
             <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5">
+              <CardContent className="p-4 sm:p-5">
                 <p className="text-xs font-semibold text-muted-foreground">Published Months</p>
                 <p className="mt-1 font-heading text-2xl font-bold text-[#772583] tabular-nums">
                   {kpis.publishedMonthsCount}
@@ -457,31 +463,33 @@ export function RoleOperationalDashboard({
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f5edf7] text-[#772583]">
                   <Users className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Roster & Committee HR Assignments
+                  Roster &amp; Committee HR Assignments
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Assign HR members to specific committees and manage active roster membership.
+                  Assign HR officers to specific committees and manage active roster membership.
                 </p>
-                <Link
-                  href="/hr/roster"
-                  className={buttonVariants({
-                    size: "sm",
-                    className: "w-full bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]",
-                  })}
-                >
-                  Assign HR Members
-                </Link>
+                <div className="mt-auto pt-2">
+                  <Link
+                    href="/hr/roster"
+                    className={buttonVariants({
+                      size: "sm",
+                      className: "w-full bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]",
+                    })}
+                  >
+                    Assign HR Members
+                  </Link>
+                </div>
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#007377]">
                   <TrendingUp className="h-5 w-5" />
                 </div>
@@ -489,42 +497,46 @@ export function RoleOperationalDashboard({
                   Publish Monthly Leaderboard
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Preview computed Top 10 rankings and permanently freeze historical snapshot.
+                  Review ended months and permanently freeze deterministic leaderboard snapshots.
                 </p>
-                <Link
-                  href="/hr/publishing"
-                  className={buttonVariants({
-                    variant: "outline",
-                    size: "sm",
-                    className: "w-full text-xs font-semibold",
-                  })}
-                >
-                  Publish Monthly Leaderboard
-                </Link>
+                <div className="mt-auto pt-2">
+                  <Link
+                    href="/hr/publishing"
+                    className={buttonVariants({
+                      variant: "outline",
+                      size: "sm",
+                      className: "w-full text-xs font-semibold",
+                    })}
+                  >
+                    Publish Monthly Leaderboard
+                  </Link>
+                </div>
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
                   <Layers className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Scoring Rubrics & Categories
+                  Season Scoring &amp; Rules
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Configure weighted rubric criteria and category definitions for the active season.
+                  Configure attendance check-in rules, task defaults, assignment grading weights, and feedback caps.
                 </p>
-                <Link
-                  href="/hr/committees"
-                  className={buttonVariants({
-                    variant: "outline",
-                    size: "sm",
-                    className: "w-full text-xs font-semibold",
-                  })}
-                >
-                  Manage Scoring Rubrics
-                </Link>
+                <div className="mt-auto pt-2">
+                  <Link
+                    href="/hr/seasons"
+                    className={buttonVariants({
+                      variant: "outline",
+                      size: "sm",
+                      className: "w-full text-xs font-semibold",
+                    })}
+                  >
+                    Configure Season Settings
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -540,10 +552,10 @@ export function RoleOperationalDashboard({
         <div className="border-b border-border pb-4">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
-              Master Authority & Chapter Governance
+              Master Authority &amp; Chapter Governance
             </h1>
-            <Badge className="bg-[#002855] text-[#ffc627] border border-[#ffc627]/40 text-xs font-bold gap-1">
-              <Crown className="h-3.5 w-3.5" /> Super Admin
+            <Badge className="gap-1 border border-[#ffc627]/40 bg-[#002855] text-xs font-bold text-[#ffc627]">
+              <Crown className="h-3.5 w-3.5" /> Master Admin
             </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -562,7 +574,7 @@ export function RoleOperationalDashboard({
             </CardContent>
           </Card>
           <Card className="border-border bg-white shadow-xs">
-            <CardContent className="p-5">
+            <CardContent className="p-4 sm:p-5">
               <p className="text-xs font-semibold text-muted-foreground">Sessions Logged</p>
               <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
                 {kpis.sessionsCount}
@@ -571,7 +583,7 @@ export function RoleOperationalDashboard({
             </CardContent>
           </Card>
           <Card className="border-border bg-white shadow-xs">
-            <CardContent className="p-5">
+            <CardContent className="p-4 sm:p-5">
               <p className="text-xs font-semibold text-muted-foreground">Pending Grading</p>
               <p className="mt-1 font-heading text-2xl font-bold text-[#772583] tabular-nums">
                 {kpis.pendingGradingCount}
@@ -580,7 +592,7 @@ export function RoleOperationalDashboard({
             </CardContent>
           </Card>
           <Card className="border-border bg-white shadow-xs">
-            <CardContent className="p-5">
+            <CardContent className="p-4 sm:p-5">
               <p className="text-xs font-semibold text-muted-foreground">Published Months</p>
               <p className="mt-1 font-heading text-2xl font-bold text-[#002855] tabular-nums">
                 {kpis.publishedMonthsCount}
@@ -591,54 +603,58 @@ export function RoleOperationalDashboard({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <Card className="border-border bg-white shadow-xs">
-            <CardContent className="p-5 space-y-3">
+          <Card className="flex flex-col border-border bg-white shadow-xs">
+            <CardContent className="flex flex-1 flex-col gap-3 p-5">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#002855]/10 text-[#002855]">
                 <CalendarDays className="h-5 w-5" />
               </div>
               <h3 className="font-heading text-base font-bold text-[#002855]">
-                Season Lifecycle & Clone
+                Season Lifecycle &amp; Settings
               </h3>
               <p className="text-xs text-muted-foreground">
-                Create new seasons, activate or archive operational terms, and clone rubrics with zero code edits.
+                Create new seasons, activate or archive operational terms, and configure scoring rules with zero code edits.
               </p>
-              <Link
-                href="/hr/seasons"
-                className={buttonVariants({
-                  size: "sm",
-                  className: "w-full bg-[#002855] text-xs font-semibold text-white hover:bg-[#772583]",
-                })}
-              >
-                Season Lifecycle & Clone
-              </Link>
+              <div className="mt-auto pt-2">
+                <Link
+                  href="/hr/seasons"
+                  className={buttonVariants({
+                    size: "sm",
+                    className: "w-full bg-[#002855] text-xs font-semibold text-white hover:bg-[#772583]",
+                  })}
+                >
+                  Season Lifecycle &amp; Clone
+                </Link>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="border-border bg-white shadow-xs">
-            <CardContent className="p-5 space-y-3">
+          <Card className="flex flex-col border-border bg-white shadow-xs">
+            <CardContent className="flex flex-1 flex-col gap-3 p-5">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#772583]/10 text-[#772583]">
                 <Users className="h-5 w-5" />
               </div>
               <h3 className="font-heading text-base font-bold text-[#002855]">
-                Roster Whitelist & Roles
+                Roster Whitelist &amp; Roles
               </h3>
               <p className="text-xs text-muted-foreground">
                 Grant email whitelist authorization, assign roles (Director, HR Admin, Head), and CSV bulk import.
               </p>
-              <Link
-                href="/hr/roster"
-                className={buttonVariants({
-                  size: "sm",
-                  className: "w-full bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]",
-                })}
-              >
-                Roster Whitelist & Roles
-              </Link>
+              <div className="mt-auto pt-2">
+                <Link
+                  href="/hr/roster"
+                  className={buttonVariants({
+                    size: "sm",
+                    className: "w-full bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]",
+                  })}
+                >
+                  Roster Whitelist &amp; Roles
+                </Link>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="border-border bg-white shadow-xs">
-            <CardContent className="p-5 space-y-3">
+          <Card className="flex flex-col border-border bg-white shadow-xs">
+            <CardContent className="flex flex-1 flex-col gap-3 p-5">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
                 <TrendingUp className="h-5 w-5" />
               </div>
@@ -648,16 +664,18 @@ export function RoleOperationalDashboard({
               <p className="text-xs text-muted-foreground">
                 Audit monthly rankings and publish permanent historical snapshots to public leaderboards.
               </p>
-              <Link
-                href="/hr/publishing"
-                className={buttonVariants({
-                  variant: "outline",
-                  size: "sm",
-                  className: "w-full text-xs font-semibold",
-                })}
-              >
-                Leaderboard Publishing
-              </Link>
+              <div className="mt-auto pt-2">
+                <Link
+                  href="/hr/publishing"
+                  className={buttonVariants({
+                    variant: "outline",
+                    size: "sm",
+                    className: "w-full text-xs font-semibold",
+                  })}
+                >
+                  Leaderboard Publishing
+                </Link>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -690,9 +708,9 @@ export function RoleOperationalDashboard({
             </p>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#007377]/10 text-[#007377]">
                   <QrCode className="h-5 w-5" />
                 </div>
@@ -700,22 +718,24 @@ export function RoleOperationalDashboard({
                   Live QR Session Check-in
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Open a session check-in with a full-screen rotating QR code and 6-digit numeric fallback for instant logging.
+                  Open auto-closing QR check-ins or manage per-session attendance sheets directly.
                 </p>
-                <Link
-                  href="/hr/attendance"
-                  className={buttonVariants({
-                    size: "sm",
-                    className: "w-full bg-[#007377] text-xs font-semibold text-white hover:bg-[#002855]",
-                  })}
-                >
-                  Live QR Check-in
-                </Link>
+                <div className="mt-auto pt-2">
+                  <Link
+                    href="/hr/attendance"
+                    className={buttonVariants({
+                      size: "sm",
+                      className: "w-full bg-[#007377] text-xs font-semibold text-white hover:bg-[#002855]",
+                    })}
+                  >
+                    Live QR Check-in
+                  </Link>
+                </div>
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f5edf7] text-[#772583]">
                   <CheckSquare className="h-5 w-5" />
                 </div>
@@ -723,41 +743,71 @@ export function RoleOperationalDashboard({
                   Committee HR Tasks
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Create and grade HR tasks for members in your assigned committee.
+                  Create and verify self-report or HR-only tasks for your tracked committee.
                 </p>
-                <Link
-                  href="/hr/tasks"
-                  className={buttonVariants({
-                    size: "sm",
-                    className: "w-full bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]",
-                  })}
-                >
-                  Manage Tasks
-                </Link>
+                <div className="mt-auto pt-2">
+                  <Link
+                    href="/hr/tasks"
+                    className={buttonVariants({
+                      size: "sm",
+                      className: "w-full bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]",
+                    })}
+                  >
+                    Manage Tasks
+                  </Link>
+                </div>
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-white shadow-xs">
-              <CardContent className="p-5 space-y-3">
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
                   <FileSpreadsheet className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-base font-bold text-[#002855]">
-                  Points Ledger & Attendance Overrides
+                  Points Ledger &amp; Overrides
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Manually record or adjust attendance points and punctuality bonuses for committee members.
+                  Review and adjust attendance points or bonuses for your tracked committee.
                 </p>
-                <Link
-                  href="/hr/ledger"
-                  className={buttonVariants({
-                    variant: "outline",
-                    size: "sm",
-                    className: "w-full text-xs font-semibold",
-                  })}
-                >
-                  Award Attendance Points
-                </Link>
+                <div className="mt-auto pt-2">
+                  <Link
+                    href="/hr/ledger"
+                    className={buttonVariants({
+                      variant: "outline",
+                      size: "sm",
+                      className: "w-full text-xs font-semibold",
+                    })}
+                  >
+                    Award Attendance Points
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="flex flex-col border-border bg-white shadow-xs">
+              <CardContent className="flex flex-1 flex-col gap-3 p-5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f5edf7] text-[#5a1b63]">
+                  <Megaphone className="h-5 w-5" />
+                </div>
+                <h3 className="font-heading text-base font-bold text-[#002855]">
+                  Feedback &amp; Warnings
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Send recognitions, official warnings, or hidden HR notes for your tracked committee.
+                </p>
+                <div className="mt-auto pt-2">
+                  <Link
+                    href="/hr/feedback"
+                    className={buttonVariants({
+                      variant: "outline",
+                      size: "sm",
+                      className: "w-full text-xs font-semibold",
+                    })}
+                  >
+                    Open Feedback &amp; Warnings
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           </div>

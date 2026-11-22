@@ -87,13 +87,36 @@ describe("SeasonManagerView Component", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides clone actions and shows read-only banner for non-master roles", () => {
+  it("lets hr_admin edit season settings including task defaults and feedback bonus/deduction caps while hiding season lifecycle controls", async () => {
+    const user = userEvent.setup();
+    const onUpdateSettings = vi.fn().mockResolvedValue({ ok: true });
     render(
-      <SeasonManagerView seasons={sampleSeasons} currentUserRole="hr_admin" />
+      <SeasonManagerView
+        seasons={sampleSeasons}
+        currentUserRole="hr_admin"
+        onUpdateSettings={onUpdateSettings}
+      />
     );
 
     expect(screen.queryByRole("button", { name: /clone season/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/Master Authority Required/i)).toBeInTheDocument();
+    expect(screen.getByText(/HR Head Settings Access/i)).toBeInTheDocument();
+
+    const maxBonusInput = screen.getByLabelText(/max bonus per feedback/i);
+    await user.clear(maxBonusInput);
+    await user.type(maxBonusInput, "35");
+
+    const modeSelect = screen.getByLabelText(/default completion mode/i);
+    await user.selectOptions(modeSelect, "hr_only");
+
+    await user.click(screen.getByRole("button", { name: /save season settings/i }));
+
+    expect(onUpdateSettings).toHaveBeenCalledWith(
+      "s-1",
+      expect.objectContaining({
+        tasks: expect.objectContaining({ defaultCompletionMode: "hr_only" }),
+        feedback: expect.objectContaining({ maxBonusPoints: 35 }),
+      })
+    );
   });
 
   it("explains what a season entails and lets admins edit and save grading and attendance settings", async () => {

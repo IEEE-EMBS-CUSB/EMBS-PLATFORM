@@ -40,22 +40,36 @@ describe("CommitteesRubricsView Component", () => {
     },
   ];
 
-  it("renders committee tracks and seasonal scoring rubrics", async () => {
-    const user = userEvent.setup();
+  it("renders committee tracks cleanly without disconnected scoring rubrics tab and protects core human-resources committee", () => {
     render(
       <CommitteesRubricsView
-        committees={sampleCommittees}
+        committees={[
+          ...sampleCommittees,
+          {
+            id: "com-hr",
+            name: "Human Resources",
+            slug: "human-resources",
+            category: "non_technical" as const,
+            isActive: true,
+            memberCount: 6,
+          },
+        ]}
         rubrics={sampleRubrics}
       />
     );
 
     expect(screen.getByText("AI and Machine Learning")).toBeInTheDocument();
     expect(screen.getByText("Graphic Design")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /scoring rubrics/i }));
-    expect(screen.getByText("Attendance & Punctuality")).toBeInTheDocument();
-    expect(screen.getByText("Leadership")).toBeInTheDocument();
-    expect(screen.getByText("Leaders only")).toBeInTheDocument();
+    expect(screen.getByText("Human Resources")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /scoring rubrics/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /scoring settings/i })).toHaveAttribute(
+      "href",
+      "/hr/seasons"
+    );
+    expect(
+      screen.queryByRole("button", { name: /remove committee human resources/i })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Core")).toBeInTheDocument();
   });
 
   it("allows Master Admin to add a new committee", async () => {

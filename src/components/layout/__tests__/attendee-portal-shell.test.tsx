@@ -92,8 +92,8 @@ describe("Attendee PortalShell", () => {
       </PortalShell>
     );
 
-    const sidebar = screen.getByRole("complementary");
-    const switcher = within(sidebar).getByRole("button", {
+    const header = screen.getByRole("banner");
+    const switcher = within(header).getByRole("button", {
       name: /switch role or view: robotics · attendee · attendee portal/i,
     });
     await user.click(switcher);

@@ -165,4 +165,49 @@ describe("TaskCheckToggle and MemberDeliverablesView work-type split", () => {
     expect(screen.getAllByText(/pending grade/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/submitted nov 22/i).length).toBeGreaterThan(0);
   });
+
+  it("hides self-check toggle for hr_only tasks and shows HR verification status instead", () => {
+    const pendingHrOnlyTask: MemberTask = {
+      id: "task-hr-only-1",
+      month: "2026-11",
+      title: "Pass Lab Orientation Inspection",
+      workType: "task",
+      completionMode: "hr_only",
+      assignedDate: "2026-11-01",
+      dueDate: "2026-11-28",
+      status: "not_started",
+      effort: null,
+      quality: null,
+      onTime: null,
+      taskPoints: null,
+      maxPoints: 20,
+    };
+
+    const doneHrOnlyTask: MemberTask = {
+      ...pendingHrOnlyTask,
+      id: "task-hr-only-2",
+      title: "Return Lab Kit",
+      status: "completed",
+      taskPoints: 20,
+    };
+
+    render(
+      <MemberDeliverablesView
+        title="Tasks"
+        subtitle="Operational tasks"
+        itemLabel="Task"
+        pointsColumnLabel="Task points"
+        emptyIcon={null}
+        emptyTitle="None"
+        emptyDescription="None"
+        items={[pendingHrOnlyTask, doneHrOnlyTask]}
+      />
+    );
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText(/pending hr verification/i).length
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/verified by hr/i).length).toBeGreaterThan(0);
+  });
 });

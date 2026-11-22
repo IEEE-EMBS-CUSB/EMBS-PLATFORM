@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import { ScoreBreakdown } from "@/components/data-display/score-breakdown";
 import { ScoreTrendChart } from "@/components/data-display/score-trend-chart";
 import { EmptyState } from "@/components/states/empty-state";
@@ -69,13 +69,6 @@ async function MemberPerformanceContent({
         <h1 className="font-heading text-2xl font-bold text-[#002855]">
           Performance
         </h1>
-        <Link
-          href="/member/evaluations"
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#00629b] hover:text-[#002855] hover:underline"
-        >
-          Seasonal evaluation
-          <ArrowRight className="h-4 w-4" aria-hidden="true" />
-        </Link>
       </div>
 
       <div className="flex items-start gap-2.5 rounded-lg border border-[#00629b]/25 bg-[#ebf3f8]/60 px-4 py-3 text-xs leading-relaxed text-[#002855]">
@@ -84,8 +77,8 @@ async function MemberPerformanceContent({
           aria-hidden="true"
         />
         <p>
-          Monthly activity scores track ongoing participation and leaderboard
-          standings and remain separate from your seasonal HR evaluation results.
+          Monthly activity scores track ongoing participation across attendance,
+          tasks, assignments, and HR adjustments for monthly leaderboard standings.
         </p>
       </div>
 

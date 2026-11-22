@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  CalendarCheck,
+  Eye,
+  EyeOff,
   Lock,
+  MessageSquare,
   Plus,
   Search,
   Sparkles,
@@ -12,6 +18,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { MemberCombobox } from "@/components/ui/member-combobox";
+import {
+  FEEDBACK_CATEGORY_META,
+  FEEDBACK_CATEGORY_ORDER,
+  inferFeedbackCategory,
+  type FeedbackCategory,
+} from "@/lib/feedback-categories";
+import {
+  DEFAULT_SEASON_SETTINGS,
+  type SeasonFeedbackSettings,
+} from "@/lib/season-settings";
 
 export interface FeedbackItem {
   id: string;
@@ -19,6 +36,8 @@ export interface FeedbackItem {
   memberName: string;
   memberEmail: string;
   committeeName: string;
+  category?: FeedbackCategory;
+  pointsDelta?: number;
   content: string;
   isPublished: boolean;
   isWarning: boolean;
@@ -37,33 +56,96 @@ interface HrFeedbackViewProps {
   feedbackList: FeedbackItem[];
   members: MemberOption[];
   canCreateWarning?: boolean;
+  canAwardPoints?: boolean;
+  feedbackCaps?: SeasonFeedbackSettings;
   currentUserName?: string;
   onAddFeedback?: (input: {
     membershipId: string;
+    category: FeedbackCategory;
     content: string;
-    isWarning: boolean;
+    pointsDelta?: number;
   }) => Promise<{ ok: boolean; id?: string; error?: string } | void>;
+}
+
+const CATEGORY_STYLES: Record<
+  FeedbackCategory,
+  { badgeClass: string; cardClass: string; radioActiveClass: string }
+> = {
+  recognition: {
+    badgeClass: "border-[#78be20]/40 bg-[#78be20]/10 text-[#1e6b0a]",
+    cardClass: "border-[#78be20]/30 bg-white",
+    radioActiveClass: "border-[#78be20] bg-[#eef8e0] text-[#1e6b0a]",
+  },
+  excused_absence: {
+    badgeClass: "border-[#009ca6]/35 bg-[#e3f5f6] text-[#005b5e]",
+    cardClass: "border-[#009ca6]/25 bg-white",
+    radioActiveClass: "border-[#009ca6] bg-[#e3f5f6] text-[#005b5e]",
+  },
+  other: {
+    badgeClass: "border-border bg-muted/60 text-foreground",
+    cardClass: "border-border bg-white",
+    radioActiveClass: "border-[#002855] bg-[#f0f4f8] text-[#002855]",
+  },
+  warning: {
+    badgeClass: "border-[#ba0c2f]/35 bg-[#ba0c2f]/10 text-[#ba0c2f]",
+    cardClass: "border-[#ba0c2f]/30 bg-[#ba0c2f]/[0.025]",
+    radioActiveClass: "border-[#ba0c2f] bg-[#ba0c2f]/10 text-[#ba0c2f]",
+  },
+  internal_note: {
+    badgeClass: "border-[#772583]/35 bg-[#f5edf7] text-[#5a1b63]",
+    cardClass: "border-[#772583]/30 bg-[#f5edf7]/35",
+    radioActiveClass: "border-[#772583] bg-[#f5edf7] text-[#5a1b63]",
+  },
+};
+
+function CategoryIcon({
+  category,
+  className = "h-3.5 w-3.5",
+}: {
+  category: FeedbackCategory;
+  className?: string;
+}) {
+  switch (category) {
+    case "recognition":
+      return <Sparkles className={className} aria-hidden="true" />;
+    case "excused_absence":
+      return <CalendarCheck className={className} aria-hidden="true" />;
+    case "warning":
+      return <AlertTriangle className={className} aria-hidden="true" />;
+    case "internal_note":
+      return <EyeOff className={className} aria-hidden="true" />;
+    default:
+      return <MessageSquare className={className} aria-hidden="true" />;
+  }
 }
 
 export function HrFeedbackView({
   feedbackList: initialFeedback,
   members,
   canCreateWarning = true,
+  canAwardPoints = true,
+  feedbackCaps = DEFAULT_SEASON_SETTINGS.feedback,
   currentUserName = "HR Team",
   onAddFeedback,
 }: HrFeedbackViewProps) {
   const [feedbackList, setFeedbackList] = useState(initialFeedback);
+  const [prevInitialFeedback, setPrevInitialFeedback] =
+    useState(initialFeedback);
+  if (initialFeedback !== prevInitialFeedback) {
+    setPrevInitialFeedback(initialFeedback);
+    setFeedbackList(initialFeedback);
+  }
   const [activeFilter, setActiveFilter] = useState<
-    "all" | "warnings" | "public"
+    "all" | "member_visible" | "warnings" | "hidden"
   >("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Modal form state
-  const [selectedMemberId, setSelectedMemberId] = useState(
-    members[0]?.id || ""
-  );
-  const [entryType, setEntryType] = useState<"public" | "warning">("public");
+  // Modal form state (pointsDelta ALWAYS starts at 0)
+  const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [selectedCategory, setSelectedCategory] =
+    useState<FeedbackCategory>("recognition");
+  const [pointsDeltaInput, setPointsDeltaInput] = useState("0");
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -76,18 +158,56 @@ export function HrFeedbackView({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const filteredItems = feedbackList.filter((item) => {
-    const matchesSearch =
-      item.memberName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.memberEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.content.toLowerCase().includes(searchQuery.toLowerCase());
+  const availableCategories = useMemo(
+    () =>
+      FEEDBACK_CATEGORY_ORDER.filter(
+        (cat) =>
+          canCreateWarning || !FEEDBACK_CATEGORY_META[cat].requiresWarningAuthority
+      ),
+    [canCreateWarning]
+  );
 
-    if (!matchesSearch) return false;
+  const normalizedFeedback = useMemo(
+    () =>
+      feedbackList.map((item) => ({
+        ...item,
+        resolvedCategory: inferFeedbackCategory(item),
+      })),
+    [feedbackList]
+  );
 
-    if (activeFilter === "warnings") return item.isWarning;
-    if (activeFilter === "public") return item.isPublished && !item.isWarning;
-    return true;
-  });
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return normalizedFeedback.filter((item) => {
+      const matchesSearch =
+        !q ||
+        item.memberName.toLowerCase().includes(q) ||
+        item.memberEmail.toLowerCase().includes(q) ||
+        item.committeeName.toLowerCase().includes(q) ||
+        item.content.toLowerCase().includes(q);
+      if (!matchesSearch) return false;
+
+      if (activeFilter === "warnings") {
+        return item.resolvedCategory === "warning";
+      }
+      if (activeFilter === "hidden") {
+        return item.resolvedCategory === "internal_note" || !item.isPublished;
+      }
+      if (activeFilter === "member_visible") {
+        return item.isPublished;
+      }
+      return true;
+    });
+  }, [normalizedFeedback, searchQuery, activeFilter]);
+
+  const openNewModal = () => {
+    setFormError(null);
+    setSelectedMemberId("");
+    setSelectedCategory("recognition");
+    setPointsDeltaInput("0");
+    setContent("");
+    setIsModalOpen(true);
+  };
 
   const handleSaveEntry = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,11 +215,36 @@ export function HrFeedbackView({
 
     const targetMember = members.find((m) => m.id === selectedMemberId);
     if (!targetMember) {
-      setFormError("Please select a target member.");
+      setFormError("Please search and select a target member.");
       return;
     }
 
-    const isWarning = canCreateWarning && entryType === "warning";
+    const parsedDelta = canAwardPoints
+      ? parseInt(pointsDeltaInput.trim() === "" ? "0" : pointsDeltaInput, 10)
+      : 0;
+    if (canAwardPoints && Number.isNaN(parsedDelta)) {
+      setFormError("Bonus / deduction must be a whole number (0 for none).");
+      return;
+    }
+    if (canAwardPoints && parsedDelta > feedbackCaps.maxBonusPoints) {
+      setFormError(
+        `Feedback bonus cannot exceed +${feedbackCaps.maxBonusPoints} pts (season cap).`
+      );
+      return;
+    }
+    if (canAwardPoints && parsedDelta < -feedbackCaps.maxDeductionPoints) {
+      setFormError(
+        `Feedback deduction cannot exceed -${feedbackCaps.maxDeductionPoints} pts (season cap).`
+      );
+      return;
+    }
+
+    const effectiveCategory =
+      !canCreateWarning &&
+      FEEDBACK_CATEGORY_META[selectedCategory].requiresWarningAuthority
+        ? "recognition"
+        : selectedCategory;
+
     setIsSubmitting(true);
     setFormError(null);
 
@@ -108,8 +253,9 @@ export function HrFeedbackView({
       if (onAddFeedback) {
         const res = await onAddFeedback({
           membershipId: targetMember.id,
+          category: effectiveCategory,
           content: content.trim(),
-          isWarning,
+          pointsDelta: canAwardPoints ? parsedDelta : 0,
         });
         if (res && !res.ok) {
           setFormError(res.error ?? "Failed to save feedback.");
@@ -118,15 +264,20 @@ export function HrFeedbackView({
         if (res && res.id) createdId = res.id;
       }
 
+      const meta = FEEDBACK_CATEGORY_META[effectiveCategory];
       const newItem: FeedbackItem = {
         id: createdId,
         membershipId: targetMember.id,
         memberName: targetMember.fullName,
         memberEmail: targetMember.email,
         committeeName: targetMember.committeeName,
+        category: effectiveCategory,
+        pointsDelta: canAwardPoints ? parsedDelta : 0,
         content: content.trim(),
-        isPublished: !isWarning,
-        isWarning,
+        isPublished: meta.visibility === "member",
+        isWarning:
+          effectiveCategory === "warning" ||
+          effectiveCategory === "internal_note",
         createdByName: currentUserName,
         createdAt: new Date().toISOString(),
       };
@@ -134,7 +285,9 @@ export function HrFeedbackView({
       setFeedbackList((prev) => [newItem, ...prev]);
       setIsModalOpen(false);
       setContent("");
-      setEntryType("public");
+      setSelectedCategory("recognition");
+      setPointsDeltaInput("0");
+      setSelectedMemberId("");
     } catch (err: unknown) {
       setFormError(
         err instanceof Error ? err.message : "Failed to save feedback."
@@ -149,33 +302,47 @@ export function HrFeedbackView({
       <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
-            Feedback & Warnings
+            Feedback &amp; Warnings
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage public recognitions and private HR warnings with strict data-layer privacy.
+            Send recognitions, excused-absence confirmations, official warnings,
+            or hidden HR notes with optional capped point adjustments.
           </p>
         </div>
 
         <Button
           type="button"
           disabled={members.length === 0}
-          onClick={() => {
-            setFormError(null);
-            setIsModalOpen(true);
-          }}
-          className="inline-flex h-10 shrink-0 items-center gap-2 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
+          onClick={openNewModal}
+          className="inline-flex h-10 shrink-0 items-center gap-2 bg-[#772583] px-4 text-xs font-semibold text-white hover:bg-[#5a1b63]"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
-          <span>{canCreateWarning ? "Add Note / Warning" : "Add Feedback"}</span>
+          <span>Add Feedback</span>
         </Button>
       </div>
 
-      {/* Security Privacy Notice */}
-      <div className="flex items-start gap-3 rounded-lg border border-[#00629b]/20 bg-[#f0f6fa] p-4 text-xs text-[#002855]">
-        <Lock className="mt-0.5 h-4 w-4 shrink-0 text-[#00629b]" aria-hidden="true" />
-        <div>
-          <span className="font-bold">Strict Data-Layer Privacy Guarded:</span>{" "}
-          Internal HR warnings and unpublished notes are filtered at the database query level and never returned to members or attendees. Only entries explicitly flagged as Public Recognition are visible in member portals.
+      {/* Explicit Visibility & Privacy Matrix Banner */}
+      <div className="flex items-start gap-3 rounded-lg border border-[#00629b]/25 bg-[#f0f6fa] p-4 text-xs text-[#002855]">
+        <Lock
+          className="mt-0.5 h-4 w-4 shrink-0 text-[#00629b]"
+          aria-hidden="true"
+        />
+        <div className="space-y-1">
+          <p className="font-bold">Who Can &amp; Cannot See Feedback</p>
+          <p>
+            <strong>Sent to Member</strong> (Public Recognition, Excused
+            Absence, General Note, and <strong>Official Warning</strong>) are
+            delivered directly to the member&apos;s portal.
+          </p>
+          <p>
+            <strong>Hidden HR Notes</strong> are filtered at the SQL query layer:
+            visible only to Master Admin, Track Director, HR Admin, and the
+            committee&apos;s HR Officer —{" "}
+            <strong>
+              never visible to the member, attendees, or committee heads
+            </strong>
+            , and never visible to the subject across any of their own hats.
+          </p>
         </div>
       </div>
 
@@ -184,9 +351,9 @@ export function HrFeedbackView({
         <CardContent className="p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search by member or content..."
+                placeholder="Search by member, committee, or content..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -197,7 +364,7 @@ export function HrFeedbackView({
               <button
                 type="button"
                 onClick={() => setActiveFilter("all")}
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
                   activeFilter === "all"
                     ? "bg-[#772583] text-white"
                     : "text-foreground hover:bg-muted"
@@ -207,27 +374,40 @@ export function HrFeedbackView({
               </button>
               <button
                 type="button"
-                onClick={() => setActiveFilter("public")}
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                  activeFilter === "public"
+                onClick={() => setActiveFilter("member_visible")}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  activeFilter === "member_visible"
                     ? "bg-[#772583] text-white"
                     : "text-foreground hover:bg-muted"
                 }`}
               >
-                Public Recognition
+                Sent to Member
               </button>
               {canCreateWarning && (
-                <button
-                  type="button"
-                  onClick={() => setActiveFilter("warnings")}
-                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                    activeFilter === "warnings"
-                      ? "bg-[#772583] text-white"
-                      : "text-foreground hover:bg-muted"
-                  }`}
-                >
-                  Warnings Only
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilter("warnings")}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      activeFilter === "warnings"
+                        ? "bg-[#ba0c2f] text-white"
+                        : "text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    Official Warnings
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilter("hidden")}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      activeFilter === "hidden"
+                        ? "bg-[#5a1b63] text-white"
+                        : "text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    Hidden HR Notes
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -243,75 +423,110 @@ export function HrFeedbackView({
             </CardContent>
           </Card>
         ) : (
-          filteredItems.map((item) => (
-            <Card
-              key={item.id}
-              className={`border transition-all ${
-                item.isWarning
-                  ? "border-[#ba0c2f]/30 bg-[#ba0c2f]/[0.03]"
-                  : "border-[#78be20]/30 bg-white"
-              }`}
-            >
-              <CardContent className="p-5">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-foreground">
-                        {item.memberName}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        · {item.committeeName}
-                      </span>
+          filteredItems.map((item) => {
+            const cat = item.resolvedCategory;
+            const meta = FEEDBACK_CATEGORY_META[cat];
+            const style = CATEGORY_STYLES[cat];
+            const delta = item.pointsDelta ?? 0;
+
+            return (
+              <Card
+                key={item.id}
+                className={`border transition-all ${style.cardClass}`}
+              >
+                <CardContent className="p-5">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-foreground">
+                          {item.memberName}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          · {item.committeeName}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {item.memberEmail}
+                      </div>
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {item.memberEmail}
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${style.badgeClass}`}
+                      >
+                        <CategoryIcon category={cat} className="h-3 w-3" />
+                        {meta.label}
+                      </span>
+
+                      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-white px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        {meta.visibility === "hidden" ? (
+                          <>
+                            <EyeOff className="h-3 w-3" aria-hidden="true" />
+                            Hidden from member
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="h-3 w-3" aria-hidden="true" />
+                            Sent to member
+                          </>
+                        )}
+                      </span>
+
+                      {delta !== 0 && (
+                        <span
+                          className={
+                            delta > 0
+                              ? "inline-flex items-center gap-0.5 rounded-full border border-[#78be20]/40 bg-[#78be20]/10 px-2.5 py-0.5 font-mono text-xs font-bold text-[#1e6b0a]"
+                              : "inline-flex items-center gap-0.5 rounded-full border border-[#ba0c2f]/30 bg-[#ba0c2f]/10 px-2.5 py-0.5 font-mono text-xs font-bold text-[#ba0c2f]"
+                          }
+                        >
+                          {delta > 0 ? (
+                            <ArrowUpRight
+                              className="h-3 w-3"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <ArrowDownRight
+                              className="h-3 w-3"
+                              aria-hidden="true"
+                            />
+                          )}
+                          {delta > 0 ? `+${delta} pts` : `${delta} pts`}
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  <div>
-                    {item.isWarning ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-[#ba0c2f]/30 bg-[#ba0c2f]/10 px-2.5 py-0.5 text-xs font-semibold text-[#ba0c2f]">
-                        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                        HR Warning (Private)
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-[#78be20]/40 bg-[#78be20]/10 px-2.5 py-0.5 text-xs font-semibold text-[#1e6b0a]">
-                        <Sparkles className="h-3 w-3" aria-hidden="true" />
-                        Public Recognition
-                      </span>
-                    )}
+                  <p className="mt-3 text-sm leading-relaxed text-foreground">
+                    {item.content}
+                  </p>
+
+                  <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
+                    <span>Logged by {item.createdByName || "HR Team"}</span>
+                    <span>{item.createdAt.slice(0, 10)}</span>
                   </div>
-                </div>
-
-                <p className="mt-3 text-sm leading-relaxed text-foreground">
-                  {item.content}
-                </p>
-
-                <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
-                  <span>Logged by {item.createdByName || "HR Team"}</span>
-                  <span>{item.createdAt.slice(0, 10)}</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                </CardContent>
+              </Card>
+            );
+          })
         )}
       </div>
 
-      {/* Add Modal Dialog */}
+      {/* Add Feedback Modal Dialog */}
       {isModalOpen && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Log Feedback or HR Warning"
+          aria-label="Log Feedback or Official Warning"
           onClick={(e) => {
             if (e.target === e.currentTarget) setIsModalOpen(false);
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
         >
-          <div className="w-full max-w-lg rounded-xl border border-border bg-white p-6 shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-border bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between border-b pb-4">
               <h2 className="text-lg font-bold text-[#002855]">
-                {canCreateWarning ? "Log Feedback or HR Warning" : "Log Member Feedback"}
+                Log Feedback or Official Warning
               </h2>
               <Button
                 type="button"
@@ -337,71 +552,93 @@ export function HrFeedbackView({
 
               <div>
                 <label
-                  htmlFor="fbMemberSelect"
+                  htmlFor="fbMemberCombobox"
                   className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                 >
-                  Select Member
+                  Member
                 </label>
-                <select
-                  id="fbMemberSelect"
-                  value={selectedMemberId}
-                  onChange={(e) => setSelectedMemberId(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b]"
-                  required
-                >
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.fullName} ({m.committeeName})
-                    </option>
-                  ))}
-                </select>
+                <div className="mt-1">
+                  <MemberCombobox
+                    id="fbMemberCombobox"
+                    ariaLabel="Select member"
+                    options={members}
+                    value={selectedMemberId}
+                    onChange={setSelectedMemberId}
+                    placeholder="Type a member's name, email, or committee..."
+                    required
+                  />
+                </div>
               </div>
 
-              {canCreateWarning && (
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Feedback Type & Privacy
-                  </label>
-                  <div className="mt-2 grid grid-cols-2 gap-3">
-                    <label
-                      className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-colors ${
-                        entryType === "public"
-                          ? "border-[#772583] bg-[#f5edf7] text-[#772583]"
-                          : "border-border hover:bg-muted/50"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="entryType"
-                        value="public"
-                        checked={entryType === "public"}
-                        onChange={() => setEntryType("public")}
-                        className="sr-only"
-                      />
-                      <Sparkles className="h-4 w-4" aria-hidden="true" />
-                      <span>Public Recognition</span>
-                    </label>
+              <div>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Category &amp; Visibility
+                </span>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {availableCategories.map((cat) => {
+                    const meta = FEEDBACK_CATEGORY_META[cat];
+                    const style = CATEGORY_STYLES[cat];
+                    const isSelected = selectedCategory === cat;
+                    return (
+                      <label
+                        key={cat}
+                        className={`flex cursor-pointer flex-col gap-1 rounded-lg border p-3 text-xs transition-colors ${
+                          isSelected
+                            ? style.radioActiveClass
+                            : "border-border bg-white hover:bg-muted/40"
+                        } ${cat === "internal_note" ? "sm:col-span-2" : ""}`}
+                      >
+                        <input
+                          type="radio"
+                          name="feedbackCategory"
+                          value={cat}
+                          checked={isSelected}
+                          onChange={() => setSelectedCategory(cat)}
+                          className="sr-only"
+                        />
+                        <div className="flex items-center gap-2 font-bold">
+                          <CategoryIcon category={cat} className="h-4 w-4" />
+                          <span>{meta.label}</span>
+                        </div>
+                        <span className="text-[11px] opacity-85">
+                          {meta.visibilitySummary}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
 
-                    <label
-                      className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-colors ${
-                        entryType === "warning"
-                          ? "border-[#ba0c2f] bg-[#ba0c2f]/10 text-[#ba0c2f]"
-                          : "border-border hover:bg-muted/50"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="entryType"
-                        value="warning"
-                        checked={entryType === "warning"}
-                        onChange={() => setEntryType("warning")}
-                        className="sr-only"
-                      />
-                      <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-                      <span>Internal HR Warning (Private)</span>
-                    </label>
+              {canAwardPoints ? (
+                <div>
+                  <label
+                    htmlFor="fbPointsDelta"
+                    className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                  >
+                    Optional Bonus / Deduction (pts)
+                  </label>
+                  <div className="mt-1 flex items-center gap-3">
+                    <Input
+                      id="fbPointsDelta"
+                      type="number"
+                      min={-feedbackCaps.maxDeductionPoints}
+                      max={feedbackCaps.maxBonusPoints}
+                      value={pointsDeltaInput}
+                      onChange={(e) => setPointsDeltaInput(e.target.value)}
+                      className="h-10 w-36 font-mono font-bold"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      Default 0 · Allowed range: −
+                      {feedbackCaps.maxDeductionPoints} to +
+                      {feedbackCaps.maxBonusPoints} pts
+                    </span>
                   </div>
                 </div>
+              ) : (
+                <p className="rounded-lg border border-border bg-[#f8f9fb] px-3 py-2 text-xs text-muted-foreground">
+                  Point bonuses and deductions are managed by HR and Master
+                  Admin. Feedback logged here carries 0 point change.
+                </p>
               )}
 
               <div>
@@ -416,13 +653,13 @@ export function HrFeedbackView({
                   rows={4}
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  placeholder="Enter detailed feedback or formal warning details..."
+                  placeholder="Enter detailed feedback, recognition, excuse confirmation, or warning details..."
                   className="mt-1 block w-full rounded-md border border-input bg-background p-2.5 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b]"
                   required
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 border-t pt-4">
                 <Button
                   type="button"
                   variant="outline"

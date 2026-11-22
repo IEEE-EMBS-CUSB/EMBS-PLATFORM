@@ -335,6 +335,7 @@ export const attendanceRecords = pgTable(
     checkedInAt: timestamp("checked_in_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
+    status: text("status").notNull().default("present"), // present | excused | absent
     isPunctual: boolean("is_punctual").notNull().default(true),
     pointsAwarded: integer("points_awarded").notNull().default(0),
     overrideReason: text("override_reason"), // Set if manually modified by HR
@@ -369,8 +370,12 @@ export const tasks = pgTable(
     dueAt: timestamp("due_at", { withTimezone: true, mode: "date" }).notNull(),
     maxPoints: integer("max_points").notNull().default(100),
     workType: text("work_type").notNull().default("assignment"), // assignment | task
-    targetType: text("target_type"), // individual | group
-    targetGroup: text("target_group"), // everyone | all_heads | all_members | committee_all | committee_heads | committee_members
+    completionMode: text("completion_mode").notNull().default("self_report"), // self_report | hr_only (for tasks)
+    targetType: text("target_type"), // specific_person | group
+    targetGroup: text("target_group"), // everyone | all_heads | all_members | all_hr_members | committee_all | committee_heads | committee_members
+    createdBy: uuid("created_by").references(() => rosterMemberships.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -519,8 +524,10 @@ export const hrFeedback = pgTable(
       .notNull()
       .references(() => rosterMemberships.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
-    isPublished: boolean("is_published").notNull().default(false), // true = visible to member in portal
-    isWarning: boolean("is_warning").notNull().default(false), // true = internal HR warning flag
+    category: text("category").notNull().default("recognition"), // recognition | excused_absence | warning | other | internal_note
+    pointsDelta: integer("points_delta").notNull().default(0), // Optional bonus (+) or deduction (-), default 0
+    isPublished: boolean("is_published").notNull().default(false), // true = visible to member in portal; false = strictly hidden internal HR note
+    isWarning: boolean("is_warning").notNull().default(false), // true = warning flag (official member warning if isPublished=true, legacy internal warning if isPublished=false)
     createdBy: uuid("created_by")
       .notNull()
       .references(() => rosterMemberships.id, { onDelete: "cascade" }),
@@ -742,6 +749,10 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
   committee: one(committees, {
     fields: [tasks.committeeId],
     references: [committees.id],
+  }),
+  creator: one(rosterMemberships, {
+    fields: [tasks.createdBy],
+    references: [rosterMemberships.id],
   }),
   submissions: many(taskSubmissions),
 }));

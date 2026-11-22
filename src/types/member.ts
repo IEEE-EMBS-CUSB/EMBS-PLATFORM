@@ -84,6 +84,7 @@ export interface MemberTask {
   month: MonthKey;
   title: string;
   workType?: "assignment" | "task";
+  completionMode?: "self_report" | "hr_only";
   assignedDate: string;
   dueDate: string;
   submittedDate?: string;
@@ -163,6 +164,7 @@ export interface PublishedFeedback {
   reviewType: ReviewType;
   message: string;
   decision?: string;
+  pointsDelta?: number;
   visibility: "published";
 }
 

@@ -1,7 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, Lock, Minus, Unlock } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  CalendarClock,
+  CheckCircle2,
+  Clock,
+  Lock,
+  Minus,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -12,6 +20,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  classifyPublishingMonthState,
+  formatPublishingMonthLabel,
+} from "@/lib/publishing-state";
 import type { CalculatedSnapshotEntry } from "@/services/hr.service";
 
 export interface SnapshotDisplayData {
@@ -27,6 +39,8 @@ export interface SnapshotDisplayData {
 interface LeaderboardPublisherViewProps {
   snapshot: SnapshotDisplayData;
   availableMonths: string[];
+  monthStatuses?: Record<string, "draft" | "published">;
+  currentMonth?: string;
   onPublish?: (
     month: string
   ) => Promise<{ ok: boolean; error?: string } | void> | void;
@@ -41,21 +55,61 @@ interface LeaderboardPublisherViewProps {
 export function LeaderboardPublisherView({
   snapshot: initialSnapshot,
   availableMonths,
+  monthStatuses: initialMonthStatuses,
+  currentMonth,
   onPublish,
   onLoadMonth,
 }: LeaderboardPublisherViewProps) {
+  const effectiveCurrentMonth =
+    currentMonth ?? new Date().toISOString().slice(0, 7);
+
   const [snapshot, setSnapshot] = useState<SnapshotDisplayData>(initialSnapshot);
   const [selectedMonth, setSelectedMonth] = useState(initialSnapshot.month);
+  const [monthStatusMap, setMonthStatusMap] = useState<
+    Record<string, "draft" | "published">
+  >(() => ({
+    ...(initialMonthStatuses ?? {}),
+    [initialSnapshot.month]: initialSnapshot.status,
+  }));
   const [activeTab, setActiveTab] = useState<"overall" | "committees" | "heads">(
     "overall"
   );
   const [isLoadingMonth, setIsLoadingMonth] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [confirmEarlyOpen, setConfirmEarlyOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirmEarlyOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const phase = classifyPublishingMonthState(
+    snapshot.month,
+    snapshot.status,
+    effectiveCurrentMonth
+  );
+  const monthLabel = formatPublishingMonthLabel(snapshot.month);
+
+  // Detect if another past month is awaiting review while viewing a different month
+  const otherDueReviewMonth = useMemo(() => {
+    return availableMonths.find((m) => {
+      if (m === selectedMonth) return false;
+      const st = monthStatusMap[m] ?? "draft";
+      return (
+        classifyPublishingMonthState(m, st, effectiveCurrentMonth) ===
+        "due_review"
+      );
+    });
+  }, [availableMonths, selectedMonth, monthStatusMap, effectiveCurrentMonth]);
 
   const handleMonthChange = async (nextMonth: string) => {
     setSelectedMonth(nextMonth);
     setErrorMessage(null);
+    setConfirmEarlyOpen(false);
     if (!onLoadMonth) return;
 
     setIsLoadingMonth(true);
@@ -63,6 +117,10 @@ export function LeaderboardPublisherView({
       const res = await onLoadMonth(nextMonth);
       if (res.ok) {
         setSnapshot(res.snapshot);
+        setMonthStatusMap((prev) => ({
+          ...prev,
+          [res.snapshot.month]: res.snapshot.status,
+        }));
       } else {
         setErrorMessage(res.error ?? "Failed to load selected month.");
       }
@@ -75,7 +133,7 @@ export function LeaderboardPublisherView({
     }
   };
 
-  const handlePublishClick = async () => {
+  const executePublish = async () => {
     if (isPublishing || snapshot.status === "published") return;
     setIsPublishing(true);
     setErrorMessage(null);
@@ -87,11 +145,16 @@ export function LeaderboardPublisherView({
           return;
         }
       }
+      setConfirmEarlyOpen(false);
       setSnapshot((prev) => ({
         ...prev,
         month: selectedMonth,
         status: "published",
         publishedAt: new Date().toISOString().slice(0, 10),
+      }));
+      setMonthStatusMap((prev) => ({
+        ...prev,
+        [selectedMonth]: "published",
       }));
     } catch (err: unknown) {
       setErrorMessage(
@@ -100,6 +163,16 @@ export function LeaderboardPublisherView({
     } finally {
       setIsPublishing(false);
     }
+  };
+
+  const formatOptionLabel = (m: string) => {
+    const label = formatPublishingMonthLabel(m);
+    const st = monthStatusMap[m];
+    if (!st) return label;
+    const p = classifyPublishingMonthState(m, st, effectiveCurrentMonth);
+    if (p === "published") return `${label} — Published`;
+    if (p === "due_review") return `${label} — Ready to Review`;
+    return `${label} — In Progress`;
   };
 
   const renderTrend = (rank: number, previousRank: number | null) => {
@@ -162,8 +235,6 @@ export function LeaderboardPublisherView({
     );
   };
 
-  const status = snapshot.status;
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
@@ -172,7 +243,8 @@ export function LeaderboardPublisherView({
             Monthly Leaderboard Publisher
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Preview auto-calculated monthly rankings and freeze the deterministic historical snapshot.
+            Review ended months to publish and permanently freeze rankings, or
+            preview live in-progress standings.
           </p>
         </div>
 
@@ -182,33 +254,64 @@ export function LeaderboardPublisherView({
             value={selectedMonth}
             disabled={isLoadingMonth}
             onChange={(e) => handleMonthChange(e.target.value)}
-            className="h-10 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b]"
+            className="h-10 rounded-md border border-input bg-white px-3 py-1 text-sm font-medium text-[#002855] shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b]"
           >
             {availableMonths.map((m) => (
               <option key={m} value={m}>
-                Month: {m}
+                {formatOptionLabel(m)}
               </option>
             ))}
           </select>
 
-          {status === "draft" ? (
+          {phase === "due_review" ? (
             <Button
               type="button"
               disabled={isPublishing || isLoadingMonth}
-              onClick={handlePublishClick}
-              className="inline-flex items-center gap-2 bg-[#772583] text-white hover:bg-[#5a1b63]"
+              onClick={executePublish}
+              className="inline-flex h-10 items-center gap-2 bg-[#772583] px-4 text-xs font-semibold text-white hover:bg-[#5a1b63]"
             >
               <Lock className="h-4 w-4" aria-hidden="true" />
               {isPublishing ? "Publishing..." : "Publish & Freeze Rankings"}
             </Button>
+          ) : phase === "in_progress" ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isPublishing || isLoadingMonth}
+              onClick={() => setConfirmEarlyOpen(true)}
+              className="inline-flex h-10 items-center gap-2 border-[#002855]/30 px-4 text-xs font-semibold text-[#002855] hover:bg-[#f5edf7] hover:text-[#772583]"
+            >
+              <CalendarClock className="h-4 w-4" aria-hidden="true" />
+              Publish Early…
+            </Button>
           ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-lg border border-[#78be20]/40 bg-[#78be20]/10 px-3 py-2 text-xs font-bold text-[#1e6b0a]">
+            <span className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-[#78be20]/40 bg-[#78be20]/10 px-3 text-xs font-bold text-[#1e6b0a]">
               <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-              Published & Locked
+              Published &amp; Locked
             </span>
           )}
         </div>
       </div>
+
+      {otherDueReviewMonth && onLoadMonth && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#772583]/30 bg-[#f5edf7] px-4 py-3 text-xs text-[#5a1b63]">
+          <div className="flex items-center gap-2 font-semibold">
+            <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>
+              {formatPublishingMonthLabel(otherDueReviewMonth)} has ended and is
+              ready for review &amp; publishing.
+            </span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => handleMonthChange(otherDueReviewMonth)}
+            className="h-8 bg-[#772583] px-3 text-xs font-semibold text-white hover:bg-[#5a1b63]"
+          >
+            Review {formatPublishingMonthLabel(otherDueReviewMonth)}
+          </Button>
+        </div>
+      )}
 
       {errorMessage && (
         <div
@@ -219,37 +322,62 @@ export function LeaderboardPublisherView({
         </div>
       )}
 
-      {/* Snapshot Status Card */}
+      {/* 3-State Snapshot Status Banner */}
       <div
         className={`rounded-xl border p-4 text-xs ${
-          status === "published"
+          phase === "published"
             ? "border-[#78be20]/40 bg-[#78be20]/10 text-[#1e6b0a]"
-            : "border-[#ffc627]/50 bg-[#fffbeb] text-[#002855]"
+            : phase === "due_review"
+              ? "border-[#ffc627]/70 bg-[#fffbeb] text-[#002855]"
+              : "border-[#00629b]/30 bg-[#f0f6fa] text-[#002855]"
         }`}
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            {status === "published" ? (
-              <span className="inline-flex items-center gap-1 rounded-md bg-[#1e6b0a] px-2 py-0.5 text-xs font-bold text-white">
+          <div className="flex flex-wrap items-center gap-2">
+            {phase === "published" ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-[#1e6b0a] px-2.5 py-1 text-xs font-bold text-white">
                 <Lock className="h-3 w-3" aria-hidden="true" />
-                Published & Locked
+                Published &amp; Locked
+              </span>
+            ) : phase === "due_review" ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-[#ffc627] px-2.5 py-1 text-xs font-bold text-[#002855]">
+                <AlertCircle className="h-3 w-3" aria-hidden="true" />
+                Ready to Review &amp; Publish
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-md bg-[#ffc627] px-2 py-0.5 text-xs font-bold text-[#002855]">
-                <Unlock className="h-3 w-3" aria-hidden="true" />
-                Draft · Unlocked
+              <span className="inline-flex items-center gap-1 rounded-md bg-[#00629b] px-2.5 py-1 text-xs font-bold text-white">
+                <Clock className="h-3 w-3" aria-hidden="true" />
+                In Progress — Wait for Month End
               </span>
             )}
-            <span className="font-semibold">
-              Month: {snapshot.month}
+            <span className="font-heading text-sm font-bold text-[#002855]">
+              {monthLabel}
               {isLoadingMonth ? " (Loading...)" : ""}
             </span>
           </div>
 
-          <div className="text-muted-foreground">
-            {status === "published"
-              ? "Historical scores locked. Public portal shows this snapshot."
-              : "Live calculation from Score Ledger. Changes to attendance or tasks will alter these ranks until published."}
+          <div className="text-muted-foreground sm:text-right">
+            {phase === "published" ? (
+              <span>
+                Historical rankings permanently locked
+                {snapshot.publishedAt ? ` on ${snapshot.publishedAt}` : ""}
+                {snapshot.publishedByName
+                  ? ` by ${snapshot.publishedByName}`
+                  : ""}
+                . Public leaderboards serve this snapshot.
+              </span>
+            ) : phase === "due_review" ? (
+              <span>
+                {monthLabel} has ended. Verify the standings below, then click{" "}
+                <strong>Publish &amp; Freeze Rankings</strong> to lock the month.
+              </span>
+            ) : (
+              <span>
+                {monthLabel} is still underway. Scores update live as attendance,
+                tasks, and assignments are logged — no action needed until month
+                end.
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -265,7 +393,7 @@ export function LeaderboardPublisherView({
               : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          Overall Top 10
+          Overall Rankings
         </button>
         <button
           type="button"
@@ -321,7 +449,7 @@ export function LeaderboardPublisherView({
                       <div className="font-semibold text-foreground">
                         {entry.memberName}
                       </div>
-                      <div className="text-xs text-muted-foreground capitalize">
+                      <div className="text-xs capitalize text-muted-foreground">
                         {entry.role.replace("_", " ")}
                       </div>
                     </TableCell>
@@ -339,7 +467,7 @@ export function LeaderboardPublisherView({
                       colSpan={5}
                       className="py-8 text-center text-sm text-muted-foreground"
                     >
-                      No scored members recorded for {snapshot.month} yet.
+                      No scored members recorded for {monthLabel} yet.
                     </TableCell>
                   </TableRow>
                 )}
@@ -351,7 +479,8 @@ export function LeaderboardPublisherView({
         <Card className="border-border">
           <CardHeader className="border-b bg-[#fafafa] px-6 py-4">
             <CardTitle className="text-base font-semibold text-[#002855]">
-              Committee Heads Rankings ({(snapshot.headsEntries ?? []).length} Heads)
+              Committee Heads Rankings ({(snapshot.headsEntries ?? []).length}{" "}
+              Heads)
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -389,7 +518,7 @@ export function LeaderboardPublisherView({
                       colSpan={5}
                       className="py-8 text-center text-sm text-muted-foreground"
                     >
-                      No scored Committee Heads recorded for {snapshot.month} yet.
+                      No scored Committee Heads recorded for {monthLabel} yet.
                     </TableCell>
                   </TableRow>
                 )}
@@ -434,6 +563,61 @@ export function LeaderboardPublisherView({
               </Card>
             )
           )}
+        </div>
+      )}
+
+      {/* Early Publish Confirmation Modal */}
+      {confirmEarlyOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Publish ${monthLabel} Early`}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirmEarlyOpen(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div className="w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h2 className="font-heading text-base font-bold text-[#002855]">
+                Publish {monthLabel} Early?
+              </h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label="Close early publish modal"
+                onClick={() => setConfirmEarlyOpen(false)}
+                className="h-8 w-8 p-0"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+              <strong>{monthLabel}</strong> has not ended yet. Publishing now
+              permanently freezes rankings for this month and blocks any further
+              point updates for {monthLabel}. Only proceed if all sessions,
+              tasks, and assignments for {monthLabel} are completely finalized.
+            </p>
+            <div className="mt-5 flex justify-end gap-2 border-t pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setConfirmEarlyOpen(false)}
+                className="h-9 text-xs font-semibold"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={isPublishing}
+                onClick={executePublish}
+                className="h-9 bg-[#ba0c2f] px-4 text-xs font-semibold text-white hover:bg-[#9b0b27]"
+              >
+                {isPublishing ? "Publishing..." : "Confirm Publish Early"}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

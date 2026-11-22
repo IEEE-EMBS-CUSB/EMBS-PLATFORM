@@ -5,11 +5,18 @@ import {
   type EligibleAssignee,
 } from "@/components/hr/task-delegation-view";
 import { requireHrModule } from "@/lib/portal-guards";
-import { getOperationalCommitteeScope } from "@/lib/permissions";
+import type { MembershipRole } from "@/lib/auth-helpers";
+import {
+  canManageWorkItem,
+  getOperationalCommitteeScope,
+  type WorkItemType,
+} from "@/lib/permissions";
 import {
   DEFAULT_SEASON_SETTINGS,
   normalizeSeasonSettings,
   type SeasonGradingSettings,
+  type SeasonTaskSettings,
+  type TaskCompletionMode,
 } from "@/lib/season-settings";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
@@ -25,11 +32,13 @@ export default async function HrTasksPage() {
   let dbCommitteesList: Array<{ id: string; name: string }> = [];
   let assignedToMe: AssignedTaskItem[] = [];
   let gradingWeights: SeasonGradingSettings = DEFAULT_SEASON_SETTINGS.grading;
+  let taskDefaults: SeasonTaskSettings = DEFAULT_SEASON_SETTINGS.tasks;
 
   type BulkTask = {
     id: string;
     title: string;
-    workType: "assignment" | "task";
+    workType: WorkItemType;
+    completionMode: TaskCompletionMode;
     committeeName: string;
     maxPoints: number;
   };
@@ -65,6 +74,7 @@ export default async function HrTasksPage() {
       const seasonId = activeSeason.id;
       const seasonSettings = normalizeSeasonSettings(activeSeason.settingsJson);
       gradingWeights = seasonSettings.grading;
+      taskDefaults = seasonSettings.tasks;
 
       const memberFilter =
         isCommitteeScoped && operationalCommitteeId
@@ -80,6 +90,7 @@ export default async function HrTasksPage() {
               ne(schema.rosterMemberships.role, "attendee")
             );
 
+      const shouldSkipTaskQuery = isCommitteeScoped && !operationalCommitteeId;
       const taskFilter =
         isCommitteeScoped && operationalCommitteeId
           ? and(
@@ -117,6 +128,7 @@ export default async function HrTasksPage() {
               taskId: schema.tasks.id,
               title: schema.tasks.title,
               workType: schema.tasks.workType,
+              createdBy: schema.tasks.createdBy,
               dueAt: schema.tasks.dueAt,
               maxPoints: schema.tasks.maxPoints,
               totalPoints: schema.taskSubmissions.totalPoints,
@@ -134,11 +146,13 @@ export default async function HrTasksPage() {
               )
             )
             .orderBy(desc(schema.tasks.createdAt)),
-          db
-            .select()
-            .from(schema.tasks)
-            .where(taskFilter)
-            .orderBy(desc(schema.tasks.createdAt)),
+          shouldSkipTaskQuery
+            ? Promise.resolve([])
+            : db
+                .select()
+                .from(schema.tasks)
+                .where(taskFilter)
+                .orderBy(desc(schema.tasks.createdAt)),
         ]);
 
       const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
@@ -183,25 +197,76 @@ export default async function HrTasksPage() {
         committeeName: m.committeeId ? commMap.get(m.committeeId) : undefined,
       }));
 
-      assignedToMe = dbMySubmissions.map((s) => ({
-        id: s.taskId,
-        title: s.title,
-        workType: s.workType === "task" ? "task" : "assignment",
-        assignedByName: "Leadership",
-        assignerRole: s.workType === "task" ? "hr_admin" : "director",
-        dueAt: s.dueAt,
-        maxPoints: s.maxPoints,
-        status:
-          s.totalPoints !== null
-            ? "completed"
-            : s.submittedAt
-              ? "in_progress"
-              : "not_started",
-      }));
+      // Resolve creator names & roles for items assigned to current user
+      const creatorIds = Array.from(
+        new Set(
+          dbMySubmissions
+            .map((s) => s.createdBy)
+            .filter((id): id is string => Boolean(id))
+        )
+      );
+      const creatorMap = new Map<
+        string,
+        { fullName: string; role: MembershipRole }
+      >();
+      if (creatorIds.length > 0) {
+        const creators = await db
+          .select({
+            id: schema.rosterMemberships.id,
+            role: schema.rosterMemberships.role,
+            fullName: schema.persons.fullName,
+          })
+          .from(schema.rosterMemberships)
+          .innerJoin(
+            schema.persons,
+            eq(schema.rosterMemberships.personId, schema.persons.id)
+          )
+          .where(inArray(schema.rosterMemberships.id, creatorIds));
+        for (const c of creators) {
+          creatorMap.set(c.id, { fullName: c.fullName, role: c.role });
+        }
+      }
+
+      assignedToMe = dbMySubmissions.map((s) => {
+        const creator = s.createdBy ? creatorMap.get(s.createdBy) : undefined;
+        return {
+          id: s.taskId,
+          title: s.title,
+          workType: s.workType === "task" ? "task" : "assignment",
+          assignedByName: creator?.fullName ?? "Leadership",
+          assignerRole:
+            creator?.role ?? (s.workType === "task" ? "hr_admin" : "director"),
+          dueAt: s.dueAt,
+          maxPoints: s.maxPoints,
+          status:
+            s.totalPoints !== null
+              ? "completed"
+              : s.submittedAt
+                ? "in_progress"
+                : "not_started",
+        };
+      });
+
+      // Filter tasks strictly by role work-type authority before loading submissions
+      const roleAuthorizedTasks = dbTasks.filter((t) => {
+        const itemWorkType: WorkItemType =
+          t.workType === "task" ? "task" : "assignment";
+        return canManageWorkItem(
+          {
+            id: profile.id,
+            email: profile.email,
+            role: profile.role,
+            committeeId: profile.committeeId,
+            trackedCommitteeId: profile.trackedCommitteeId,
+          },
+          itemWorkType,
+          t.committeeId
+        );
+      });
 
       // Load all submissions for visible tasks in a single query (eliminates N+1)
-      if (dbTasks.length > 0) {
-        const taskIds = dbTasks.map((t) => t.id);
+      if (roleAuthorizedTasks.length > 0) {
+        const taskIds = roleAuthorizedTasks.map((t) => t.id);
         const allSubs = await db
           .select({
             sub: schema.taskSubmissions,
@@ -249,13 +314,13 @@ export default async function HrTasksPage() {
         }
 
         const visibleTasks = directorTrackCommitteeIds
-          ? dbTasks.filter(
+          ? roleAuthorizedTasks.filter(
               (t) =>
                 (t.committeeId !== null &&
                   directorTrackCommitteeIds.has(t.committeeId)) ||
                 (subsByTask.get(t.id)?.length ?? 0) > 0
             )
-          : dbTasks;
+          : roleAuthorizedTasks;
 
         for (const t of visibleTasks) {
           bulkTasks.push({
@@ -263,6 +328,8 @@ export default async function HrTasksPage() {
               id: t.id,
               title: t.title,
               workType: t.workType === "task" ? "task" : "assignment",
+              completionMode:
+                t.completionMode === "hr_only" ? "hr_only" : "self_report",
               committeeName: t.committeeId
                 ? commMap.get(t.committeeId) ?? "Committee"
                 : "Branch-wide",
@@ -284,13 +351,14 @@ export default async function HrTasksPage() {
         currentUserId={profile.id}
         currentUserCommitteeId={operationalCommitteeId}
         defaultMaxPoints={gradingWeights.defaultMaxPoints}
+        taskDefaults={taskDefaults}
         assignedToMe={assignedToMe}
         eligibleMembers={eligibleMembers}
         committees={dbCommitteesList}
       />
 
       {bulkTasks.length > 0 && (
-        <div className="space-y-10 border-t border-border pt-8">
+        <div id="grading" className="space-y-10 border-t border-border pt-8">
           {bulkTasks.map(({ task, submissions }) => (
             <BulkTaskGradingView
               key={task.id}

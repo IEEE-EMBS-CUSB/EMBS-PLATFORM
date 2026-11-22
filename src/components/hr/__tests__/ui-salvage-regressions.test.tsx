@@ -9,32 +9,43 @@ import { AttendanceManagerView } from "../attendance-manager-view";
 import { BulkTaskGradingView } from "../bulk-task-grading-view";
 
 describe("HR UI Salvage Regression Suite", () => {
-  it("CommitteesRubricsView opens Add Rubric modal and persists rubric via onAddRubric", async () => {
+  it("CommitteesRubricsView links to Scoring Settings and opens Add Committee modal for master_admin", async () => {
     const user = userEvent.setup();
-    const onAddRubric = vi.fn().mockResolvedValue({ ok: true, rubricId: "rub-real-1" });
+    const onAddCommittee = vi.fn().mockResolvedValue({
+      ok: true,
+      committee: {
+        id: "comm-new-1",
+        name: "Signal Processing",
+        slug: "signal-processing",
+        category: "technical",
+        trackId: "technical",
+        isActive: true,
+        memberCount: 0,
+      },
+    });
 
     render(
       <CommitteesRubricsView
         committees={[]}
-        rubrics={[]}
-        currentUserRole="hr_admin"
-        onAddRubric={onAddRubric}
+        currentUserRole="master_admin"
+        onAddCommittee={onAddCommittee}
       />
     );
 
-    await user.click(screen.getByRole("button", { name: /scoring rubrics/i }));
-    await user.click(screen.getByRole("button", { name: /add rubric/i }));
+    expect(
+      screen.getByRole("link", { name: /scoring settings/i })
+    ).toHaveAttribute("href", "/hr/seasons");
 
-    expect(screen.getByRole("dialog", { name: /add scoring rubric/i })).toBeInTheDocument();
-    await user.type(screen.getByLabelText(/rubric name/i), "Technical Quality");
-    await user.click(screen.getByRole("button", { name: /create rubric/i }));
+    await user.click(screen.getByRole("button", { name: /add committee/i }));
+    await user.type(screen.getByLabelText(/committee name/i), "Signal Processing");
+    await user.click(screen.getByRole("button", { name: /create committee/i }));
 
     await waitFor(() => {
-      expect(onAddRubric).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "Technical Quality" })
+      expect(onAddCommittee).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Signal Processing" })
       );
     });
-    expect(screen.getByText("Technical Quality")).toBeInTheDocument();
+    expect(screen.getByText("Signal Processing")).toBeInTheDocument();
   });
 
   it("RosterManagerView Confirm Import invokes onBulkImport with the CSV payload", async () => {

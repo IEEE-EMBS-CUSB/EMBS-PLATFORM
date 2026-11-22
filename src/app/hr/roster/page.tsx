@@ -4,10 +4,11 @@ import {
   type RosterMemberItem,
   type CommitteeOption,
   type TrackOption,
+  type PersonDirectoryEntry,
 } from "@/components/hr/roster-manager-view";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { ensureDefaultTracksForSeason } from "@/services/hr-ops/committees.service";
 import {
   resetMemberPasswordAction,
@@ -24,6 +25,7 @@ export default async function HrRosterPage() {
   let members: RosterMemberItem[] = [];
   let availableCommittees: CommitteeOption[] = [];
   let availableTracks: TrackOption[] = [];
+  let peopleDirectory: PersonDirectoryEntry[] = [];
 
   try {
     const [activeSeason] = await db
@@ -36,7 +38,7 @@ export default async function HrRosterPage() {
       const seasonId = activeSeason.id;
       const dbTracks = await ensureDefaultTracksForSeason(seasonId);
 
-      const [dbMembers, dbCommittees] = await Promise.all([
+      const [dbMembers, dbCommittees, dbPersons] = await Promise.all([
         db
           .select({
             id: schema.rosterMemberships.id,
@@ -64,9 +66,21 @@ export default async function HrRosterPage() {
               eq(schema.committees.isActive, true)
             )
           ),
+        profile.role === "master_admin"
+          ? db
+              .select({
+                id: schema.persons.id,
+                fullName: schema.persons.fullName,
+                email: schema.persons.email,
+              })
+              .from(schema.persons)
+              .where(eq(schema.persons.isActive, true))
+              .orderBy(asc(schema.persons.fullName))
+          : Promise.resolve([]),
       ]);
 
-      const committeeMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
+      peopleDirectory = dbPersons;
+      const committeeMap = new Map(dbCommittees.map((c) => [c.id, c]));
       const trackMap = new Map(dbTracks.map((t) => [t.id, t.name]));
 
       const isTrackDirector =
@@ -85,33 +99,49 @@ export default async function HrRosterPage() {
         .map((c) => ({
           id: c.id,
           name: c.name,
+          slug: c.slug,
+          trackId: c.trackId ?? null,
         }));
 
       members = dbMembers
         .filter((m) => {
           if (!directorTrackCommitteeIds) return true;
           if (m.id === profile.id) return true;
-          return m.committeeId !== null && directorTrackCommitteeIds.has(m.committeeId);
+          if (m.role === "hr_member" && m.trackedCommitteeId) {
+            return directorTrackCommitteeIds.has(m.trackedCommitteeId);
+          }
+          return (
+            m.committeeId !== null &&
+            directorTrackCommitteeIds.has(m.committeeId)
+          );
         })
         .map((m) => {
           const isHrMember = m.role === "hr_member";
           const displayCommitteeId = isHrMember
             ? m.trackedCommitteeId
             : m.committeeId;
+          const displayCommittee = displayCommitteeId
+            ? committeeMap.get(displayCommitteeId)
+            : undefined;
           const displayCommitteeName = isHrMember
             ? m.trackedCommitteeId
-              ? `Human Resources (Tracks ${committeeMap.get(m.trackedCommitteeId) ?? "Unassigned"})`
-              : "Human Resources"
-            : m.committeeId
-              ? committeeMap.get(m.committeeId) ?? "Unassigned"
-              : "Unassigned";
+              ? `Tracks ${displayCommittee?.name ?? "Unassigned"}`
+              : "Unassigned"
+            : displayCommittee?.name ?? "Unassigned";
+
+          const trackId =
+            m.role === "director"
+              ? m.managedTrackId
+              : (displayCommittee?.trackId ?? null);
 
           return {
             id: m.id,
+            personId: m.personId,
             fullName: m.fullName,
             email: m.email,
             committeeId: displayCommitteeId,
             committeeName: displayCommitteeName,
+            trackId,
             managedTrackId: m.managedTrackId,
             managedTrackName: m.managedTrackId
               ? trackMap.get(m.managedTrackId) ?? null
@@ -128,6 +158,7 @@ export default async function HrRosterPage() {
   return (
     <RosterManagerView
       members={members}
+      peopleDirectory={peopleDirectory}
       currentUserRole={profile.role}
       scopedTrackName={
         profile.role === "director" ? profile.managedTrackName ?? null : null
