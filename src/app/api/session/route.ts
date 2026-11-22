@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   buildClearLastContextCookieOptions,
   buildClearSessionCookieOptions,
+  buildLastContextCookieOptions,
   buildSessionCookieOptions,
   LAST_CONTEXT_COOKIE_NAME,
   SESSION_COOKIE_NAME,
@@ -53,6 +54,13 @@ export async function GET(request: NextRequest) {
     encodeSessionToken(renewed),
     buildSessionCookieOptions()
   );
+  if (liveUser.participantId !== decoded.participantId) {
+    response.cookies.set(
+      LAST_CONTEXT_COOKIE_NAME,
+      liveUser.participantId,
+      buildLastContextCookieOptions()
+    );
+  }
   return response;
 }
 
