@@ -168,3 +168,31 @@ export function renewSessionUser(
     expiresAt: computeExpirationIso(now),
   };
 }
+
+/**
+ * Re-mints a SessionUser for another server-validated membership owned by the same person.
+ * Strictly preserves `sessionId`, `personId`, `keyVersion`, and original `issuedAt` so
+ * `passwordChangedAt` session revocation can never be bypassed by switching hats.
+ */
+export function switchSessionMembership(
+  current: SessionUser,
+  target: {
+    id: string;
+    fullName: string;
+    role: MembershipRole;
+  },
+  now: Date = new Date()
+): SessionUser {
+  const participantType: ParticipantType =
+    target.role === "attendee" ? "attendee" : "member";
+
+  return {
+    ...current,
+    participantId: target.id,
+    displayId: target.id.slice(0, 8),
+    fullName: target.fullName,
+    participantType,
+    membershipRole: target.role,
+    expiresAt: computeExpirationIso(now),
+  };
+}

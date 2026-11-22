@@ -11,7 +11,9 @@ import {
   encodeSessionToken,
 } from "@/services/session.service";
 import {
+  LAST_CONTEXT_COOKIE_NAME,
   SESSION_COOKIE_NAME,
+  buildLastContextCookieOptions,
   buildSessionCookieOptions,
 } from "@/lib/session-cookie";
 import { getRoleLandingPath, normalizeEmail } from "@/lib/auth-helpers";
@@ -29,7 +31,15 @@ export async function loginWithPasswordAction(
   password: string,
   nextPath?: string | null
 ): Promise<LoginActionResult> {
-  const result = await authenticateWithPassword({ email, password });
+  const cookieStore = await cookies();
+  const preferredMembershipId =
+    cookieStore.get(LAST_CONTEXT_COOKIE_NAME)?.value ?? null;
+
+  const result = await authenticateWithPassword({
+    email,
+    password,
+    preferredMembershipId,
+  });
 
   if (!result.ok) {
     return { ok: false, error: result.reason };
@@ -60,11 +70,15 @@ export async function loginWithPasswordAction(
     };
   }
 
-  const cookieStore = await cookies();
   cookieStore.set(
     SESSION_COOKIE_NAME,
     signedToken,
     buildSessionCookieOptions()
+  );
+  cookieStore.set(
+    LAST_CONTEXT_COOKIE_NAME,
+    result.member.id,
+    buildLastContextCookieOptions()
   );
 
   const safeNext = sanitizeNextPath(nextPath);
@@ -87,7 +101,14 @@ export async function changePasswordOnFirstLoginAction(
     return { ok: false, error: "Please provide a valid email address." };
   }
 
-  const member = await resolveLoginMembershipByEmail(normalized);
+  const cookieStore = await cookies();
+  const preferredMembershipId =
+    cookieStore.get(LAST_CONTEXT_COOKIE_NAME)?.value ?? null;
+
+  const member = await resolveLoginMembershipByEmail(
+    normalized,
+    preferredMembershipId
+  );
   if (!member || !member.isActive || !member.passwordHash) {
     return { ok: false, error: "Invalid email or password." };
   }
@@ -135,11 +156,15 @@ export async function changePasswordOnFirstLoginAction(
   });
   const signedToken = encodeSessionToken(sessionUser);
 
-  const cookieStore = await cookies();
   cookieStore.set(
     SESSION_COOKIE_NAME,
     signedToken,
     buildSessionCookieOptions()
+  );
+  cookieStore.set(
+    LAST_CONTEXT_COOKIE_NAME,
+    member.id,
+    buildLastContextCookieOptions()
   );
 
   const safeNext = sanitizeNextPath(nextPath);

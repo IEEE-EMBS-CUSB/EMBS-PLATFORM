@@ -116,7 +116,8 @@ export function pickPreferredLoginMembership(
  * Credentials live on `persons`; role/committee/season scoping lives on `roster_memberships`.
  */
 export async function resolveLoginMembershipByEmail(
-  normalizedEmail: string
+  normalizedEmail: string,
+  preferredMembershipId?: string | null
 ): Promise<RosterMemberLookupRecord | null> {
   const [person] = await db
     .select()
@@ -145,19 +146,35 @@ export async function resolveLoginMembershipByEmail(
 
   if (memberships.length === 0) return null;
 
-  const chosen = pickPreferredLoginMembership(
-    memberships.map((m) => ({
-      id: m.id,
-      role: m.role as MembershipRole,
-      committeeId: m.committeeId,
-      isActive: m.isActive,
-      seasonStatus: m.seasonStatus as SeasonStatus,
-      seasonStartDate: m.seasonStartDate,
-      createdAt: m.createdAt,
-    }))
-  );
+  const candidates: LoginMembershipCandidate[] = memberships.map((m) => ({
+    id: m.id,
+    role: m.role as MembershipRole,
+    committeeId: m.committeeId,
+    isActive: m.isActive,
+    seasonStatus: m.seasonStatus as SeasonStatus,
+    seasonStartDate: m.seasonStartDate,
+    createdAt: m.createdAt,
+  }));
 
-  if (!chosen) return null;
+  const defaultChosen = pickPreferredLoginMembership(candidates);
+  if (!defaultChosen) return null;
+
+  // Honor preferredMembershipId ONLY if it belongs to this person, is active,
+  // and is in the same eligible season status (active season takes strict priority over archived).
+  const preferredCandidate =
+    preferredMembershipId
+      ? candidates.find(
+          (c) =>
+            c.id === preferredMembershipId &&
+            c.isActive &&
+            c.seasonStatus === defaultChosen.seasonStatus &&
+            (defaultChosen.seasonStatus === "active" ||
+              c.seasonStartDate.getTime() ===
+                defaultChosen.seasonStartDate.getTime())
+        )
+      : undefined;
+
+  const chosen = preferredCandidate ?? defaultChosen;
 
   return {
     id: chosen.id,
@@ -179,9 +196,10 @@ export async function resolveLoginMembershipByEmail(
 export async function authenticateWithPassword(params: {
   email: string;
   password: string;
+  preferredMembershipId?: string | null;
   rosterLookup?: (email: string) => Promise<RosterMemberLookupRecord | null>;
 }): Promise<PasswordAuthResult> {
-  const { email, password, rosterLookup } = params;
+  const { email, password, preferredMembershipId, rosterLookup } = params;
   const normalized = normalizeEmail(email);
 
   if (!normalized || !normalized.includes("@")) {
@@ -198,7 +216,10 @@ export async function authenticateWithPassword(params: {
     member = await rosterLookup(normalized);
   } else {
     try {
-      member = await resolveLoginMembershipByEmail(normalized);
+      member = await resolveLoginMembershipByEmail(
+        normalized,
+        preferredMembershipId
+      );
     } catch {
       return {
         ok: false,

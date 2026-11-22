@@ -12,6 +12,7 @@ import * as schema from "@/db/schema";
 import { and, eq, ne } from "drizzle-orm";
 
 export const SESSION_COOKIE_NAME = "embs_portal_session";
+export const LAST_CONTEXT_COOKIE_NAME = "embs_last_context";
 
 export function isProductionEnv(): boolean {
   return process.env.NODE_ENV === "production";
@@ -30,6 +31,30 @@ export function buildSessionCookieOptions(
 }
 
 export function buildClearSessionCookieOptions(
+  secure: boolean = isProductionEnv()
+): Omit<ResponseCookie, "name" | "value"> {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure,
+    path: "/",
+    maxAge: 0,
+  };
+}
+
+export function buildLastContextCookieOptions(
+  secure: boolean = isProductionEnv()
+): Omit<ResponseCookie, "name" | "value"> {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure,
+    path: "/",
+    maxAge: SESSION_DURATION_SECONDS,
+  };
+}
+
+export function buildClearLastContextCookieOptions(
   secure: boolean = isProductionEnv()
 ): Omit<ResponseCookie, "name" | "value"> {
   return {
