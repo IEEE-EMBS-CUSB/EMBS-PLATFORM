@@ -5,6 +5,7 @@ import {
   committees,
   membershipRoleEnum,
   monthlySnapshots,
+  persons,
   rosterMemberships,
   scoreLedger,
   taskSubmissions,
@@ -21,13 +22,67 @@ describe("Database Schema Constraints & Table Naming", () => {
     expect(uniqueIndex?.config.unique).toBe(true);
   });
 
-  it("enforces strict unique index on rosterMemberships (seasonId, email)", () => {
-    const config = getTableConfig(rosterMemberships);
-    const uniqueIndex = config.indexes.find(
-      (idx) => idx.config.name === "roster_season_email_idx"
+  it("enforces unique normalized email on persons table", () => {
+    const config = getTableConfig(persons);
+    const colNames = config.columns.map((c) => c.name);
+    expect(colNames).toEqual(
+      expect.arrayContaining([
+        "id",
+        "email",
+        "full_name",
+        "password_hash",
+        "must_change_password",
+        "password_changed_at",
+        "is_active",
+        "created_at",
+        "updated_at",
+      ])
     );
-    expect(uniqueIndex).toBeDefined();
-    expect(uniqueIndex?.config.unique).toBe(true);
+
+    const uniqueEmailIdx = config.indexes.find(
+      (idx) => idx.config.name === "persons_email_idx"
+    );
+    expect(uniqueEmailIdx).toBeDefined();
+    expect(uniqueEmailIdx?.config.unique).toBe(true);
+  });
+
+  it("links rosterMemberships to persons with partial unique indexes per role class and no legacy auth columns", () => {
+    const config = getTableConfig(rosterMemberships);
+    const colNames = config.columns.map((c) => c.name);
+
+    expect(colNames).toContain("person_id");
+    expect(colNames).not.toContain("email");
+    expect(colNames).not.toContain("full_name");
+    expect(colNames).not.toContain("password_hash");
+    expect(colNames).not.toContain("must_change_password");
+    expect(colNames).not.toContain("password_changed_at");
+
+    // Old one-role-per-season unique index must be gone
+    expect(
+      config.indexes.find((idx) => idx.config.name === "roster_season_email_idx")
+    ).toBeUndefined();
+
+    // Explicit partial unique indexes per role class
+    const expectedPartialUniques = [
+      "roster_global_role_uniq",
+      "roster_director_global_uniq",
+      "roster_director_track_uniq",
+      "roster_committee_role_uniq",
+      "roster_unassigned_role_uniq",
+    ];
+    for (const indexName of expectedPartialUniques) {
+      const idx = config.indexes.find((i) => i.config.name === indexName);
+      expect(idx, `Missing partial unique index ${indexName}`).toBeDefined();
+      expect(idx?.config.unique).toBe(true);
+      expect(idx?.config.where).toBeDefined();
+    }
+
+    // FK from roster_memberships.person_id -> persons.id with ON DELETE RESTRICT
+    const personFk = config.foreignKeys.find(
+      (fk) => fk.reference().foreignTable === persons
+    );
+    expect(personFk).toBeDefined();
+    expect(personFk?.onDelete).toBe("restrict");
   });
 
   it("enforces strict unique index on attendanceRecords (sessionId, membershipId) preventing double check-in", () => {

@@ -64,6 +64,20 @@
       "when": 1795293849203,
       "tag": "0008_overjoyed_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795339871796,
+      "tag": "0009_expand_backfill_persons",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795339929243,
+      "tag": "0010_contract_roster_identity",
+      "breakpoints": true
     }
   ]
 }

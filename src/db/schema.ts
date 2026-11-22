@@ -146,26 +146,16 @@ export const committees = pgTable(
 );
 
 // ============================================================================
-// 3. Roster Memberships (Whitelist-Only Access & Role Mapping)
-// Strict unique constraint on (seasonId, email). Emails always normalized.
+// 2c. Persons (Cross-Season Identity & Authentication Credentials)
+// One row per human across all seasons. Email is always normalized lowercase/trimmed.
 // ============================================================================
 
-export const rosterMemberships = pgTable(
-  "roster_memberships",
+export const persons = pgTable(
+  "persons",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    seasonId: uuid("season_id")
-      .notNull()
-      .references(() => seasons.id, { onDelete: "cascade" }),
     email: text("email").notNull(), // Normalized lowercased & trimmed email
     fullName: text("full_name").notNull(),
-    committeeId: uuid("committee_id").references(() => committees.id, {
-      onDelete: "set null",
-    }), // Nullable for branch-wide HR admins or general attendees
-    managedTrackId: uuid("managed_track_id").references(() => committeeTracks.id, {
-      onDelete: "set null",
-    }), // Nullable; when set on a director, scopes them to all committees in that track
-    role: membershipRoleEnum("role").notNull().default("member"),
     passwordHash: text("password_hash"),
     mustChangePassword: boolean("must_change_password").notNull().default(true),
     passwordChangedAt: timestamp("password_changed_at", {
@@ -176,13 +166,70 @@ export const rosterMemberships = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    uniqueIndex("roster_season_email_idx").on(table.seasonId, table.email),
+    uniqueIndex("persons_email_idx").on(table.email),
+    index("persons_is_active_idx").on(table.isActive),
+  ]
+);
+
+// ============================================================================
+// 3. Roster Memberships (Season-Scoped Role Hats)
+// One row per hat: (season, person, role, committee/track).
+// Explicit partial unique indexes per role class prevent NULL-distinct duplicates.
+// ============================================================================
+
+export const rosterMemberships = pgTable(
+  "roster_memberships",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    seasonId: uuid("season_id")
+      .notNull()
+      .references(() => seasons.id, { onDelete: "cascade" }),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id, { onDelete: "restrict" }),
+    committeeId: uuid("committee_id").references(() => committees.id, {
+      onDelete: "set null",
+    }), // Nullable for branch-wide HR admins or general attendees
+    managedTrackId: uuid("managed_track_id").references(() => committeeTracks.id, {
+      onDelete: "set null",
+    }), // Nullable; when set on a director, scopes them to all committees in that track
+    role: membershipRoleEnum("role").notNull().default("member"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
     index("roster_season_id_idx").on(table.seasonId),
-    index("roster_email_idx").on(table.email),
+    index("roster_person_id_idx").on(table.personId),
     index("roster_committee_id_idx").on(table.committeeId),
     index("roster_role_idx").on(table.role),
+    uniqueIndex("roster_global_role_uniq")
+      .on(table.seasonId, table.personId, table.role)
+      .where(sql`${table.role} IN ('master_admin', 'hr_admin')`),
+    uniqueIndex("roster_director_global_uniq")
+      .on(table.seasonId, table.personId)
+      .where(sql`${table.role} = 'director' AND ${table.managedTrackId} IS NULL`),
+    uniqueIndex("roster_director_track_uniq")
+      .on(table.seasonId, table.personId, table.managedTrackId)
+      .where(
+        sql`${table.role} = 'director' AND ${table.managedTrackId} IS NOT NULL`
+      ),
+    uniqueIndex("roster_committee_role_uniq")
+      .on(table.seasonId, table.personId, table.role, table.committeeId)
+      .where(
+        sql`${table.role} IN ('committee_head', 'hr_member', 'member', 'attendee') AND ${table.committeeId} IS NOT NULL`
+      ),
+    uniqueIndex("roster_unassigned_role_uniq")
+      .on(table.seasonId, table.personId, table.role)
+      .where(
+        sql`${table.role} IN ('committee_head', 'hr_member', 'member', 'attendee') AND ${table.committeeId} IS NULL`
+      ),
   ]
 );
 
@@ -596,6 +643,10 @@ export const committeesRelations = relations(committees, ({ one, many }) => ({
   tasks: many(tasks),
 }));
 
+export const personsRelations = relations(persons, ({ many }) => ({
+  memberships: many(rosterMemberships),
+}));
+
 export const rosterMembershipsRelations = relations(
   rosterMemberships,
   ({ one, many }) => ({
@@ -603,9 +654,17 @@ export const rosterMembershipsRelations = relations(
       fields: [rosterMemberships.seasonId],
       references: [seasons.id],
     }),
+    person: one(persons, {
+      fields: [rosterMemberships.personId],
+      references: [persons.id],
+    }),
     committee: one(committees, {
       fields: [rosterMemberships.committeeId],
       references: [committees.id],
+    }),
+    managedTrack: one(committeeTracks, {
+      fields: [rosterMemberships.managedTrackId],
+      references: [committeeTracks.id],
     }),
     attendance: many(attendanceRecords),
     taskSubmissions: many(taskSubmissions),
