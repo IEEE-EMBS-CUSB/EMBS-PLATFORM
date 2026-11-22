@@ -71,14 +71,17 @@ export interface SeasonLedgerPointRow {
   membershipId: string;
   personId: string;
   month: string;
-  sourceType: "attendance" | "task" | "event" | "manual_override";
+  sourceType: "attendance" | "task" | "assignment" | "event" | "manual_override";
+  postingScope?: "committee" | "open";
+  committeeId?: string | null;
   points: number;
 }
 
 /**
  * Deterministically derives a person's monthly score history across ALL of their
  * memberships in the season so switching active hats never hides or reattributes scores.
- * Overall rank aggregates once per person; committee rank reflects the active committee.
+ * Overall rank aggregates once per person; committee rank reflects the active committee
+ * (committee-scoped points for that committee + open/global points counted once).
  */
 export function computePersonMonthlyScores(input: {
   personId: string;
@@ -86,6 +89,7 @@ export function computePersonMonthlyScores(input: {
   allSeasonLedger: readonly SeasonLedgerPointRow[];
   publishedMonths: ReadonlySet<string>;
   activeCommitteeMembershipIds: ReadonlySet<string>;
+  activeCommitteePersonIds?: ReadonlySet<string>;
 }): MonthlyScoreRecord[] {
   const {
     personId,
@@ -93,6 +97,7 @@ export function computePersonMonthlyScores(input: {
     allSeasonLedger,
     publishedMonths,
     activeCommitteeMembershipIds,
+    activeCommitteePersonIds,
   } = input;
 
   const personLedger = allSeasonLedger.filter((l) => l.personId === personId);
@@ -124,18 +129,39 @@ export function computePersonMonthlyScores(input: {
       overallIdx >= 0 ? overallIdx + 1 : sortedOverall.length + 1;
     const overallTotal = Math.max(sortedOverall.length, 1);
 
-    // Committee rank: sum entries belonging to memberships in the active committee, grouped by person
+    // Committee rank: committee-scoped entries for activeCommitteeId + open entries (counted once per eligible person)
     let committeeRank = 1;
     let committeeTotal = 1;
     if (activeCommitteeId && activeCommitteeMembershipIds.size > 0) {
+      const commEligiblePersons = new Set<string>(activeCommitteePersonIds ?? []);
+      if (commEligiblePersons.size === 0) {
+        for (const e of allSeasonLedger) {
+          if (activeCommitteeMembershipIds.has(e.membershipId)) {
+            commEligiblePersons.add(e.personId);
+          }
+        }
+        commEligiblePersons.add(personId);
+      }
+
       const commPointsByPerson = new Map<string, number>();
+      for (const pid of commEligiblePersons) {
+        commPointsByPerson.set(pid, 0);
+      }
       for (const e of allSeasonLedger) {
         if (e.month !== month) continue;
-        if (!activeCommitteeMembershipIds.has(e.membershipId)) continue;
-        commPointsByPerson.set(
-          e.personId,
-          (commPointsByPerson.get(e.personId) ?? 0) + e.points
-        );
+        if (!commEligiblePersons.has(e.personId)) continue;
+        const isOpen = e.postingScope === "open";
+        const isThisCommittee =
+          e.postingScope !== "open" &&
+          (e.committeeId !== undefined
+            ? e.committeeId === activeCommitteeId
+            : activeCommitteeMembershipIds.has(e.membershipId));
+        if (isOpen || isThisCommittee) {
+          commPointsByPerson.set(
+            e.personId,
+            (commPointsByPerson.get(e.personId) ?? 0) + e.points
+          );
+        }
       }
       const sortedComm = Array.from(commPointsByPerson.entries()).sort(
         (a, b) => b[1] - a[1]
@@ -156,9 +182,11 @@ export function computePersonMonthlyScores(input: {
       },
       {
         key: "tasks",
-        label: "Task Contribution",
+        label: "Tasks & Assignments",
         points: monthEntries
-          .filter((l) => l.sourceType === "task")
+          .filter(
+            (l) => l.sourceType === "task" || l.sourceType === "assignment"
+          )
           .reduce((s, i) => s + i.points, 0),
         maxPoints: 40,
       },
@@ -400,6 +428,8 @@ export async function getMemberMonthlyScores(
             personId: schema.rosterMemberships.personId,
             month: schema.scoreLedger.month,
             sourceType: schema.scoreLedger.sourceType,
+            postingScope: schema.scoreLedger.postingScope,
+            committeeId: schema.scoreLedger.committeeId,
             points: schema.scoreLedger.points,
           })
           .from(schema.scoreLedger)
@@ -419,13 +449,17 @@ export async function getMemberMonthlyScores(
           ),
         scope.committeeId
           ? db
-              .select({ id: schema.rosterMemberships.id })
+              .select({
+                id: schema.rosterMemberships.id,
+                personId: schema.rosterMemberships.personId,
+              })
               .from(schema.rosterMemberships)
               .where(
                 and(
                   eq(schema.rosterMemberships.seasonId, scope.seasonId),
                   eq(schema.rosterMemberships.committeeId, scope.committeeId),
-                  eq(schema.rosterMemberships.isActive, true)
+                  eq(schema.rosterMemberships.isActive, true),
+                  ne(schema.rosterMemberships.role, "attendee")
                 )
               )
           : Promise.resolve([]),
@@ -437,6 +471,7 @@ export async function getMemberMonthlyScores(
       allSeasonLedger,
       publishedMonths: new Set(publishedSnapshots.map((s) => s.month)),
       activeCommitteeMembershipIds: new Set(committeeMembers.map((c) => c.id)),
+      activeCommitteePersonIds: new Set(committeeMembers.map((c) => c.personId)),
     });
   } catch {
     // Graceful fallback

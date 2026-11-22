@@ -40,6 +40,7 @@ async function buildDraft(month: string, seasonId: string) {
   const dbMembers = await db
     .select({
       id: schema.rosterMemberships.id,
+      personId: schema.rosterMemberships.personId,
       fullName: schema.persons.fullName,
       committeeId: schema.rosterMemberships.committeeId,
       role: schema.rosterMemberships.role,
@@ -66,6 +67,7 @@ async function buildDraft(month: string, seasonId: string) {
 
   const members = dbMembers.map((m) => ({
     id: m.id,
+    personId: m.personId,
     fullName: m.fullName,
     committeeId: m.committeeId,
     committeeSlug: m.committeeId ? commMap.get(m.committeeId)?.slug ?? null : null,
@@ -74,8 +76,18 @@ async function buildDraft(month: string, seasonId: string) {
   }));
 
   const ledger = await db
-    .select()
+    .select({
+      membershipId: schema.scoreLedger.membershipId,
+      personId: schema.rosterMemberships.personId,
+      postingScope: schema.scoreLedger.postingScope,
+      committeeId: schema.scoreLedger.committeeId,
+      points: schema.scoreLedger.points,
+    })
     .from(schema.scoreLedger)
+    .innerJoin(
+      schema.rosterMemberships,
+      eq(schema.scoreLedger.membershipId, schema.rosterMemberships.id)
+    )
     .where(
       and(
         eq(schema.scoreLedger.seasonId, seasonId),
@@ -84,6 +96,9 @@ async function buildDraft(month: string, seasonId: string) {
     );
   const ledgerEntries = ledger.map((l) => ({
     membershipId: l.membershipId,
+    personId: l.personId,
+    postingScope: l.postingScope,
+    committeeId: l.committeeId,
     points: l.points,
   }));
 

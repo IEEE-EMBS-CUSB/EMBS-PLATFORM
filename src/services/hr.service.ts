@@ -1,5 +1,9 @@
 import crypto from "crypto";
 import { normalizeEmail, type MembershipRole } from "@/lib/auth-helpers";
+import {
+  computeMonthlyBoards,
+  type LedgerPostingScope,
+} from "@/services/scoring.service";
 
 export interface ParsedCsvRosterRecord {
   fullName: string;
@@ -131,6 +135,7 @@ export function generateSessionCheckinCode(expiryMinutes = 15): {
 
 export interface MemberRef {
   id: string;
+  personId?: string;
   fullName: string;
   committeeId: string | null;
   committeeSlug: string | null;
@@ -140,11 +145,15 @@ export interface MemberRef {
 
 export interface LedgerPointRef {
   membershipId: string;
+  personId?: string;
+  postingScope?: LedgerPostingScope;
+  committeeId?: string | null;
   points: number;
 }
 
 export interface PreviousRankRef {
   memberId: string;
+  personId?: string;
   rank: number;
 }
 
@@ -157,6 +166,7 @@ export interface CalculatedSnapshotEntry {
   rank: number;
   previousRank: number | null;
   memberId: string;
+  personId?: string;
   memberName: string;
   committeeSlug: string;
   committeeName: string;
@@ -171,8 +181,8 @@ export interface DraftSnapshotResult {
 }
 
 /**
- * Calculates a draft monthly snapshot from score ledger points,
- * computing overall ranks and committee-local rank movement trends.
+ * Calculates a draft monthly snapshot from score ledger points using the unified
+ * Spec §4 scoring engine (once per person globally, once per eligible committee board).
  */
 export function calculateDraftMonthlySnapshot(input: {
   month: string;
@@ -181,86 +191,13 @@ export function calculateDraftMonthlySnapshot(input: {
   previousSnapshot?: PreviousSnapshotRef;
 }): DraftSnapshotResult {
   const { month, members, ledgerEntries, previousSnapshot } = input;
-
-  // Aggregate current month points per member
-  const pointsMap = new Map<string, number>();
-  for (const entry of ledgerEntries) {
-    pointsMap.set(
-      entry.membershipId,
-      (pointsMap.get(entry.membershipId) ?? 0) + entry.points
-    );
-  }
-
-  // Build member score list
-  const memberScores = members.map((m) => ({
-    memberId: m.id,
-    memberName: m.fullName,
-    committeeSlug: m.committeeSlug ?? "unassigned",
-    committeeName: m.committeeName ?? "Unassigned",
-    role: m.role,
-    monthlyScore: pointsMap.get(m.id) ?? 0,
-  }));
-
-  // Sort overall descending by score
-  memberScores.sort((a, b) => {
-    if (b.monthlyScore !== a.monthlyScore) {
-      return b.monthlyScore - a.monthlyScore;
-    }
-    return a.memberName.localeCompare(b.memberName);
-  });
-
-  const prevOverallMap = new Map<string, number>();
-  if (previousSnapshot?.overall) {
-    for (const prev of previousSnapshot.overall) {
-      prevOverallMap.set(prev.memberId, prev.rank);
-    }
-  }
-
-  const overallEntries: CalculatedSnapshotEntry[] = memberScores
-    .slice(0, 10)
-    .map((item, idx) => ({
-      ...item,
-      rank: idx + 1,
-      previousRank: prevOverallMap.get(item.memberId) ?? null,
-    }));
-
-  // Build committee-specific leaderboards
-  const committeeEntries: Record<string, CalculatedSnapshotEntry[]> = {};
-  const committeeGroups = new Map<string, typeof memberScores>();
-
-  for (const member of memberScores) {
-    if (member.committeeSlug === "unassigned") continue;
-    const group = committeeGroups.get(member.committeeSlug) ?? [];
-    group.push(member);
-    committeeGroups.set(member.committeeSlug, group);
-  }
-
-  for (const [slug, group] of committeeGroups.entries()) {
-    // Sort group descending
-    group.sort((a, b) => {
-      if (b.monthlyScore !== a.monthlyScore) {
-        return b.monthlyScore - a.monthlyScore;
-      }
-      return a.memberName.localeCompare(b.memberName);
-    });
-
-    const prevCommMap = new Map<string, number>();
-    if (previousSnapshot?.committees?.[slug]) {
-      for (const prev of previousSnapshot.committees[slug]) {
-        prevCommMap.set(prev.memberId, prev.rank);
-      }
-    }
-
-    committeeEntries[slug] = group.slice(0, 10).map((item, idx) => ({
-      ...item,
-      rank: idx + 1,
-      previousRank: prevCommMap.get(item.memberId) ?? null,
-    }));
-  }
-
-  return {
+  return computeMonthlyBoards({
     month,
-    overallEntries,
-    committeeEntries,
-  };
+    members: members.map((m) => ({
+      ...m,
+      personId: m.personId ?? m.id,
+    })),
+    ledgerEntries,
+    previousSnapshot,
+  });
 }

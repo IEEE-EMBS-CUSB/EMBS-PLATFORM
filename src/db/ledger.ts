@@ -4,8 +4,11 @@ import { scoreLedger } from "./schema";
 export type LedgerSourceType =
   | "attendance"
   | "task"
+  | "assignment"
   | "event"
   | "manual_override";
+
+export type LedgerPostingScope = "committee" | "open";
 
 export interface ScoreLedgerUpsertInput {
   seasonId: string;
@@ -13,6 +16,8 @@ export interface ScoreLedgerUpsertInput {
   month: string; // YYYY-MM
   sourceType: LedgerSourceType;
   sourceId: string | null;
+  postingScope?: LedgerPostingScope;
+  committeeId?: string | null;
   points: number;
   reason: string;
   createdBy?: string | null;
@@ -58,6 +63,7 @@ export function calculateLedgerTotals(
   const breakdown: Record<LedgerSourceType, number> = {
     attendance: 0,
     task: 0,
+    assignment: 0,
     event: 0,
     manual_override: 0,
   };
@@ -80,13 +86,19 @@ export function calculateLedgerTotals(
 
 /**
  * Executes an atomic upsert into `score_ledger` for non-manual entries
- * (attendance, tasks, events) or a clean insert for manual point overrides.
+ * (attendance, tasks, assignments, events) or a clean insert for manual point overrides.
  *
- * Prevents double-counting when HR edits an existing task score or toggles attendance.
+ * Prevents double-counting when HR edits an existing grade, toggles task completion,
+ * or modifies attendance.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function upsertScoreLedgerEntry(db: any, input: ScoreLedgerUpsertInput) {
   validateLedgerInput(input);
+
+  const postingScope: LedgerPostingScope =
+    input.postingScope ?? (input.committeeId ? "committee" : "open");
+  const committeeId =
+    postingScope === "open" ? null : (input.committeeId ?? null);
 
   if (input.sourceType === "manual_override" || !input.sourceId) {
     const [inserted] = await db
@@ -97,6 +109,8 @@ export async function upsertScoreLedgerEntry(db: any, input: ScoreLedgerUpsertIn
         month: input.month,
         sourceType: input.sourceType,
         sourceId: null,
+        postingScope,
+        committeeId,
         points: input.points,
         reason: input.reason,
         createdBy: input.createdBy ?? null,
@@ -114,6 +128,8 @@ export async function upsertScoreLedgerEntry(db: any, input: ScoreLedgerUpsertIn
       month: input.month,
       sourceType: input.sourceType,
       sourceId: input.sourceId,
+      postingScope,
+      committeeId,
       points: input.points,
       reason: input.reason,
       createdBy: input.createdBy ?? null,
@@ -129,6 +145,8 @@ export async function upsertScoreLedgerEntry(db: any, input: ScoreLedgerUpsertIn
         points: input.points,
         reason: input.reason,
         month: input.month,
+        postingScope,
+        committeeId,
         createdAt: new Date(),
       },
     })
