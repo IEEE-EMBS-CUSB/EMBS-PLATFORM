@@ -10,6 +10,7 @@ import {
 
 function safeRevalidatePublishing() {
   try {
+    revalidatePath("/hr", "layout");
     revalidatePath("/hr/publishing");
     revalidatePath("/leaderboards");
     revalidatePath("/leaderboards/heads");

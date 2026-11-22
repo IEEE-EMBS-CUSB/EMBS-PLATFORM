@@ -6,6 +6,7 @@ import {
   listEligibleContextsForPerson,
   toContextPickerOptions,
 } from "@/services/context.service";
+import { getAttendeeNavNotifications } from "@/services/notifications.service";
 
 export default async function AttendeePortalLayout({
   children,
@@ -13,9 +14,10 @@ export default async function AttendeePortalLayout({
   children: React.ReactNode;
 }) {
   const session = await requireAttendeeSession();
-  const [profile, eligibleContexts] = await Promise.all([
+  const [profile, eligibleContexts, navBadges] = await Promise.all([
     getAttendeeProfile(session.participantId),
     listEligibleContextsForPerson(session.personId),
+    getAttendeeNavNotifications(session.participantId),
   ]);
 
   if (!profile) {
@@ -29,6 +31,7 @@ export default async function AttendeePortalLayout({
       subtitle={`${profile.programTrack} · ${profile.cohortLabel}`}
       contexts={toContextPickerOptions(eligibleContexts)}
       activeMembershipId={session.participantId}
+      navBadges={navBadges}
     >
       {children}
     </PortalShell>

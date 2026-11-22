@@ -15,6 +15,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { NavLinkPendingIndicator } from "@/components/layout/nav-link-pending";
+import { NavBadgePill } from "@/components/layout/nav-badge";
+import type { ResolvedNavBadge } from "@/lib/nav-notifications";
 import { cn } from "@/lib/utils";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import { canAccessHrModule } from "@/lib/permissions";
@@ -154,12 +156,14 @@ export function resolveHrTabFromPathname(pathname: string | null): HrTabKey {
 interface HrNavProps {
   activeTab?: HrTabKey;
   currentUserRole?: MembershipRole;
+  resolvedBadges?: Record<string, ResolvedNavBadge>;
   onNavigate?: () => void;
 }
 
 export function HrNav({
   activeTab,
   currentUserRole = "hr_admin",
+  resolvedBadges,
   onNavigate,
 }: HrNavProps) {
   const pathname = usePathname();
@@ -171,6 +175,7 @@ export function HrNav({
       {visibleItems.map((item) => {
         const isActive = resolvedTab === item.key;
         const Icon = item.icon;
+        const badge = resolvedBadges?.[item.href];
 
         return (
           <Link
@@ -187,7 +192,11 @@ export function HrNav({
           >
             <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="truncate">{item.label}</span>
-            <NavLinkPendingIndicator />
+            {badge ? (
+              <NavBadgePill badge={badge} active={isActive} />
+            ) : (
+              <NavLinkPendingIndicator />
+            )}
           </Link>
         );
       })}

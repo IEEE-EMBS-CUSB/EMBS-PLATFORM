@@ -14,6 +14,14 @@ import {
 } from "@/components/hr/hr-nav";
 import { ContextSwitcher } from "@/components/layout/context-switcher";
 import { NavLinkPendingIndicator } from "@/components/layout/nav-link-pending";
+import {
+  NavBadgePill,
+  useResolvedNavBadges,
+} from "@/components/layout/nav-badge";
+import {
+  aggregateOverflowBadge,
+  type NavBadgeMap,
+} from "@/lib/nav-notifications";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -37,6 +45,7 @@ export interface HrShellProps {
   userCommitteeName?: string;
   contexts?: readonly ContextPickerOption[];
   activeMembershipId?: string | null;
+  navBadges?: NavBadgeMap;
   children: ReactNode;
 }
 
@@ -58,6 +67,7 @@ export function HrShell({
   userCommitteeName,
   contexts = [],
   activeMembershipId,
+  navBadges,
   children,
 }: HrShellProps) {
   const pathname = usePathname();
@@ -65,13 +75,18 @@ export function HrShell({
 
   const resolvedTab = activeTab ?? resolveHrTabFromPathname(pathname);
   const visibleItems = getVisibleHrNavItems(currentUserRole);
+  const resolvedBadges = useResolvedNavBadges(navBadges, pathname);
   const hasOverflowTabs = visibleItems.length > 4;
   const primaryMobileTabs = hasOverflowTabs
     ? visibleItems.slice(0, 4)
     : visibleItems;
-  const isOverflowTabActive =
-    hasOverflowTabs &&
-    visibleItems.slice(4).some((item) => item.key === resolvedTab);
+  const overflowTabs = hasOverflowTabs ? visibleItems.slice(4) : [];
+  const isOverflowTabActive = overflowTabs.some(
+    (item) => item.key === resolvedTab
+  );
+  const overflowBadge = aggregateOverflowBadge(
+    overflowTabs.map((item) => resolvedBadges[item.href])
+  );
 
   const roleLabel = ROLE_LABELS[currentUserRole] ?? "HR Operations";
   const fallbackContextLabel = userCommitteeName
@@ -167,6 +182,7 @@ export function HrShell({
                   <HrNav
                     activeTab={resolvedTab}
                     currentUserRole={currentUserRole}
+                    resolvedBadges={resolvedBadges}
                     onNavigate={() => setMobileOpen(false)}
                   />
                 </div>
@@ -204,7 +220,11 @@ export function HrShell({
                 {activeSeasonName}
               </p>
             </div>
-            <HrNav activeTab={resolvedTab} currentUserRole={currentUserRole} />
+            <HrNav
+              activeTab={resolvedTab}
+              currentUserRole={currentUserRole}
+              resolvedBadges={resolvedBadges}
+            />
           </div>
         </aside>
 
@@ -229,6 +249,7 @@ export function HrShell({
           {primaryMobileTabs.map((item) => {
             const Icon = item.icon;
             const active = resolvedTab === item.key;
+            const badge = resolvedBadges[item.href];
 
             return (
               <Link
@@ -248,7 +269,14 @@ export function HrShell({
                     className="absolute top-0 h-0.5 w-8 rounded-full bg-[#772583]"
                   />
                 )}
-                <Icon className="h-5 w-5" aria-hidden="true" />
+                <span className="relative inline-flex">
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                  <NavBadgePill
+                    badge={badge}
+                    compact
+                    className="absolute -top-1.5 -right-2.5"
+                  />
+                </span>
                 <span className="truncate">{item.mobileLabel}</span>
                 <NavLinkPendingIndicator className="absolute top-2 right-2 ml-0 h-1.5 w-1.5" />
               </Link>
@@ -273,7 +301,14 @@ export function HrShell({
                   className="absolute top-0 h-0.5 w-8 rounded-full bg-[#772583]"
                 />
               )}
-              <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+              <span className="relative inline-flex">
+                <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+                <NavBadgePill
+                  badge={overflowBadge}
+                  compact
+                  className="absolute -top-1.5 -right-2.5"
+                />
+              </span>
               <span>More</span>
             </button>
           )}

@@ -9,6 +9,7 @@ import {
   listEligibleContextsForPerson,
   toContextPickerOptions,
 } from "@/services/context.service";
+import { getMemberNavNotifications } from "@/services/notifications.service";
 import type { MembershipRole } from "@/lib/auth-helpers";
 
 export default async function MemberPortalLayout({
@@ -17,10 +18,11 @@ export default async function MemberPortalLayout({
   children: React.ReactNode;
 }) {
   const session = await requireMemberSession();
-  const [profile, opProfile, eligibleContexts] = await Promise.all([
+  const [profile, opProfile, eligibleContexts, navBadges] = await Promise.all([
     getMemberProfile(session.participantId),
     getOperationalUserProfile(session.participantId),
     listEligibleContextsForPerson(session.personId),
+    getMemberNavNotifications(session.participantId, session.personId),
   ]);
 
   if (!profile) {
@@ -51,6 +53,7 @@ export default async function MemberPortalLayout({
       currentUserRole={role}
       contexts={toContextPickerOptions(eligibleContexts)}
       activeMembershipId={session.participantId}
+      navBadges={navBadges}
     >
       {children}
     </PortalShell>

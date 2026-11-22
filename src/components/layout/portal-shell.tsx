@@ -20,6 +20,14 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { EmbsMark } from "@/components/brand/embs-mark";
 import { ContextSwitcher } from "@/components/layout/context-switcher";
 import { NavLinkPendingIndicator } from "@/components/layout/nav-link-pending";
+import {
+  NavBadgePill,
+  useResolvedNavBadges,
+} from "@/components/layout/nav-badge";
+import {
+  aggregateOverflowBadge,
+  type NavBadgeMap,
+} from "@/lib/nav-notifications";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -113,6 +121,7 @@ interface PortalShellProps {
   currentUserRole?: MembershipRole;
   contexts?: readonly ContextPickerOption[];
   activeMembershipId?: string | null;
+  navBadges?: NavBadgeMap;
   children: ReactNode;
 }
 
@@ -123,6 +132,7 @@ export function PortalShell({
   currentUserRole,
   contexts = [],
   activeMembershipId,
+  navBadges,
   children,
 }: PortalShellProps) {
   const pathname = usePathname();
@@ -132,6 +142,12 @@ export function PortalShell({
     portalType === "member" ? MEMBER_NAV_ITEMS : ATTENDEE_NAV_ITEMS;
   const primaryMobileTabs =
     portalType === "member" ? MEMBER_NAV_ITEMS.slice(0, 4) : ATTENDEE_NAV_ITEMS;
+  const overflowMemberTabs =
+    portalType === "member" ? MEMBER_NAV_ITEMS.slice(4) : [];
+  const resolvedBadges = useResolvedNavBadges(navBadges, pathname);
+  const overflowBadge = aggregateOverflowBadge(
+    overflowMemberTabs.map((item) => resolvedBadges[item.href])
+  );
   const portalLabel =
     portalType === "attendee"
       ? "Attendee portal"
@@ -160,6 +176,7 @@ export function PortalShell({
       {navItems.map((item) => {
         const Icon = item.icon;
         const active = isActive(item);
+        const badge = resolvedBadges[item.href];
         return (
           <Link
             key={item.href}
@@ -175,7 +192,11 @@ export function PortalShell({
           >
             <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="truncate">{item.label}</span>
-            <NavLinkPendingIndicator />
+            {badge ? (
+              <NavBadgePill badge={badge} active={active} />
+            ) : (
+              <NavLinkPendingIndicator />
+            )}
           </Link>
         );
       })}
@@ -307,6 +328,7 @@ export function PortalShell({
           {primaryMobileTabs.map((item) => {
             const Icon = item.icon;
             const active = isActive(item);
+            const badge = resolvedBadges[item.href];
             return (
               <Link
                 key={item.href}
@@ -325,7 +347,14 @@ export function PortalShell({
                     className="absolute top-0 h-0.5 w-8 rounded-full bg-[#772583]"
                   />
                 )}
-                <Icon className="h-5 w-5" aria-hidden="true" />
+                <span className="relative inline-flex">
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                  <NavBadgePill
+                    badge={badge}
+                    compact
+                    className="absolute -top-1.5 -right-2.5"
+                  />
+                </span>
                 <span>{item.mobileLabel}</span>
                 <NavLinkPendingIndicator className="absolute top-2 right-2 ml-0 h-1.5 w-1.5" />
               </Link>
@@ -350,7 +379,14 @@ export function PortalShell({
                   className="absolute top-0 h-0.5 w-8 rounded-full bg-[#772583]"
                 />
               )}
-              <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+              <span className="relative inline-flex">
+                <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+                <NavBadgePill
+                  badge={overflowBadge}
+                  compact
+                  className="absolute -top-1.5 -right-2.5"
+                />
+              </span>
               <span>More</span>
             </button>
           )}

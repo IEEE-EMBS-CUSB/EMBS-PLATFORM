@@ -18,6 +18,9 @@ export type { CreateTaskInput, TaskTargetGroup, TaskTargetType };
 
 function safeRevalidateTasks() {
   try {
+    revalidatePath("/hr", "layout");
+    revalidatePath("/member", "layout");
+    revalidatePath("/attendee", "layout");
     revalidatePath("/hr/tasks");
     revalidatePath("/hr");
     revalidatePath("/hr/ledger");

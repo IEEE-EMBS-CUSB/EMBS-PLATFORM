@@ -18,6 +18,7 @@ export type { AddRosterMemberInput };
 
 function safeRevalidateRoster() {
   try {
+    revalidatePath("/hr", "layout");
     revalidatePath("/hr/roster");
     revalidatePath("/hr");
   } catch {

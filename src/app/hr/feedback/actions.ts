@@ -9,6 +9,8 @@ import {
 
 function safeRevalidateFeedback() {
   try {
+    revalidatePath("/hr", "layout");
+    revalidatePath("/member", "layout");
     revalidatePath("/hr/feedback");
     revalidatePath("/hr/ledger");
     revalidatePath("/hr/publishing");

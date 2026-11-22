@@ -8,11 +8,12 @@ import {
   listEligibleContextsForPerson,
   toContextPickerOptions,
 } from "@/services/context.service";
+import { getHrNavNotifications } from "@/services/notifications.service";
 
 export default async function HrLayout({ children }: { children: ReactNode }) {
   const { session, profile } = await requireOperationalSession();
 
-  const [eligibleContexts, activeSeasonName] = await Promise.all([
+  const [eligibleContexts, activeSeasonName, navBadges] = await Promise.all([
     listEligibleContextsForPerson(session.personId),
     db
       .select({ name: schema.seasons.name })
@@ -21,6 +22,7 @@ export default async function HrLayout({ children }: { children: ReactNode }) {
       .limit(1)
       .then(([activeSeason]) => activeSeason?.name ?? "Active Season")
       .catch(() => "Active Season"),
+    getHrNavNotifications(profile),
   ]);
 
   return (
@@ -38,6 +40,7 @@ export default async function HrLayout({ children }: { children: ReactNode }) {
       activeSeasonName={activeSeasonName}
       contexts={toContextPickerOptions(eligibleContexts)}
       activeMembershipId={session.participantId}
+      navBadges={navBadges}
     >
       {children}
     </HrShell>

@@ -26,6 +26,9 @@ export type {
 
 function safeRevalidateAttendance() {
   try {
+    revalidatePath("/hr", "layout");
+    revalidatePath("/member", "layout");
+    revalidatePath("/attendee", "layout");
     revalidatePath("/hr/attendance");
     revalidatePath("/hr");
     revalidatePath("/hr/ledger");
