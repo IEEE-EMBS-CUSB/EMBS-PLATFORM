@@ -24,8 +24,7 @@ function getAttendanceDestination(
   if (
     membershipRole === "master_admin" ||
     membershipRole === "director" ||
-    membershipRole === "hr_admin" ||
-    membershipRole === "hr_member"
+    membershipRole === "hr_admin"
   ) {
     return "/hr/attendance";
   }

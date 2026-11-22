@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canAssignTask,
@@ -502,6 +502,58 @@ export async function gradeTaskSubmissionAsActor(
   }
 }
 
+export interface SubmissionMembershipCandidate {
+  id: string;
+  role: MembershipRole;
+  committeeId: string | null;
+}
+
+/**
+ * Resolves which active membership of a person owns a task submission:
+ * 1. If a submission row already exists for the active hat, use it.
+ * 2. Else if a submission row already exists for another active hat of this person, use that assigned hat.
+ * 3. Else for a global task (taskCommitteeId === null), stamp the active hat.
+ * 4. Else for a committee task, stamp the active hat if it matches, or another active hat in that committee.
+ * 5. Otherwise return null (unauthorized).
+ */
+export function selectSubmissionMembershipForTask(input: {
+  activeMembership: SubmissionMembershipCandidate;
+  allPersonSeasonMemberships: readonly SubmissionMembershipCandidate[];
+  existingSubmissionMembershipIds: readonly string[];
+  taskCommitteeId: string | null;
+}): string | null {
+  const {
+    activeMembership,
+    allPersonSeasonMemberships,
+    existingSubmissionMembershipIds,
+    taskCommitteeId,
+  } = input;
+
+  if (existingSubmissionMembershipIds.includes(activeMembership.id)) {
+    return activeMembership.id;
+  }
+
+  const assignedOtherHat = allPersonSeasonMemberships.find((m) =>
+    existingSubmissionMembershipIds.includes(m.id)
+  );
+  if (assignedOtherHat) {
+    return assignedOtherHat.id;
+  }
+
+  if (taskCommitteeId === null) {
+    return activeMembership.id;
+  }
+
+  if (activeMembership.committeeId === taskCommitteeId) {
+    return activeMembership.id;
+  }
+
+  const matchingCommitteeHat = allPersonSeasonMemberships.find(
+    (m) => m.committeeId === taskCommitteeId
+  );
+  return matchingCommitteeHat?.id ?? null;
+}
+
 export async function submitMemberTask(
   input: { taskId: string; submissionText?: string; submissionUrl?: string },
   membershipId: string
@@ -535,7 +587,7 @@ export async function submitMemberTask(
       return { ok: false, error: "Submissions are closed for archived or draft seasons." };
     }
 
-    const [member] = await db
+    const [activeMembership] = await db
       .select()
       .from(schema.rosterMemberships)
       .where(
@@ -546,20 +598,59 @@ export async function submitMemberTask(
         )
       )
       .limit(1);
-    if (!member) {
+    if (!activeMembership) {
       return { ok: false, error: "You are not an active member of this task's season." };
     }
 
-    const [existing] = await db
+    const personSeasonMemberships = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(
+        and(
+          eq(schema.rosterMemberships.personId, activeMembership.personId),
+          eq(schema.rosterMemberships.seasonId, task.seasonId),
+          eq(schema.rosterMemberships.isActive, true)
+        )
+      );
+
+    const personMembershipIds = personSeasonMemberships.map((m) => m.id);
+    const existingSubmissions = await db
       .select()
       .from(schema.taskSubmissions)
       .where(
         and(
           eq(schema.taskSubmissions.taskId, input.taskId),
-          eq(schema.taskSubmissions.membershipId, membershipId)
+          inArray(schema.taskSubmissions.membershipId, personMembershipIds)
         )
-      )
-      .limit(1);
+      );
+
+    const targetMembershipId = selectSubmissionMembershipForTask({
+      activeMembership: {
+        id: activeMembership.id,
+        role: activeMembership.role as MembershipRole,
+        committeeId: activeMembership.committeeId,
+      },
+      allPersonSeasonMemberships: personSeasonMemberships.map((m) => ({
+        id: m.id,
+        role: m.role as MembershipRole,
+        committeeId: m.committeeId,
+      })),
+      existingSubmissionMembershipIds: existingSubmissions.map(
+        (s) => s.membershipId
+      ),
+      taskCommitteeId: task.committeeId,
+    });
+
+    if (!targetMembershipId) {
+      return {
+        ok: false,
+        error: "Unauthorized: this task is not assigned to you or your committee.",
+      };
+    }
+
+    const existing = existingSubmissions.find(
+      (s) => s.membershipId === targetMembershipId
+    );
 
     if (existing) {
       if (existing.gradedAt) {
@@ -577,16 +668,9 @@ export async function submitMemberTask(
         })
         .where(eq(schema.taskSubmissions.id, existing.id));
     } else {
-      // Only allow creating a submission if the task is branch-wide or belongs to the member's committee
-      if (task.committeeId !== null && task.committeeId !== member.committeeId) {
-        return {
-          ok: false,
-          error: "Unauthorized: this task is not assigned to you or your committee.",
-        };
-      }
       await db.insert(schema.taskSubmissions).values({
         taskId: input.taskId,
-        membershipId,
+        membershipId: targetMembershipId,
         submissionText: text,
         submissionUrl: url,
         submittedAt: new Date(),

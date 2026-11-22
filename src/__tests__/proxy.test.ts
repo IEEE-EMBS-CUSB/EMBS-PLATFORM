@@ -193,6 +193,33 @@ describe("Next.js session proxy", () => {
     expect(memberRes.headers.get("location")).toBeNull();
   });
 
+  it("allows hr_member to access both /hr and /member personal-work routes", () => {
+    const hrMemberToken = makeMemberToken("hr_member", "hr-mem-1");
+
+    const loginRes = proxy(
+      new NextRequest("http://localhost:3000/login", {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${hrMemberToken}` },
+      })
+    );
+    expect(loginRes.status).toBe(307);
+    expect(loginRes.headers.get("location")).toBe("http://localhost:3000/hr");
+
+    const hrRes = proxy(
+      new NextRequest("http://localhost:3000/hr", {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${hrMemberToken}` },
+      })
+    );
+    expect(hrRes.status).toBe(200);
+
+    const personalRes = proxy(
+      new NextRequest("http://localhost:3000/member/tasks", {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${hrMemberToken}` },
+      })
+    );
+    expect(personalRes.status).toBe(200);
+    expect(personalRes.headers.get("location")).toBeNull();
+  });
+
   it("preserves QR check-in code across login redirect and blocks open redirects", () => {
     // Unauthenticated QR scan redirects to /login with encoded next param
     const unauthCheckin = proxy(

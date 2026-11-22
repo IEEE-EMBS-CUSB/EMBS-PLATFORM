@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import { canManageCommitteeSessions } from "@/lib/permissions";
 import { normalizeSeasonSettings } from "@/lib/season-settings";
@@ -298,6 +298,51 @@ export async function rotateSessionCheckinCodeAsActor(
   }
 }
 
+export interface CheckinMembershipCandidate {
+  id: string;
+  role: MembershipRole;
+  committeeId: string | null;
+}
+
+/**
+ * Resolves which active membership of a person should record check-in for a session:
+ * - Branch-wide sessions (sessionCommitteeId === null) always stamp the active hat.
+ * - Committee sessions stamp the active hat if eligible (same committee, master_admin, or hr_admin);
+ *   otherwise fall back to another active hat owned by the same person in that committee
+ *   (preferring non-attendee roles if multiple exist).
+ */
+export function selectCheckinMembershipForSession<
+  T extends CheckinMembershipCandidate,
+>(input: {
+  activeMembership: T;
+  allPersonSeasonMemberships: readonly T[];
+  sessionCommitteeId: string | null;
+}): T | null {
+  const { activeMembership, allPersonSeasonMemberships, sessionCommitteeId } =
+    input;
+
+  if (sessionCommitteeId === null) {
+    return activeMembership;
+  }
+
+  if (
+    activeMembership.committeeId === sessionCommitteeId ||
+    activeMembership.role === "master_admin" ||
+    activeMembership.role === "hr_admin"
+  ) {
+    return activeMembership;
+  }
+
+  const matching = allPersonSeasonMemberships.filter(
+    (m) => m.committeeId === sessionCommitteeId
+  );
+  if (matching.length === 0) {
+    return null;
+  }
+
+  return matching.find((m) => m.role !== "attendee") ?? matching[0];
+}
+
 export async function recordMemberCheckin(
   checkinCode: string,
   membershipId: string
@@ -347,7 +392,7 @@ export async function recordMemberCheckin(
       return { ok: false, error: "This check-in window has expired." };
     }
 
-    const [member] = await db
+    const [activeMembership] = await db
       .select()
       .from(schema.rosterMemberships)
       .where(
@@ -359,29 +404,49 @@ export async function recordMemberCheckin(
       )
       .limit(1);
 
-    if (!member) {
+    if (!activeMembership) {
       return { ok: false, error: "Active member record not found in this season." };
     }
 
-    if (
-      sessionRow.committeeId !== null &&
-      member.committeeId !== sessionRow.committeeId &&
-      member.role !== "master_admin" &&
-      member.role !== "hr_admin"
-    ) {
+    const personSeasonMemberships = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(
+        and(
+          eq(schema.rosterMemberships.personId, activeMembership.personId),
+          eq(schema.rosterMemberships.seasonId, sessionRow.seasonId),
+          eq(schema.rosterMemberships.isActive, true)
+        )
+      );
+
+    const member = selectCheckinMembershipForSession({
+      activeMembership: {
+        ...activeMembership,
+        role: activeMembership.role as MembershipRole,
+      },
+      allPersonSeasonMemberships: personSeasonMemberships.map((m) => ({
+        ...m,
+        role: m.role as MembershipRole,
+      })),
+      sessionCommitteeId: sessionRow.committeeId,
+    });
+
+    if (!member) {
       return {
         ok: false,
         error: "This session is exclusive to members of this committee.",
       };
     }
 
+    // Prevent a multi-hat person from double-checking-in to the same session under two hats
+    const personMembershipIds = personSeasonMemberships.map((m) => m.id);
     const [existing] = await db
       .select({ id: schema.attendanceRecords.id })
       .from(schema.attendanceRecords)
       .where(
         and(
           eq(schema.attendanceRecords.sessionId, sessionRow.id),
-          eq(schema.attendanceRecords.membershipId, member.id)
+          inArray(schema.attendanceRecords.membershipId, personMembershipIds)
         )
       )
       .limit(1);

@@ -119,7 +119,8 @@ export function proxy(request: NextRequest) {
     if (
       sessionUser.membershipRole &&
       isOperationalRole(sessionUser.membershipRole) &&
-      sessionUser.membershipRole !== "committee_head"
+      sessionUser.membershipRole !== "committee_head" &&
+      sessionUser.membershipRole !== "hr_member"
     ) {
       return attachSessionCookie(
         NextResponse.redirect(new URL("/hr", request.url))
