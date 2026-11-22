@@ -283,4 +283,34 @@ describe("BulkTaskGradingView Component", () => {
     });
     expect(screen.getByText("Saved")).toBeInTheDocument();
   });
+
+  it("renders as a compact collapsible row entry that expands on click to show full grading", async () => {
+    const user = userEvent.setup();
+    render(
+      <BulkTaskGradingView
+        task={{ ...sampleTask, workType: "assignment" }}
+        submissions={sampleSubmissions}
+        collapsible
+        defaultExpanded={false}
+      />
+    );
+
+    // Summary row visible, grading table hidden while collapsed
+    const toggleBtn = screen.getByRole("button", {
+      name: /design summit social media campaign/i,
+    });
+    expect(toggleBtn).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText(/2 \/ 2 graded/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/effort score for nourhan khaled/i)).not.toBeInTheDocument();
+
+    // Clicking the row expands full grading table
+    await user.click(toggleBtn);
+    expect(toggleBtn).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText(/effort score for nourhan khaled/i)).toBeInTheDocument();
+
+    // Clicking again collapses it cleanly
+    await user.click(toggleBtn);
+    expect(toggleBtn).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText(/effort score for nourhan khaled/i)).not.toBeInTheDocument();
+  });
 });

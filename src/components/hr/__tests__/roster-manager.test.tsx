@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RosterManagerView } from "@/components/hr/roster-manager-view";
 
@@ -33,8 +33,9 @@ describe("RosterManagerView Component", () => {
     const searchInput = screen.getByPlaceholderText(/search by name or email/i);
     await user.type(searchInput, "Salma");
 
-    expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
-    expect(screen.queryByText("Mariam Yassin")).not.toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Salma El-Sayed")).toBeInTheDocument();
+    expect(within(table).queryByText("Mariam Yassin")).not.toBeInTheDocument();
   });
 
   it("opens CSV Bulk Import modal and parses preview", async () => {
@@ -343,19 +344,72 @@ describe("RosterManagerView Component", () => {
     // Search for existing person in peopleDirectory (not yet in season) -> click to autofill Add modal
     const searchInput = screen.getByPlaceholderText(/search by name or email/i);
     await user.type(searchInput, "Youssef");
-    const autofillBtn = screen.getByRole("button", { name: /Youssef Alumni/i });
-    await user.click(autofillBtn);
+    const autofillOpt = screen.getByRole("option", { name: /Youssef Alumni/i });
+    await user.click(autofillOpt);
 
     expect(screen.getByLabelText(/full name/i)).toHaveValue("Youssef Alumni");
     expect(screen.getByLabelText(/email address/i)).toHaveValue("youssef@cu.edu.eg");
     await user.click(screen.getByRole("button", { name: /close add member modal/i }));
 
-    // Search for non-existent member -> inline Add button prefills modal
+    // Search for non-existent member -> inline Add option prefills modal
     await user.clear(searchInput);
     await user.type(searchInput, "brandnew@cu.edu.eg");
     await user.click(
-      screen.getByRole("button", { name: /add .*brandnew@cu\.edu\.eg.* as new member/i })
+      screen.getByRole("option", { name: /add .*brandnew@cu\.edu\.eg.* as new member/i })
     );
     expect(screen.getByLabelText(/email address/i)).toHaveValue("brandnew@cu.edu.eg");
+  });
+
+  it("shows Google-style search suggestions with active members, directory matches, and default-Enter add-new-member even when matches exist", async () => {
+    const user = userEvent.setup();
+    render(
+      <RosterManagerView
+        members={[
+          {
+            id: "m-1",
+            personId: "p-1",
+            fullName: "Nourhan Khaled",
+            email: "nourhan@cu.edu.eg",
+            committeeName: "AI and Machine Learning",
+            role: "member",
+            isActive: true,
+          },
+        ]}
+        peopleDirectory={[
+          {
+            id: "p-2",
+            fullName: "Nour Eldin",
+            email: "nour.eldin@cu.edu.eg",
+          },
+        ]}
+        currentUserRole="master_admin"
+      />
+    );
+
+    const searchInput = screen.getByPlaceholderText(/search by name or email/i);
+    await user.type(searchInput, "Nour");
+
+    // Dropdown immediately opens showing BOTH existing active match, inactive directory match, AND add-new option
+    const listbox = screen.getByRole("listbox", { name: /roster search suggestions/i });
+    expect(listbox).toBeInTheDocument();
+    const options = within(listbox).getAllByRole("option");
+    expect(options.length).toBe(3);
+    expect(options[0]).toHaveTextContent(/Nourhan Khaled/i);
+    expect(options[1]).toHaveTextContent(/Nour Eldin/i);
+    expect(options[2]).toHaveTextContent(/Add .*Nour.* as new member/i);
+
+    // Pressing Enter directly (default without arrowing down) opens Add Member modal prefilled with "Nour"
+    await user.keyboard("{Enter}");
+    expect(
+      screen.getByRole("dialog", { name: /add member to roster/i })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/full name/i)).toHaveValue("Nour");
+
+    // Close modal, refocus search, ArrowDown twice to select the directory match ("Nour Eldin"), press Enter
+    await user.click(screen.getByRole("button", { name: /close add member modal/i }));
+    await user.click(searchInput);
+    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    expect(screen.getByLabelText(/full name/i)).toHaveValue("Nour Eldin");
+    expect(screen.getByLabelText(/email address/i)).toHaveValue("nour.eldin@cu.edu.eg");
   });
 });

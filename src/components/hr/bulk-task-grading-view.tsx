@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, ExternalLink } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -47,6 +52,8 @@ interface BulkTaskGradingViewProps {
   task: TaskHeaderRef;
   submissions: SubmissionGradingItem[];
   gradingWeights?: SeasonGradingSettings;
+  collapsible?: boolean;
+  defaultExpanded?: boolean;
   onGrade?: (input: {
     submissionId: string;
     effortScore: number;
@@ -77,12 +84,15 @@ export function BulkTaskGradingView({
   task,
   submissions: initialSubmissions,
   gradingWeights = DEFAULT_SEASON_SETTINGS.grading,
+  collapsible = false,
+  defaultExpanded = true,
   onGrade,
   onToggleTask,
 }: BulkTaskGradingViewProps) {
   const [submissions, setSubmissions] = useState(initialSubmissions);
   const [prevInitialSubmissions, setPrevInitialSubmissions] =
     useState(initialSubmissions);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [savedNotification, setSavedNotification] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -97,6 +107,10 @@ export function BulkTaskGradingView({
 
   const isCheckableTask = task.workType === "task";
   const isHrOnlyTask = task.completionMode === "hr_only";
+  const completedCount = submissions.filter((sub) =>
+    Boolean(sub.completed ?? (sub.totalPoints !== null && sub.totalPoints > 0))
+  ).length;
+  const gradedCount = submissions.filter((sub) => sub.totalPoints !== null).length;
 
   const handleScoreChange = (
     idx: number,
@@ -263,8 +277,95 @@ export function BulkTaskGradingView({
     }
   };
 
-  if (initialSubmissions.length === 0) {
+  const wrapCollapsible = (body: React.ReactNode) => {
+    if (!collapsible) return body;
+
+    const totalCount = submissions.length;
+    const progressDone = isCheckableTask ? completedCount : gradedCount;
+    const allDone = totalCount > 0 && progressDone === totalCount;
+    const progressLabel = isCheckableTask
+      ? `${completedCount} / ${totalCount} completed`
+      : `${gradedCount} / ${totalCount} graded`;
+
     return (
+      <div className="overflow-hidden rounded-xl border border-border bg-white shadow-xs transition-colors hover:border-[#772583]/40">
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#f8f9fb] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#772583] sm:px-5"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            {isExpanded ? (
+              <ChevronDown
+                className="h-4 w-4 shrink-0 text-[#772583]"
+                aria-hidden="true"
+              />
+            ) : (
+              <ChevronRight
+                className="h-4 w-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+            )}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={
+                    isCheckableTask
+                      ? "inline-flex shrink-0 rounded-full bg-[#f5edf7] px-2 py-0.5 text-[11px] font-semibold text-[#5a1b63]"
+                      : "inline-flex shrink-0 rounded-full bg-[#ebf3f8] px-2 py-0.5 text-[11px] font-semibold text-[#00629b]"
+                  }
+                >
+                  {isCheckableTask ? "Task" : "Assignment"}
+                </span>
+                {isCheckableTask && (
+                  <span
+                    className={
+                      isHrOnlyTask
+                        ? "inline-flex shrink-0 rounded-full bg-[#002855]/10 px-2 py-0.5 text-[11px] font-semibold text-[#002855]"
+                        : "inline-flex shrink-0 rounded-full bg-[#eef8e0] px-2 py-0.5 text-[11px] font-semibold text-[#2f600b]"
+                    }
+                  >
+                    {isHrOnlyTask ? "HR-Only" : "Self-Report"}
+                  </span>
+                )}
+                <span className="truncate font-heading text-sm font-bold text-[#002855]">
+                  {task.title}
+                </span>
+              </div>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {task.committeeName}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <span
+              className={
+                allDone
+                  ? "inline-flex rounded-full bg-[#eef8e0] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#2f600b]"
+                  : "inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#002855]"
+              }
+            >
+              {progressLabel}
+            </span>
+            <span className="hidden font-mono text-xs font-bold tabular-nums text-muted-foreground sm:inline">
+              {task.maxPoints} pts
+            </span>
+          </div>
+        </button>
+
+        {isExpanded && (
+          <div className="border-t border-border/80 bg-[#fcfcfd] p-4 sm:p-5">
+            {body}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (initialSubmissions.length === 0) {
+    return wrapCollapsible(
       <div className="rounded-lg border border-border bg-white p-6 text-center text-sm text-muted-foreground">
         No submissions to grade for this task.
       </div>
@@ -272,28 +373,30 @@ export function BulkTaskGradingView({
   }
 
   if (isCheckableTask) {
-    return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    return wrapCollapsible(
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-heading text-xl font-bold tracking-tight text-[#002855]">
-                Task Completion Checklist
-              </h2>
-              <span className="inline-flex rounded-full bg-[#f5edf7] px-2.5 py-0.5 text-[11px] font-semibold text-[#5a1b63]">
-                Task
-              </span>
-              <span
-                className={
-                  isHrOnlyTask
-                    ? "inline-flex rounded-full bg-[#002855]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#002855]"
-                    : "inline-flex rounded-full bg-[#eef8e0] px-2.5 py-0.5 text-[11px] font-semibold text-[#2f600b]"
-                }
-              >
-                {isHrOnlyTask ? "HR-Only" : "Self-Report"}
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
+            {!collapsible && (
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-heading text-xl font-bold tracking-tight text-[#002855]">
+                  Task Completion Checklist
+                </h2>
+                <span className="inline-flex rounded-full bg-[#f5edf7] px-2.5 py-0.5 text-[11px] font-semibold text-[#5a1b63]">
+                  Task
+                </span>
+                <span
+                  className={
+                    isHrOnlyTask
+                      ? "inline-flex rounded-full bg-[#002855]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#002855]"
+                      : "inline-flex rounded-full bg-[#eef8e0] px-2.5 py-0.5 text-[11px] font-semibold text-[#2f600b]"
+                  }
+                >
+                  {isHrOnlyTask ? "HR-Only" : "Self-Report"}
+                </span>
+              </div>
+            )}
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {task.title} · {task.committeeName} ({task.maxPoints} pts on
               completion).{" "}
               {isHrOnlyTask
@@ -374,19 +477,21 @@ export function BulkTaskGradingView({
     );
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+  return wrapCollapsible(
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-heading text-xl font-bold tracking-tight text-[#002855]">
-              Keyboard Bulk Grading
-            </h2>
-            <span className="inline-flex rounded-full bg-[#ebf3f8] px-2.5 py-0.5 text-[11px] font-semibold text-[#00629b]">
-              Assignment
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
+          {!collapsible && (
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-heading text-xl font-bold tracking-tight text-[#002855]">
+                Keyboard Bulk Grading
+              </h2>
+              <span className="inline-flex rounded-full bg-[#ebf3f8] px-2.5 py-0.5 text-[11px] font-semibold text-[#00629b]">
+                Assignment
+              </span>
+            </div>
+          )}
+          <p className="mt-0.5 text-xs text-muted-foreground">
             {task.title} · {task.committeeName} (Max {task.maxPoints} pts ·
             Effort ×{gradingWeights.effortWeight}, Quality ×
             {gradingWeights.qualityWeight}, Timeliness ×

@@ -1123,6 +1123,7 @@ export function AttendanceManagerView({
                       <Button
                         type="button"
                         variant="outline"
+                        title="Open Attendance Sheet"
                         onClick={() => openAttendanceSheet(sess)}
                         className="h-9 gap-1.5 border-[#002855]/25 px-2.5 text-xs font-semibold text-[#002855] hover:bg-[#f5edf7] hover:text-[#772583]"
                       >
@@ -1130,7 +1131,7 @@ export function AttendanceManagerView({
                           className="h-3.5 w-3.5 shrink-0"
                           aria-hidden="true"
                         />
-                        <span className="truncate">Attendance Sheet</span>
+                        <span>Sheet</span>
                       </Button>
                     </div>
 

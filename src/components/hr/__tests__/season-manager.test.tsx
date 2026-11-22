@@ -101,6 +101,12 @@ describe("SeasonManagerView Component", () => {
     expect(screen.queryByRole("button", { name: /clone season/i })).not.toBeInTheDocument();
     expect(screen.getByText(/HR Head Settings Access/i)).toBeInTheDocument();
 
+    // Settings should open in a modal when clicking Settings (not rendered inline)
+    expect(screen.queryByRole("dialog", { name: /season settings/i })).not.toBeInTheDocument();
+    const activeCard = screen.getByText("Fall 2026").closest("[data-season-card]") as HTMLElement;
+    await user.click(within(activeCard).getByRole("button", { name: /settings/i }));
+    expect(screen.getByRole("dialog", { name: /season settings — fall 2026/i })).toBeInTheDocument();
+
     const maxBonusInput = screen.getByLabelText(/max bonus per feedback/i);
     await user.clear(maxBonusInput);
     await user.type(maxBonusInput, "35");
@@ -119,7 +125,7 @@ describe("SeasonManagerView Component", () => {
     );
   });
 
-  it("explains what a season entails and lets admins edit and save grading and attendance settings", async () => {
+  it("explains what a season entails and opens season settings in a modal to edit and save rules", async () => {
     const user = userEvent.setup();
     const onUpdateSettings = vi.fn().mockResolvedValue({ ok: true });
 
@@ -133,7 +139,12 @@ describe("SeasonManagerView Component", () => {
     // Clear "What a Season Entails" explanation
     expect(screen.getByText(/what a season entails/i)).toBeInTheDocument();
 
-    // Edit attendance base points and effort weight inside active season settings
+    // Open active season settings modal
+    const activeCard = screen.getByText("Fall 2026").closest("[data-season-card]") as HTMLElement;
+    await user.click(within(activeCard).getByRole("button", { name: /settings/i }));
+    expect(screen.getByRole("dialog", { name: /season settings — fall 2026/i })).toBeInTheDocument();
+
+    // Edit attendance base points and effort weight inside active season settings modal
     const basePointsInput = screen.getByLabelText(/base attendance points/i);
     await user.clear(basePointsInput);
     await user.type(basePointsInput, "15");
@@ -156,7 +167,7 @@ describe("SeasonManagerView Component", () => {
     );
   });
 
-  it("manages editable committee tracks inside season settings and locks archived seasons", async () => {
+  it("manages editable committee tracks inside season settings modal and locks archived seasons", async () => {
     const user = userEvent.setup();
     const onAddTrack = vi
       .fn()
@@ -171,7 +182,11 @@ describe("SeasonManagerView Component", () => {
       />
     );
 
-    // Switch to Committee Tracks tab in Season Settings
+    // Open active season settings modal
+    const activeCard = screen.getByText("Fall 2026").closest("[data-season-card]") as HTMLElement;
+    await user.click(within(activeCard).getByRole("button", { name: /settings/i }));
+
+    // Switch to Committee Tracks tab in Season Settings modal
     await user.click(
       screen.getByRole("button", { name: /committee tracks/i })
     );
@@ -211,7 +226,10 @@ describe("SeasonManagerView Component", () => {
       })
     );
 
-    // Select archived season -> settings become read-only
+    // Close modal, then open archived season settings -> read-only banner shown
+    await user.click(screen.getByRole("button", { name: /close season settings/i }));
+    expect(screen.queryByRole("dialog", { name: /season settings/i })).not.toBeInTheDocument();
+
     const archivedCard = screen
       .getByText("Spring 2026")
       .closest("[data-season-card]");
@@ -222,6 +240,7 @@ describe("SeasonManagerView Component", () => {
       })
     );
 
+    expect(screen.getByRole("dialog", { name: /season settings — spring 2026/i })).toBeInTheDocument();
     expect(screen.getByText(/archived seasons are read-only/i)).toBeInTheDocument();
   });
 });

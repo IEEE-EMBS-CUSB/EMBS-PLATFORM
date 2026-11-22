@@ -149,7 +149,7 @@ describe("AttendanceManagerView Component", () => {
     );
 
     const rosterButtons = screen.getAllByRole("button", {
-      name: /attendance sheet/i,
+      name: /^sheet$/i,
     });
     await user.click(rosterButtons[1]);
 

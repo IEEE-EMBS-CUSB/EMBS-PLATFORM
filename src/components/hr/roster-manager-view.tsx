@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -201,6 +201,9 @@ export function RosterManagerView({
     setMembers(initialMembers);
   }
   const [search, setSearch] = useState("");
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+  const searchBoxRef = useRef<HTMLDivElement | null>(null);
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [committeeFilter, setCommitteeFilter] = useState<string>("all");
   const [trackFilter, setTrackFilter] = useState<string>("all");
@@ -250,10 +253,25 @@ export function RosterManagerView({
         setAddModalOpen(false);
         setImportModalOpen(false);
         setResetModal(null);
+        setSearchDropdownOpen(false);
+        setActiveSuggestionIndex(-1);
+      }
+    };
+    const onMouseDown = (e: MouseEvent) => {
+      if (
+        searchBoxRef.current &&
+        !searchBoxRef.current.contains(e.target as Node)
+      ) {
+        setSearchDropdownOpen(false);
+        setActiveSuggestionIndex(-1);
       }
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onMouseDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onMouseDown);
+    };
   }, []);
 
   const committeeById = useMemo(
@@ -274,7 +292,61 @@ export function RosterManagerView({
     return map;
   }, [members]);
 
-  // People directory matches when searching (people from `persons` DB not currently shown in the active roster)
+  // Ranked Google-style search suggestions:
+  // 1) Top N existing active roster matches (deduplicated per person)
+  // 2) Top N inactive people-directory matches (not on active roster)
+  // 3) Always-available "Add <query> as new member" (default on Enter for Master Admin)
+  const MAX_SUGGESTIONS_PER_GROUP = 4;
+
+  const scoreMatch = (fullName: string, email: string, q: string) => {
+    const nameLower = fullName.toLowerCase();
+    const emailLower = email.toLowerCase();
+    if (nameLower.startsWith(q)) return 0;
+    if (nameLower.split(/\s+/).some((w) => w.startsWith(q))) return 1;
+    if (emailLower.startsWith(q)) return 2;
+    if (nameLower.includes(q)) return 3;
+    return 4;
+  };
+
+  const activeMemberSuggestions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    const seen = new Set<string>();
+    const uniquePeople: Array<{
+      key: string;
+      fullName: string;
+      email: string;
+      roles: RosterMemberItem[];
+    }> = [];
+    for (const m of members) {
+      if (!m.isActive) continue;
+      const key = m.personId ?? m.email.toLowerCase();
+      if (seen.has(key)) continue;
+      if (
+        !m.fullName.toLowerCase().includes(q) &&
+        !m.email.toLowerCase().includes(q)
+      ) {
+        continue;
+      }
+      seen.add(key);
+      uniquePeople.push({
+        key,
+        fullName: m.fullName,
+        email: m.email,
+        roles: rolesByPersonKey.get(key) ?? [m],
+      });
+    }
+    return uniquePeople
+      .sort((a, b) => {
+        const diff =
+          scoreMatch(a.fullName, a.email, q) -
+          scoreMatch(b.fullName, b.email, q);
+        return diff !== 0 ? diff : a.fullName.localeCompare(b.fullName);
+      })
+      .slice(0, MAX_SUGGESTIONS_PER_GROUP);
+  }, [search, members, rolesByPersonKey]);
+
+  // People directory matches when searching (people from `persons` DB not currently on the active roster)
   const directoryMatches = useMemo(() => {
     if (!isMaster) return [];
     const q = search.trim().toLowerCase();
@@ -291,8 +363,57 @@ export function RosterManagerView({
           (p.fullName.toLowerCase().includes(q) ||
             p.email.toLowerCase().includes(q))
       )
-      .slice(0, 5);
+      .sort((a, b) => {
+        const diff =
+          scoreMatch(a.fullName, a.email, q) -
+          scoreMatch(b.fullName, b.email, q);
+        return diff !== 0 ? diff : a.fullName.localeCompare(b.fullName);
+      })
+      .slice(0, MAX_SUGGESTIONS_PER_GROUP);
   }, [isMaster, search, peopleDirectory, members]);
+
+  type SearchSuggestion =
+    | {
+        kind: "active";
+        key: string;
+        fullName: string;
+        email: string;
+        roles: RosterMemberItem[];
+      }
+    | {
+        kind: "directory";
+        key: string;
+        id: string;
+        fullName: string;
+        email: string;
+      }
+    | {
+        kind: "add_new";
+        key: string;
+        query: string;
+      };
+
+  const searchSuggestions = useMemo<SearchSuggestion[]>(() => {
+    const q = search.trim();
+    if (!q) return [];
+    const items: SearchSuggestion[] = [
+      ...activeMemberSuggestions.map((item) => ({
+        kind: "active" as const,
+        ...item,
+      })),
+      ...directoryMatches.map((person) => ({
+        kind: "directory" as const,
+        key: `dir-${person.id}`,
+        id: person.id,
+        fullName: person.fullName,
+        email: person.email,
+      })),
+    ];
+    if (isMaster) {
+      items.push({ kind: "add_new", key: "add-new", query: q });
+    }
+    return items;
+  }, [search, activeMemberSuggestions, directoryMatches, isMaster]);
 
   // HR members and uncovered committees for the highlighted HR Assignments section
   const activeHrMembers = useMemo(
@@ -881,87 +1002,287 @@ export function RosterManagerView({
         </Card>
       )}
 
-      {/* Search + Multi-Facet Filters + Integrated Add/Directory Suggestions */}
-      <Card className="border-border bg-white shadow-xs">
+      {/* Search + Google-style Suggestions Dropdown + Multi-Facet Filters */}
+      <Card className="overflow-visible border-border bg-white shadow-xs">
         <CardContent className="space-y-3 p-4">
-          <div className="relative">
+          <div ref={searchBoxRef} className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="Search by name or email... (or type a new member to add)"
+              role="combobox"
+              aria-expanded={searchDropdownOpen && searchSuggestions.length > 0}
+              aria-controls="roster-search-suggestions"
+              aria-autocomplete="list"
+              placeholder="Search by name or email... (or press Enter to add new member)"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-10 pl-10 text-sm"
-            />
-          </div>
+              onFocus={() => {
+                if (search.trim()) setSearchDropdownOpen(true);
+              }}
+              onChange={(e) => {
+                const next = e.target.value;
+                setSearch(next);
+                setSearchDropdownOpen(next.trim().length > 0);
+                setActiveSuggestionIndex(-1);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") {
+                  if (searchSuggestions.length === 0) return;
+                  e.preventDefault();
+                  setSearchDropdownOpen(true);
+                  setActiveSuggestionIndex((prev) =>
+                    prev < searchSuggestions.length - 1 ? prev + 1 : 0
+                  );
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  if (searchSuggestions.length === 0) return;
+                  e.preventDefault();
+                  setActiveSuggestionIndex((prev) =>
+                    prev <= 0 ? -1 : prev - 1
+                  );
+                  return;
+                }
+                if (e.key === "Escape") {
+                  if (searchDropdownOpen) {
+                    e.preventDefault();
+                    setSearchDropdownOpen(false);
+                    setActiveSuggestionIndex(-1);
+                  }
+                  return;
+                }
+                if (e.key === "Enter" && trimmedQuery.length > 0) {
+                  e.preventDefault();
+                  const chosen =
+                    activeSuggestionIndex >= 0
+                      ? searchSuggestions[activeSuggestionIndex]
+                      : null;
 
-          {/* Search-integrated directory autofill & quick-add bar for Master Admin */}
-          {isMaster &&
-            trimmedQuery.length >= 2 &&
-            (directoryMatches.length > 0 || filtered.length === 0) && (
-            <div className="rounded-lg border border-[#772583]/20 bg-[#f5edf7]/50 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-[#5a1b63]">
-                  {directoryMatches.length > 0
-                    ? "People directory matches — click to assign a role:"
-                    : `No person found matching "${trimmedQuery}".`}
-                </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() =>
+                  if (chosen?.kind === "active") {
+                    setSearch(chosen.fullName);
+                    setSearchDropdownOpen(false);
+                    setActiveSuggestionIndex(-1);
+                    return;
+                  }
+                  if (chosen?.kind === "directory") {
+                    setSearchDropdownOpen(false);
+                    setActiveSuggestionIndex(-1);
+                    openAddModalPrefilled({
+                      fullName: chosen.fullName,
+                      email: chosen.email,
+                      fromDirectory: true,
+                    });
+                    return;
+                  }
+                  if (chosen?.kind === "add_new" || (isMaster && !chosen)) {
+                    setSearchDropdownOpen(false);
+                    setActiveSuggestionIndex(-1);
                     openAddModalPrefilled({
                       fullName: queryLooksLikeEmail ? "" : trimmedQuery,
                       email: queryLooksLikeEmail ? trimmedQuery : "",
-                    })
+                    });
                   }
-                  className="h-8 gap-1.5 bg-[#772583] px-3 text-xs font-semibold text-white hover:bg-[#5a1b63]"
-                >
-                  <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Add &ldquo;{trimmedQuery}&rdquo; as new member</span>
-                </Button>
-              </div>
-              {directoryMatches.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {directoryMatches.map((person) => {
-                    const existingHats =
-                      rolesByPersonKey.get(person.id) ??
-                      rolesByPersonKey.get(person.email.toLowerCase()) ??
-                      [];
-                    return (
-                      <button
-                        key={person.id}
-                        type="button"
-                        onClick={() =>
-                          openAddModalPrefilled({
-                            fullName: person.fullName,
-                            email: person.email,
-                            fromDirectory: true,
-                          })
-                        }
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-white px-2.5 py-1.5 text-xs text-[#002855] shadow-2xs transition-colors hover:border-[#772583] hover:bg-[#f5edf7]"
-                      >
-                        <Plus
-                          className="h-3 w-3 text-[#772583]"
-                          aria-hidden="true"
-                        />
-                        <span className="font-semibold">{person.fullName}</span>
-                        <span className="font-mono text-[11px] text-muted-foreground">
-                          ({person.email})
-                        </span>
-                        {existingHats.length > 0 && (
-                          <span className="rounded bg-[#ebf3f8] px-1.5 py-0.5 text-[10px] font-semibold text-[#00629b]">
-                            {existingHats.length}{" "}
-                            {existingHats.length === 1 ? "role" : "roles"}
+                }
+              }}
+              className="h-10 pr-9 pl-10 text-sm"
+            />
+            {search && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => {
+                  setSearch("");
+                  setSearchDropdownOpen(false);
+                  setActiveSuggestionIndex(-1);
+                }}
+                className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            )}
+
+            {/* Attached Google-Style Suggestions Popover */}
+            {searchDropdownOpen && searchSuggestions.length > 0 && (
+              <div
+                id="roster-search-suggestions"
+                role="listbox"
+                aria-label="Roster search suggestions"
+                className="absolute top-full right-0 left-0 z-40 mt-1.5 overflow-hidden rounded-xl border border-border bg-white shadow-lg"
+              >
+                {activeMemberSuggestions.length > 0 && (
+                  <div className="border-b border-border/60 py-1.5">
+                    <div className="px-3.5 py-1 text-[10px] font-bold tracking-wider text-muted-foreground uppercase">
+                      Active Roster ({activeMemberSuggestions.length})
+                    </div>
+                    {activeMemberSuggestions.map((item, idx) => {
+                      const isHighlighted = activeSuggestionIndex === idx;
+                      return (
+                        <div
+                          key={item.key}
+                          role="option"
+                          aria-selected={isHighlighted}
+                          onMouseEnter={() => setActiveSuggestionIndex(idx)}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setSearch(item.fullName);
+                            setSearchDropdownOpen(false);
+                            setActiveSuggestionIndex(-1);
+                          }}
+                          className={`flex cursor-pointer items-center justify-between gap-3 px-3.5 py-2 text-xs transition-colors ${
+                            isHighlighted
+                              ? "bg-[#f5edf7] text-[#5a1b63]"
+                              : "text-foreground hover:bg-muted/50"
+                          }`}
+                        >
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <Search
+                              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                              aria-hidden="true"
+                            />
+                            <div className="min-w-0">
+                              <p className="truncate font-heading font-bold text-[#002855]">
+                                {item.fullName}
+                              </p>
+                              <p className="truncate font-mono text-[11px] text-muted-foreground">
+                                {item.email} ·{" "}
+                                {item.roles
+                                  .map((r) => ROLE_LABELS[r.role])
+                                  .join(", ")}
+                              </p>
+                            </div>
+                          </div>
+                          {isMaster && (
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setSearchDropdownOpen(false);
+                                setActiveSuggestionIndex(-1);
+                                openAddModalPrefilled({
+                                  fullName: item.fullName,
+                                  email: item.email,
+                                  fromDirectory: true,
+                                });
+                              }}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[#772583]/30 bg-white px-2 py-1 text-[11px] font-semibold text-[#772583] hover:bg-[#772583] hover:text-white"
+                            >
+                              <Plus className="h-3 w-3" aria-hidden="true" />
+                              Add Role
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {directoryMatches.length > 0 && (
+                  <div className="border-b border-border/60 py-1.5">
+                    <div className="px-3.5 py-1 text-[10px] font-bold tracking-wider text-muted-foreground uppercase">
+                      People Directory — Not on Active Roster (
+                      {directoryMatches.length})
+                    </div>
+                    {directoryMatches.map((person, offset) => {
+                      const idx = activeMemberSuggestions.length + offset;
+                      const isHighlighted = activeSuggestionIndex === idx;
+                      return (
+                        <div
+                          key={`dir-${person.id}`}
+                          role="option"
+                          aria-selected={isHighlighted}
+                          onMouseEnter={() => setActiveSuggestionIndex(idx)}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setSearchDropdownOpen(false);
+                            setActiveSuggestionIndex(-1);
+                            openAddModalPrefilled({
+                              fullName: person.fullName,
+                              email: person.email,
+                              fromDirectory: true,
+                            });
+                          }}
+                          className={`flex cursor-pointer items-center justify-between gap-3 px-3.5 py-2 text-xs transition-colors ${
+                            isHighlighted
+                              ? "bg-[#f5edf7] text-[#5a1b63]"
+                              : "text-foreground hover:bg-muted/50"
+                          }`}
+                        >
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <UserCheck
+                              className="h-3.5 w-3.5 shrink-0 text-[#00629b]"
+                              aria-hidden="true"
+                            />
+                            <div className="min-w-0">
+                              <p className="truncate font-heading font-bold text-[#002855]">
+                                {person.fullName}
+                              </p>
+                              <p className="truncate font-mono text-[11px] text-muted-foreground">
+                                {person.email}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="shrink-0 rounded-md bg-[#ebf3f8] px-2 py-0.5 text-[11px] font-semibold text-[#00629b]">
+                            Add to season
                           </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {isMaster && (
+                  <div className="bg-[#f8f9fb] p-1.5">
+                    {(() => {
+                      const addIdx = searchSuggestions.length - 1;
+                      const isHighlighted =
+                        activeSuggestionIndex === addIdx ||
+                        activeSuggestionIndex === -1;
+                      return (
+                        <div
+                          role="option"
+                          aria-selected={activeSuggestionIndex === addIdx}
+                          onMouseEnter={() => setActiveSuggestionIndex(addIdx)}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setSearchDropdownOpen(false);
+                            setActiveSuggestionIndex(-1);
+                            openAddModalPrefilled({
+                              fullName: queryLooksLikeEmail ? "" : trimmedQuery,
+                              email: queryLooksLikeEmail ? trimmedQuery : "",
+                            });
+                          }}
+                          className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                            isHighlighted
+                              ? "bg-[#772583] text-white"
+                              : "text-[#5a1b63] hover:bg-[#f5edf7]"
+                          }`}
+                        >
+                          <span className="inline-flex min-w-0 items-center gap-2 truncate">
+                            <UserPlus
+                              className="h-3.5 w-3.5 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span className="truncate">
+                              Add &ldquo;{trimmedQuery}&rdquo; as new member
+                            </span>
+                          </span>
+                          <span
+                            className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                              isHighlighted
+                                ? "bg-white/20 text-white"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            Enter ↵
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Filter Selects */}
           <div className="flex flex-wrap items-center gap-2.5">

@@ -358,17 +358,29 @@ export default async function HrTasksPage() {
       />
 
       {bulkTasks.length > 0 && (
-        <div id="grading" className="space-y-10 border-t border-border pt-8">
-          {bulkTasks.map(({ task, submissions }) => (
-            <BulkTaskGradingView
-              key={task.id}
-              task={task}
-              submissions={submissions}
-              gradingWeights={gradingWeights}
-              onGrade={gradeTaskSubmissionAction}
-              onToggleTask={hrToggleTaskCompletionAction}
-            />
-          ))}
+        <div id="grading" className="space-y-4 border-t border-border pt-8">
+          <div>
+            <h2 className="font-heading text-xl font-bold tracking-tight text-[#002855]">
+              Assignments &amp; Tasks Grading ({bulkTasks.length})
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Click any row to expand the full keyboard grading table or task completion checklist.
+            </p>
+          </div>
+          <div className="space-y-2.5">
+            {bulkTasks.map(({ task, submissions }) => (
+              <BulkTaskGradingView
+                key={task.id}
+                task={task}
+                submissions={submissions}
+                gradingWeights={gradingWeights}
+                collapsible
+                defaultExpanded={false}
+                onGrade={gradeTaskSubmissionAction}
+                onToggleTask={hrToggleTaskCompletionAction}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>
