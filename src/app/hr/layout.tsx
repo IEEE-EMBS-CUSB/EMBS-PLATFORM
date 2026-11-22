@@ -4,24 +4,24 @@ import { HrShell } from "@/components/hr/hr-shell";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { requireOperationalSession } from "@/lib/portal-guards";
+import {
+  listEligibleContextsForPerson,
+  toContextPickerOptions,
+} from "@/services/context.service";
 
 export default async function HrLayout({ children }: { children: ReactNode }) {
-  const { profile } = await requireOperationalSession();
+  const { session, profile } = await requireOperationalSession();
 
-  let activeSeasonName = "Active Season";
-  try {
-    const [activeSeason] = await db
+  const [eligibleContexts, activeSeasonName] = await Promise.all([
+    listEligibleContextsForPerson(session.personId),
+    db
       .select({ name: schema.seasons.name })
       .from(schema.seasons)
       .where(eq(schema.seasons.status, "active"))
-      .limit(1);
-
-    if (activeSeason) {
-      activeSeasonName = activeSeason.name;
-    }
-  } catch {
-    // Graceful fallback if DB is temporarily unreachable
-  }
+      .limit(1)
+      .then(([activeSeason]) => activeSeason?.name ?? "Active Season")
+      .catch(() => "Active Season"),
+  ]);
 
   return (
     <HrShell
@@ -36,6 +36,8 @@ export default async function HrLayout({ children }: { children: ReactNode }) {
             (profile.managedTrackName ? `${profile.managedTrackName} Track` : undefined))
       }
       activeSeasonName={activeSeasonName}
+      contexts={toContextPickerOptions(eligibleContexts)}
+      activeMembershipId={session.participantId}
     >
       {children}
     </HrShell>

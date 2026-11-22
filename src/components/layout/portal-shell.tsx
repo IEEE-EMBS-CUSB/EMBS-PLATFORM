@@ -14,12 +14,12 @@ import {
   Menu,
   MessageSquare,
   MoreHorizontal,
-  Shield,
   Trophy,
   type LucideIcon,
 } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { EmbsMark } from "@/components/brand/embs-mark";
+import { ContextSwitcher } from "@/components/layout/context-switcher";
 import { NavLinkPendingIndicator } from "@/components/layout/nav-link-pending";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +30,10 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import type { MembershipRole } from "@/lib/auth-helpers";
+import {
+  buildContextPickerModel,
+  type ContextPickerOption,
+} from "@/lib/context-picker";
 import { cn } from "@/lib/utils";
 import type { ParticipantType } from "@/types";
 
@@ -114,6 +118,8 @@ interface PortalShellProps {
   userName: string;
   subtitle: string;
   currentUserRole?: MembershipRole;
+  contexts?: readonly ContextPickerOption[];
+  activeMembershipId?: string | null;
   children: ReactNode;
 }
 
@@ -122,6 +128,8 @@ export function PortalShell({
   userName,
   subtitle,
   currentUserRole,
+  contexts = [],
+  activeMembershipId,
   children,
 }: PortalShellProps) {
   const pathname = usePathname();
@@ -132,12 +140,17 @@ export function PortalShell({
   const primaryMobileTabs =
     portalType === "member" ? MEMBER_NAV_ITEMS.slice(0, 4) : ATTENDEE_NAV_ITEMS;
   const portalLabel =
-    portalType === "member" ? "Member portal" : "Attendee portal";
-  const canSwitchToLeaderView = Boolean(
-    currentUserRole &&
-      currentUserRole !== "member" &&
-      currentUserRole !== "attendee"
-  );
+    portalType === "attendee"
+      ? "Attendee portal"
+      : currentUserRole === "committee_head" || currentUserRole === "hr_member"
+        ? "My work"
+        : "Member portal";
+  const hasInteractiveContextSwitcher = buildContextPickerModel({
+    contexts,
+    activeMembershipId,
+    activePortal: portalType,
+    fallbackLabel: subtitle,
+  }).isInteractive;
 
   function isActive(item: NavItem): boolean {
     if (item.exact) return pathname === item.href;
@@ -237,26 +250,27 @@ export function PortalShell({
                   <p className="font-heading text-sm font-bold text-[#002855]">
                     {userName}
                   </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {subtitle}
-                  </p>
+                  {hasInteractiveContextSwitcher ? (
+                    <div className="mt-2">
+                      <ContextSwitcher
+                        contexts={contexts}
+                        activeMembershipId={activeMembershipId}
+                        activePortal={portalType}
+                        variant="mobile"
+                        fallbackLabel={subtitle}
+                        onSwitched={() => setMobileOpen(false)}
+                      />
+                    </div>
+                  ) : (
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {subtitle}
+                    </p>
+                  )}
                 </div>
                 <div className="mt-4">
                   {navList(() => setMobileOpen(false))}
                 </div>
                 <div className="mt-6 space-y-2 border-t border-border pt-4">
-                  {canSwitchToLeaderView && (
-                    <Link
-                      href="/hr"
-                      onClick={() => setMobileOpen(false)}
-                      className="flex min-h-11 items-center gap-2 rounded-md bg-[#f5edf7] px-3 py-2 text-sm font-semibold text-[#5a1b63] hover:bg-[#ead8ee]"
-                    >
-                      <Shield className="h-4 w-4" aria-hidden="true" />
-                      {currentUserRole === "committee_head"
-                        ? "Leader View"
-                        : "Management Console"}
-                    </Link>
-                  )}
                   <Link
                     href="/leaderboards"
                     onClick={() => setMobileOpen(false)}
@@ -273,6 +287,21 @@ export function PortalShell({
         </div>
       </header>
 
+      {/* Mobile 1-tap context switcher bar (only shown when user has multiple views/roles) */}
+      {hasInteractiveContextSwitcher && (
+        <div className="border-b border-border bg-[#f8f9fb] px-4 py-2 lg:hidden">
+          <div className="mx-auto max-w-7xl">
+            <ContextSwitcher
+              contexts={contexts}
+              activeMembershipId={activeMembershipId}
+              activePortal={portalType}
+              variant="mobile"
+              fallbackLabel={subtitle}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Main workspace grid — pixel-locked with HrShell (max-w-7xl, 240px sidebar, lg:py-8) */}
       <div className="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 pt-5 pb-24 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8 lg:py-8">
         <aside className="hidden lg:block">
@@ -281,26 +310,16 @@ export function PortalShell({
               <p className="font-heading text-sm font-bold text-[#002855]">
                 {userName}
               </p>
-              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                {subtitle}
-              </p>
+              <ContextSwitcher
+                contexts={contexts}
+                activeMembershipId={activeMembershipId}
+                activePortal={portalType}
+                variant="desktop"
+                fallbackLabel={subtitle}
+                className="mt-1"
+              />
             </div>
             {navList()}
-            {canSwitchToLeaderView && (
-              <div className="border-t border-border pt-3">
-                <Link
-                  href="/hr"
-                  className="flex min-h-9 items-center gap-2 rounded-md bg-[#f5edf7] px-3 py-2 text-xs font-semibold text-[#5a1b63] transition-colors hover:bg-[#ead8ee]"
-                >
-                  <Shield className="h-4 w-4 text-[#772583]" aria-hidden="true" />
-                  <span>
-                    {currentUserRole === "committee_head"
-                      ? "Switch to Leader View"
-                      : "Management Console"}
-                  </span>
-                </Link>
-              </div>
-            )}
           </div>
         </aside>
 

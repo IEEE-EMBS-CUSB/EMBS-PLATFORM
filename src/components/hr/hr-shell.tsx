@@ -9,7 +9,6 @@ import {
   MoreHorizontal,
   Shield,
   Trophy,
-  UserRound,
 } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { EmbsMark } from "@/components/brand/embs-mark";
@@ -19,6 +18,7 @@ import {
   resolveHrTabFromPathname,
   type HrTabKey,
 } from "@/components/hr/hr-nav";
+import { ContextSwitcher } from "@/components/layout/context-switcher";
 import { NavLinkPendingIndicator } from "@/components/layout/nav-link-pending";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,10 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import type { MembershipRole } from "@/lib/auth-helpers";
+import {
+  buildContextPickerModel,
+  type ContextPickerOption,
+} from "@/lib/context-picker";
 import { cn } from "@/lib/utils";
 
 export interface HrShellProps {
@@ -38,6 +42,8 @@ export interface HrShellProps {
   currentUserRole?: MembershipRole;
   userName?: string;
   userCommitteeName?: string;
+  contexts?: readonly ContextPickerOption[];
+  activeMembershipId?: string | null;
   children: ReactNode;
 }
 
@@ -88,13 +94,14 @@ export function HrShell({
   currentUserRole = "hr_admin",
   userName,
   userCommitteeName,
+  contexts = [],
+  activeMembershipId,
   children,
 }: HrShellProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const isMaster = currentUserRole === "master_admin";
-  const canSwitchToMemberView = currentUserRole === "committee_head";
   const resolvedTab = activeTab ?? resolveHrTabFromPathname(pathname);
   const visibleItems = getVisibleHrNavItems(currentUserRole);
   const hasOverflowTabs = visibleItems.length > 4;
@@ -110,6 +117,15 @@ export function HrShell({
     headerBadge: "bg-white/15 text-white border-white/20",
     sidebarBadge: "bg-[#772583] text-white",
   };
+  const fallbackContextLabel = userCommitteeName
+    ? `${currentRoleInfo.label} · ${userCommitteeName}`
+    : currentRoleInfo.label;
+  const hasInteractiveContextSwitcher = buildContextPickerModel({
+    contexts,
+    activeMembershipId,
+    activePortal: "hr",
+    fallbackLabel: fallbackContextLabel,
+  }).isInteractive;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -209,10 +225,22 @@ export function HrShell({
                       {activeSeasonName}
                     </span>
                   </div>
-                  {userCommitteeName && (
+                  {userCommitteeName && !hasInteractiveContextSwitcher && (
                     <p className="mt-1 text-xs text-muted-foreground">
                       {userCommitteeName}
                     </p>
+                  )}
+                  {hasInteractiveContextSwitcher && (
+                    <div className="mt-2.5">
+                      <ContextSwitcher
+                        contexts={contexts}
+                        activeMembershipId={activeMembershipId}
+                        activePortal="hr"
+                        variant="mobile"
+                        fallbackLabel={fallbackContextLabel}
+                        onSwitched={() => setMobileOpen(false)}
+                      />
+                    </div>
                   )}
                 </div>
                 <div className="mt-4">
@@ -223,16 +251,6 @@ export function HrShell({
                   />
                 </div>
                 <div className="mt-6 space-y-2 border-t border-border pt-4">
-                  {canSwitchToMemberView && (
-                    <Link
-                      href="/member"
-                      onClick={() => setMobileOpen(false)}
-                      className="flex min-h-11 items-center gap-2 rounded-md bg-[#f5edf7] px-3 py-2 text-sm font-semibold text-[#5a1b63] hover:bg-[#ead8ee]"
-                    >
-                      <UserRound className="h-4 w-4" aria-hidden="true" />
-                      Member View
-                    </Link>
-                  )}
                   <Link
                     href="/leaderboards"
                     onClick={() => setMobileOpen(false)}
@@ -249,6 +267,21 @@ export function HrShell({
         </div>
       </header>
 
+      {/* Mobile 1-tap context switcher bar (only shown when user has multiple views/roles) */}
+      {hasInteractiveContextSwitcher && (
+        <div className="border-b border-border bg-[#f8f9fb] px-4 py-2 lg:hidden">
+          <div className="mx-auto max-w-7xl">
+            <ContextSwitcher
+              contexts={contexts}
+              activeMembershipId={activeMembershipId}
+              activePortal="hr"
+              variant="mobile"
+              fallbackLabel={fallbackContextLabel}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Persistent desktop sidebar + main operational workspace */}
       <div className="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 pt-5 pb-24 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8 lg:py-8">
         <aside className="hidden lg:block">
@@ -259,27 +292,19 @@ export function HrShell({
                   {userName}
                 </p>
               )}
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {userCommitteeName
-                  ? `${currentRoleInfo.label} · ${userCommitteeName}`
-                  : currentRoleInfo.label}
-              </p>
+              <ContextSwitcher
+                contexts={contexts}
+                activeMembershipId={activeMembershipId}
+                activePortal="hr"
+                variant="desktop"
+                fallbackLabel={fallbackContextLabel}
+                className="mt-1"
+              />
               <p className="mt-1.5 text-[11px] font-medium text-[#00629b]">
                 {activeSeasonName}
               </p>
             </div>
             <HrNav activeTab={resolvedTab} currentUserRole={currentUserRole} />
-            {canSwitchToMemberView && (
-              <div className="border-t border-border pt-3">
-                <Link
-                  href="/member"
-                  className="flex min-h-9 items-center gap-2 rounded-md bg-[#ebf3f8] px-3 py-2 text-xs font-semibold text-[#002855] transition-colors hover:bg-[#dcebf4]"
-                >
-                  <UserRound className="h-4 w-4 text-[#00629b]" aria-hidden="true" />
-                  <span>Switch to Member View</span>
-                </Link>
-              </div>
-            )}
           </div>
         </aside>
 

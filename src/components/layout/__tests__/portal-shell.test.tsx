@@ -1,12 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { PortalShell } from "@/components/layout/portal-shell";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/member",
   useRouter: () => ({
+    push: vi.fn(),
     replace: vi.fn(),
     refresh: vi.fn(),
+  }),
+}));
+
+vi.mock("@/app/actions/context", () => ({
+  switchActiveContextAction: vi.fn().mockResolvedValue({
+    ok: true,
+    redirectTo: "/hr",
   }),
 }));
 
@@ -15,12 +24,22 @@ describe("PortalShell", () => {
     cleanup();
   });
 
-  it("renders all member navigation links, user name, and a visible logout button without exposing member IDs", () => {
+  it("renders all member navigation links, user name, plain label for single-context members, and visible logout without exposing member IDs", () => {
     render(
       <PortalShell
         portalType="member"
         userName="Salma El-Sayed"
-        subtitle="AI and Machine Learning · Senior Member"
+        subtitle="AI and Machine Learning · Member"
+        activeMembershipId="m-1"
+        contexts={[
+          {
+            membershipId: "m-1",
+            role: "member",
+            committeeName: "AI and Machine Learning",
+            trackedCommitteeName: null,
+            managedTrackName: null,
+          },
+        ]}
       >
         <div>Member dashboard content</div>
       </PortalShell>
@@ -39,6 +58,11 @@ describe("PortalShell", () => {
     expect(
       screen.getByRole("button", { name: /more sections/i })
     ).toBeInTheDocument();
+
+    const sidebar = screen.getByRole("complementary");
+    expect(
+      within(sidebar).queryByRole("button", { name: /switch role or view/i })
+    ).not.toBeInTheDocument();
 
     for (const label of [
       "Dashboard",
@@ -59,13 +83,24 @@ describe("PortalShell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("places Leader View switch in sidebar (not header) for committee heads", () => {
+  it("places ContextSwitcher in sidebar (not header) for committee heads on /member and keeps role labeled Head", async () => {
+    const user = userEvent.setup();
     render(
       <PortalShell
         portalType="member"
         userName="Salma El-Sayed"
         subtitle="AI and Machine Learning · Head"
         currentUserRole="committee_head"
+        activeMembershipId="m-head-ai"
+        contexts={[
+          {
+            membershipId: "m-head-ai",
+            role: "committee_head",
+            committeeName: "AI and Machine Learning",
+            trackedCommitteeName: null,
+            managedTrackName: null,
+          },
+        ]}
       >
         <div>Member dashboard content</div>
       </PortalShell>
@@ -73,13 +108,25 @@ describe("PortalShell", () => {
 
     const header = screen.getByRole("banner");
     expect(
-      within(header).queryByRole("link", { name: /leader view/i })
+      within(header).queryByRole("button", { name: /switch role or view/i })
     ).not.toBeInTheDocument();
+    expect(within(header).queryByText(/member portal/i)).not.toBeInTheDocument();
+    expect(within(header).getByText("My work")).toBeInTheDocument();
+    expect(screen.queryByText(/leader view/i)).not.toBeInTheDocument();
 
     const sidebar = screen.getByRole("complementary");
-    const leaderViewLink = within(sidebar).getByRole("link", {
-      name: /leader view/i,
+    const switcher = within(sidebar).getByRole("button", {
+      name: /switch role or view: ai and machine learning · head · my work/i,
     });
-    expect(leaderViewLink).toHaveAttribute("href", "/hr");
+    await user.click(switcher);
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: /^my work$/i })).toHaveAttribute(
+      "aria-current",
+      "true"
+    );
+    expect(
+      within(dialog).getByRole("button", { name: /^manage committee$/i })
+    ).toBeInTheDocument();
   });
 });

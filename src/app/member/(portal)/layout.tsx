@@ -5,6 +5,10 @@ import {
   getMemberProfile,
   getOperationalUserProfile,
 } from "@/services/member.service";
+import {
+  listEligibleContextsForPerson,
+  toContextPickerOptions,
+} from "@/services/context.service";
 import type { MembershipRole } from "@/lib/auth-helpers";
 
 export default async function MemberPortalLayout({
@@ -13,9 +17,10 @@ export default async function MemberPortalLayout({
   children: React.ReactNode;
 }) {
   const session = await requireMemberSession();
-  const [profile, opProfile] = await Promise.all([
+  const [profile, opProfile, eligibleContexts] = await Promise.all([
     getMemberProfile(session.participantId),
     getOperationalUserProfile(session.participantId),
+    listEligibleContextsForPerson(session.personId),
   ]);
 
   if (!profile) {
@@ -44,6 +49,8 @@ export default async function MemberPortalLayout({
       userName={profile.fullName}
       subtitle={`${profile.committee.name} · ${profile.role}`}
       currentUserRole={role}
+      contexts={toContextPickerOptions(eligibleContexts)}
+      activeMembershipId={session.participantId}
     >
       {children}
     </PortalShell>
