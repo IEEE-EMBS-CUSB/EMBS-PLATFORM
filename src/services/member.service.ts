@@ -13,6 +13,7 @@ import type {
   MemberDashboardData,
   MemberEngagementMetrics,
   MemberProfile,
+  MemberRole,
   MemberTask,
   MonthKey,
   MonthlyScoreRecord,
@@ -46,7 +47,7 @@ function formatAuthorRoleLabel(role?: string | null): string {
   }
 }
 
-export function formatMemberProfileRoleLabel(role: MembershipRole): string {
+export function formatMemberProfileRoleLabel(role: MembershipRole): MemberRole {
   switch (role) {
     case "master_admin":
       return "Master Admin";

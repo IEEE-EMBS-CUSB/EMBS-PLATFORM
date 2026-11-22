@@ -8,9 +8,14 @@ import type {
 } from "./common";
 
 export type MemberRole =
-  | "Member"
-  | "Vice"
+  | "Master Admin"
+  | "Director"
+  | "HR Admin"
+  | "HR Member"
   | "Head"
+  | "Member"
+  | "Attendee"
+  | "Vice"
   | "Chairwoman"
   | "Treasurer";
 
