@@ -6,6 +6,7 @@ import type { OperationalUserProfile } from "@/services/member.service";
 
 export interface ActorContext {
   sessionId: string;
+  personId: string;
   participantId: string;
   profile: OperationalUserProfile;
 }
@@ -23,6 +24,7 @@ export async function getActorContext(): Promise<ActorContext | null> {
 
   return {
     sessionId: session.sessionId,
+    personId: session.personId,
     participantId: session.participantId,
     profile,
   };

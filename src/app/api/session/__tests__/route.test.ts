@@ -37,12 +37,22 @@ describe("/api/session route handler", () => {
 
   it("returns authenticated session metadata for an active DB member and renews the sliding cookie on GET", async () => {
     const [activeMember] = await db
-      .select()
+      .select({
+        id: schema.rosterMemberships.id,
+        personId: schema.persons.id,
+        fullName: schema.persons.fullName,
+        role: schema.rosterMemberships.role,
+      })
       .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
       .where(
         and(
           eq(schema.rosterMemberships.isActive, true),
-          eq(schema.rosterMemberships.mustChangePassword, false)
+          eq(schema.persons.isActive, true),
+          eq(schema.persons.mustChangePassword, false)
         )
       )
       .limit(1);
@@ -51,6 +61,7 @@ describe("/api/session route handler", () => {
 
     const sessionUser = createSessionForMember({
       id: activeMember.id,
+      personId: activeMember.personId,
       fullName: activeMember.fullName,
       role: activeMember.role,
     });
@@ -77,6 +88,7 @@ describe("/api/session route handler", () => {
     const ghostToken = encodeSessionToken(
       createSessionForMember({
         id: "00000000-0000-4000-8000-000000000000",
+        personId: "00000000-0000-4000-8000-000000000001",
         fullName: "Ghost User",
         role: "master_admin",
       })

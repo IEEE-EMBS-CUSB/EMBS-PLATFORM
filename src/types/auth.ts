@@ -9,6 +9,7 @@ export type AccessKeyStatus = "active" | "revoked";
  */
 export interface SessionUser {
   sessionId: string;
+  personId: string;
   participantId: string;
   displayId: string;
   fullName: string;

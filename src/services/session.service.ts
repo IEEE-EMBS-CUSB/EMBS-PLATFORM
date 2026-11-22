@@ -4,6 +4,11 @@ import type { ParticipantType, SessionUser } from "@/types";
 
 export const SESSION_DURATION_DAYS = 30;
 export const SESSION_DURATION_SECONDS = SESSION_DURATION_DAYS * 24 * 60 * 60;
+/**
+ * Session token version bumped to 2 for the persons/memberships identity split.
+ * Any v1 token issued before cutover is rejected cleanly, forcing a one-time re-login.
+ */
+export const CURRENT_SESSION_KEY_VERSION = 2;
 
 const DEV_FALLBACK_SESSION_SECRET = "embs-cusb-local-dev-session-secret-do-not-use-in-prod";
 
@@ -54,6 +59,7 @@ function createOpaqueSessionId(): string {
 
 export function createSessionForMember(member: {
   id: string;
+  personId: string;
   fullName: string;
   role: string;
 }): SessionUser {
@@ -63,12 +69,13 @@ export function createSessionForMember(member: {
 
   return {
     sessionId: createOpaqueSessionId(),
+    personId: member.personId,
     participantId: member.id,
     displayId: member.id.slice(0, 8),
     fullName: member.fullName,
     participantType,
     membershipRole: member.role as MembershipRole,
-    keyVersion: 1,
+    keyVersion: CURRENT_SESSION_KEY_VERSION,
     issuedAt: now.toISOString(),
     expiresAt: computeExpirationIso(now),
   };
@@ -77,6 +84,7 @@ export function createSessionForMember(member: {
 export function encodeSessionToken(user: SessionUser): string {
   const payload = JSON.stringify({
     sid: user.sessionId,
+    uid: user.personId,
     pid: user.participantId,
     did: user.displayId,
     name: user.fullName,
@@ -113,11 +121,13 @@ export function decodeSessionToken(
 
     if (
       typeof parsed.sid !== "string" ||
+      typeof parsed.uid !== "string" ||
+      parsed.uid.length === 0 ||
       typeof parsed.pid !== "string" ||
       typeof parsed.did !== "string" ||
       typeof parsed.name !== "string" ||
       (parsed.role !== "member" && parsed.role !== "attendee") ||
-      typeof parsed.kv !== "number" ||
+      parsed.kv !== CURRENT_SESSION_KEY_VERSION ||
       typeof parsed.iat !== "string" ||
       typeof parsed.exp !== "string"
     ) {
@@ -131,6 +141,7 @@ export function decodeSessionToken(
 
     return {
       sessionId: parsed.sid,
+      personId: parsed.uid,
       participantId: parsed.pid,
       displayId: parsed.did,
       fullName: parsed.name,

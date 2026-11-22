@@ -42,8 +42,9 @@ export function buildClearSessionCookieOptions(
 }
 
 /**
- * Verifies a decoded session against live roster_memberships + seasons state.
- * Revokes deactivated, password-reset-pending, missing, or draft-season sessions,
+ * Verifies a decoded session against live persons + roster_memberships + seasons state.
+ * Revokes deactivated accounts/memberships, password-reset-pending, password-changed-after-issue,
+ * mismatched person ownership, missing, or draft-season sessions,
  * and refreshes live role/name claims from PostgreSQL so demotions take effect immediately.
  */
 export async function validateSessionAgainstDb(
@@ -53,13 +54,20 @@ export async function validateSessionAgainstDb(
     const rows = await db
       .select({
         id: schema.rosterMemberships.id,
-        fullName: schema.rosterMemberships.fullName,
+        personId: schema.persons.id,
+        fullName: schema.persons.fullName,
         role: schema.rosterMemberships.role,
         isActive: schema.rosterMemberships.isActive,
-        mustChangePassword: schema.rosterMemberships.mustChangePassword,
+        personIsActive: schema.persons.isActive,
+        mustChangePassword: schema.persons.mustChangePassword,
+        passwordChangedAt: schema.persons.passwordChangedAt,
         seasonStatus: schema.seasons.status,
       })
       .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
       .innerJoin(
         schema.seasons,
         eq(schema.rosterMemberships.seasonId, schema.seasons.id)
@@ -67,8 +75,10 @@ export async function validateSessionAgainstDb(
       .where(
         and(
           eq(schema.rosterMemberships.id, sessionUser.participantId),
+          eq(schema.rosterMemberships.personId, sessionUser.personId),
           eq(schema.rosterMemberships.isActive, true),
-          eq(schema.rosterMemberships.mustChangePassword, false),
+          eq(schema.persons.isActive, true),
+          eq(schema.persons.mustChangePassword, false),
           ne(schema.seasons.status, "draft")
         )
       )
@@ -77,10 +87,20 @@ export async function validateSessionAgainstDb(
     if (rows.length === 0) return null;
 
     const member = rows[0];
+    const issuedAtMs = Date.parse(sessionUser.issuedAt);
+    if (
+      member.passwordChangedAt &&
+      !Number.isNaN(issuedAtMs) &&
+      member.passwordChangedAt.getTime() > issuedAtMs
+    ) {
+      return null;
+    }
+
     const participantType = member.role === "attendee" ? "attendee" : "member";
 
     return {
       ...sessionUser,
+      personId: member.personId,
       fullName: member.fullName,
       participantType,
       membershipRole: member.role as MembershipRole,

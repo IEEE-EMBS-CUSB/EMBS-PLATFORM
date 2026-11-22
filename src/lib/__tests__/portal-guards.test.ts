@@ -43,11 +43,12 @@ describe("portal-guards", () => {
     it("redirects to /attendee when participant is attendee", async () => {
       mockSession = {
         sessionId: "s-1",
+        personId: "p-att-1",
         participantId: "att-1",
         displayId: "A001",
         fullName: "Attendee User",
         participantType: "attendee",
-        keyVersion: 1,
+        keyVersion: 2,
         issuedAt: new Date().toISOString(),
         expiresAt: new Date().toISOString(),
       };
@@ -58,11 +59,12 @@ describe("portal-guards", () => {
     it("returns session user when valid member session exists", async () => {
       mockSession = {
         sessionId: "s-1",
+        personId: "p-mem-1",
         participantId: "mem-1",
         displayId: "M001",
         fullName: "Member User",
         participantType: "member",
-        keyVersion: 1,
+        keyVersion: 2,
         issuedAt: new Date().toISOString(),
         expiresAt: new Date().toISOString(),
       };
@@ -81,11 +83,12 @@ describe("portal-guards", () => {
     it("redirects to /member when participant is member", async () => {
       mockSession = {
         sessionId: "s-1",
+        personId: "p-mem-1",
         participantId: "mem-1",
         displayId: "M001",
         fullName: "Member User",
         participantType: "member",
-        keyVersion: 1,
+        keyVersion: 2,
         issuedAt: new Date().toISOString(),
         expiresAt: new Date().toISOString(),
       };
@@ -104,11 +107,12 @@ describe("portal-guards", () => {
     it("redirects to /attendee when participant is attendee", async () => {
       mockSession = {
         sessionId: "s-1",
+        personId: "p-att-1",
         participantId: "att-1",
         displayId: "A001",
         fullName: "Attendee User",
         participantType: "attendee",
-        keyVersion: 1,
+        keyVersion: 2,
         issuedAt: new Date().toISOString(),
         expiresAt: new Date().toISOString(),
       };
@@ -119,11 +123,12 @@ describe("portal-guards", () => {
     it("redirects to /login?session=invalid if operational profile cannot be found", async () => {
       mockSession = {
         sessionId: "s-1",
+        personId: "p-unknown",
         participantId: "mem-unknown",
         displayId: "M999",
         fullName: "Unknown User",
         participantType: "member",
-        keyVersion: 1,
+        keyVersion: 2,
         issuedAt: new Date().toISOString(),
         expiresAt: new Date().toISOString(),
       };
@@ -135,11 +140,12 @@ describe("portal-guards", () => {
     it("redirects plain member to /member (non-operational role)", async () => {
       mockSession = {
         sessionId: "s-1",
+        personId: "p-mem-1",
         participantId: "mem-1",
         displayId: "M001",
         fullName: "General Member",
         participantType: "member",
-        keyVersion: 1,
+        keyVersion: 2,
         issuedAt: new Date().toISOString(),
         expiresAt: new Date().toISOString(),
       };
@@ -159,11 +165,12 @@ describe("portal-guards", () => {
     it("allows access and returns session + profile for authorized operational roles", async () => {
       mockSession = {
         sessionId: "s-1",
+        personId: "p-dir-1",
         participantId: "mem-dir",
         displayId: "MDIR",
         fullName: "Khaled Mansour",
         participantType: "member",
-        keyVersion: 1,
+        keyVersion: 2,
         issuedAt: new Date().toISOString(),
         expiresAt: new Date().toISOString(),
       };
@@ -187,12 +194,13 @@ describe("portal-guards", () => {
     it("redirects unauthorized operational roles to /hr", async () => {
       mockSession = {
         sessionId: "s-1",
+        personId: "p-hr-1",
         participantId: "mem-hr",
         displayId: "MHR1",
         fullName: "HR Member",
         participantType: "member",
         membershipRole: "hr_member",
-        keyVersion: 1,
+        keyVersion: 2,
         issuedAt: new Date().toISOString(),
         expiresAt: new Date().toISOString(),
       };

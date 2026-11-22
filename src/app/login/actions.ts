@@ -44,6 +44,7 @@ export async function loginWithPasswordAction(
 
   const sessionUser = createSessionForMember({
     id: result.member.id,
+    personId: result.member.personId,
     fullName: result.member.fullName,
     role: result.member.role,
   });
@@ -92,15 +93,15 @@ export async function changePasswordOnFirstLoginAction(
   }
 
   // Verify session token signing works BEFORE mutating the password in PostgreSQL
-  const sessionUser = createSessionForMember({
+  const preflightUser = createSessionForMember({
     id: member.id,
+    personId: member.personId,
     fullName: member.fullName,
     role: member.role,
   });
 
-  let signedToken: string;
   try {
-    signedToken = encodeSessionToken(sessionUser);
+    encodeSessionToken(preflightUser);
   } catch (err) {
     console.error("[changePasswordOnFirstLoginAction] Session signing error:", err);
     return {
@@ -114,6 +115,7 @@ export async function changePasswordOnFirstLoginAction(
     newPassword,
     member: {
       id: member.id,
+      personId: member.personId,
       email: member.email,
       passwordHash: member.passwordHash,
       mustChangePassword: member.mustChangePassword,
@@ -123,6 +125,15 @@ export async function changePasswordOnFirstLoginAction(
   if (!changeRes.ok) {
     return { ok: false, error: changeRes.reason };
   }
+
+  // Mint the final session AFTER passwordChangedAt is recorded so issuedAt >= passwordChangedAt
+  const sessionUser = createSessionForMember({
+    id: member.id,
+    personId: member.personId,
+    fullName: member.fullName,
+    role: member.role,
+  });
+  const signedToken = encodeSessionToken(sessionUser);
 
   const cookieStore = await cookies();
   cookieStore.set(

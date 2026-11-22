@@ -8,9 +8,10 @@ import {
   SESSION_DURATION_SECONDS,
 } from "@/services/session.service";
 
-function makeMemberToken(role: string = "member", id = "mem-1") {
+function makeMemberToken(role: string = "member", id = "mem-1", personId = `person-${id}`) {
   const session = createSessionForMember({
     id,
+    personId,
     fullName: "Test User",
     role,
   });
@@ -248,11 +249,12 @@ describe("Next.js session proxy", () => {
     // Token with undefined membershipRole must ALSO be blocked from /hr
     const noRoleToken = encodeSessionToken({
       sessionId: "sess-no-role",
+      personId: "person-no-role",
       participantId: "mem-no-role",
       displayId: "M999",
       fullName: "No Role",
       participantType: "member",
-      keyVersion: 1,
+      keyVersion: 2,
       issuedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
     });
