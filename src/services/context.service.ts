@@ -1,7 +1,8 @@
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { MembershipRole, SeasonStatus } from "@/lib/auth-helpers";
+import type { ContextPickerOption } from "@/lib/context-picker";
 
 export type ContextViewMode = "manage" | "personal";
 
@@ -16,6 +17,8 @@ export interface RawContextCandidate {
   committeeId: string | null;
   committeeName: string | null;
   committeeSlug: string | null;
+  trackedCommitteeId?: string | null;
+  trackedCommitteeName?: string | null;
   managedTrackId: string | null;
   managedTrackName: string | null;
   isActive: boolean;
@@ -32,6 +35,8 @@ export interface EligibleContextOption {
   committeeId: string | null;
   committeeName: string | null;
   committeeSlug: string | null;
+  trackedCommitteeId?: string | null;
+  trackedCommitteeName?: string | null;
   managedTrackId: string | null;
   managedTrackName: string | null;
   isActive: boolean;
@@ -80,6 +85,8 @@ function toEligibleOption(c: RawContextCandidate): EligibleContextOption {
     committeeId: c.committeeId,
     committeeName: c.committeeName,
     committeeSlug: c.committeeSlug,
+    trackedCommitteeId: c.trackedCommitteeId ?? null,
+    trackedCommitteeName: c.trackedCommitteeName ?? null,
     managedTrackId: c.managedTrackId,
     managedTrackName: c.managedTrackName,
     isActive: c.isActive,
@@ -230,6 +237,7 @@ export async function listEligibleContextsForPerson(
         committeeId: schema.rosterMemberships.committeeId,
         committeeName: schema.committees.name,
         committeeSlug: schema.committees.slug,
+        trackedCommitteeId: schema.rosterMemberships.trackedCommitteeId,
         managedTrackId: schema.rosterMemberships.managedTrackId,
         managedTrackName: schema.committeeTracks.name,
         isActive: schema.rosterMemberships.isActive,
@@ -250,6 +258,24 @@ export async function listEligibleContextsForPerson(
       )
       .where(eq(schema.rosterMemberships.personId, personId));
 
+    const trackedIds = Array.from(
+      new Set(
+        rows
+          .map((r) => r.trackedCommitteeId)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+    const trackedNameById = new Map<string, string>();
+    if (trackedIds.length > 0) {
+      const trackedRows = await db
+        .select({ id: schema.committees.id, name: schema.committees.name })
+        .from(schema.committees)
+        .where(inArray(schema.committees.id, trackedIds));
+      for (const tc of trackedRows) {
+        trackedNameById.set(tc.id, tc.name);
+      }
+    }
+
     return filterEligibleSeasonContexts(
       rows.map((r) => ({
         membershipId: r.membershipId,
@@ -262,6 +288,10 @@ export async function listEligibleContextsForPerson(
         committeeId: r.committeeId,
         committeeName: r.committeeName ?? null,
         committeeSlug: r.committeeSlug ?? null,
+        trackedCommitteeId: r.trackedCommitteeId ?? null,
+        trackedCommitteeName: r.trackedCommitteeId
+          ? trackedNameById.get(r.trackedCommitteeId) ?? null
+          : null,
         managedTrackId: r.managedTrackId ?? null,
         managedTrackName: r.managedTrackName ?? null,
         isActive: r.isActive,
@@ -271,6 +301,18 @@ export async function listEligibleContextsForPerson(
   } catch {
     return [];
   }
+}
+
+export function toContextPickerOptions(
+  contexts: readonly EligibleContextOption[]
+): ContextPickerOption[] {
+  return contexts.map((c) => ({
+    membershipId: c.membershipId,
+    role: c.role,
+    committeeName: c.committeeName,
+    trackedCommitteeName: c.trackedCommitteeName ?? null,
+    managedTrackName: c.managedTrackName ?? null,
+  }));
 }
 
 /**
