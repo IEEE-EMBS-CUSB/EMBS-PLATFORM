@@ -86,10 +86,11 @@ export interface MemberTask {
   workType?: "assignment" | "task";
   assignedDate: string;
   dueDate: string;
+  submittedDate?: string;
   completedDate?: string;
   status: MemberTaskStatus;
-  /** 1 (small) to 5 (huge), assigned before work starts. */
-  effort: number;
+  /** 1 (small) to 5 (huge), null while ungraded. */
+  effort: number | null;
   /** 1 to 5 quality rating once completed. */
   quality: number | null;
   onTime: boolean | null;

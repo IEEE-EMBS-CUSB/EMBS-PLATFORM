@@ -644,15 +644,12 @@ export function RosterManagerView({
 
       {/* Roster Table */}
       <Card className="border-border bg-white shadow-xs">
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader className="bg-[#f8f9fb]">
               <TableRow>
                 <TableHead className="font-heading text-xs font-bold text-[#002855]">
-                  Full Name
-                </TableHead>
-                <TableHead className="font-heading text-xs font-bold text-[#002855]">
-                  Email (Whitelist)
+                  Member
                 </TableHead>
                 <TableHead className="font-heading text-xs font-bold text-[#002855]">
                   Committee / Track
@@ -665,7 +662,7 @@ export function RosterManagerView({
                 </TableHead>
                 {(isMaster || canAssignHr) && (
                   <TableHead className="font-heading text-xs font-bold text-[#002855] text-right">
-                    Operational Actions
+                    Actions
                   </TableHead>
                 )}
               </TableRow>
@@ -682,11 +679,13 @@ export function RosterManagerView({
 
                 return (
                   <TableRow key={m.id}>
-                    <TableCell className="font-heading text-sm font-bold text-[#002855]">
-                      {m.fullName}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {m.email}
+                    <TableCell>
+                      <div className="font-heading text-sm font-bold text-[#002855]">
+                        {m.fullName}
+                      </div>
+                      <div className="font-mono text-xs text-muted-foreground">
+                        {m.email}
+                      </div>
                     </TableCell>
                     <TableCell className="text-xs font-medium">
                       {m.role === "director" ? (
@@ -697,7 +696,7 @@ export function RosterManagerView({
                             onChange={(e) =>
                               handleDirectorTrackChange(m.id, e.target.value)
                             }
-                            className="h-8 rounded border border-[#772583]/30 bg-[#f5edf7]/60 px-2 text-xs font-semibold text-[#5a1b63] focus:outline-2 focus:outline-[#772583]"
+                            className="h-8 max-w-[180px] rounded border border-[#772583]/30 bg-[#f5edf7]/60 px-2 text-xs font-semibold text-[#5a1b63] focus:outline-2 focus:outline-[#772583]"
                           >
                             <option value="">All Tracks (Chapter-wide)</option>
                             {availableTracks.map((t) => (
@@ -720,7 +719,7 @@ export function RosterManagerView({
                           onChange={(e) =>
                             handleCommitteeChange(m.id, e.target.value)
                           }
-                          className="h-8 rounded border border-border bg-white px-2 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                          className="h-8 max-w-[180px] rounded border border-border bg-white px-2 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                         >
                           <option value="">Unassigned</option>
                           {availableCommittees.map((c) => (
@@ -828,7 +827,7 @@ export function RosterManagerView({
               {filtered.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={5}
                     className="py-8 text-center text-sm text-muted-foreground"
                   >
                     No members match your search.

@@ -132,12 +132,21 @@ export function MemberDeliverablesView({
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground tabular-nums">
                     <span>Deadline {formatDisplayDate(item.dueDate)}</span>
                     {!isTask && (
-                      <>
-                        <span>Effort {item.effort}/5</span>
-                        {item.quality !== null && (
-                          <span>Quality {item.quality}/5</span>
-                        )}
-                      </>
+                      item.effort !== null ? (
+                        <>
+                          <span>Effort {item.effort}/5</span>
+                          {item.quality !== null && (
+                            <span>Quality {item.quality}/5</span>
+                          )}
+                        </>
+                      ) : (
+                        <span>Pending grade</span>
+                      )
+                    )}
+                    {!isTask && !item.completedDate && item.submittedDate && (
+                      <span>
+                        Submitted {formatDisplayDate(item.submittedDate)}
+                      </span>
                     )}
                   </div>
 
@@ -201,13 +210,20 @@ export function MemberDeliverablesView({
                         <p className="font-semibold text-foreground">
                           {item.title}
                         </p>
-                        {(item.completedDate || item.notes || (!isTask && safeUrl)) && (
+                        {(item.completedDate ||
+                          item.submittedDate ||
+                          item.notes ||
+                          (!isTask && safeUrl)) && (
                           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            {item.completedDate && (
+                            {item.completedDate ? (
                               <span>
                                 Completed {formatDisplayDate(item.completedDate)}
                               </span>
-                            )}
+                            ) : item.submittedDate ? (
+                              <span>
+                                Submitted {formatDisplayDate(item.submittedDate)}
+                              </span>
+                            ) : null}
                             {item.notes && <span>{item.notes}</span>}
                             {!isTask && safeUrl && (
                               <a
@@ -237,13 +253,15 @@ export function MemberDeliverablesView({
                             maxPoints={item.maxPoints}
                             initialCompleted={item.status === "completed"}
                           />
-                        ) : (
+                        ) : item.effort !== null ? (
                           <>
                             Effort {item.effort}/5
                             {item.quality !== null
                               ? ` · Quality ${item.quality}/5`
                               : ""}
                           </>
+                        ) : (
+                          <span>Pending grade</span>
                         )}
                       </TableCell>
                       <TableCell className="py-3.5">

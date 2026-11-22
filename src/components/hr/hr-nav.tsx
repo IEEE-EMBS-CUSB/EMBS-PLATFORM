@@ -82,7 +82,7 @@ export const HR_NAV_ITEMS: readonly HrNavItem[] = [
   },
   {
     key: "tasks",
-    label: "Tasks & Assignments",
+    label: "Tasks & Work",
     mobileLabel: "Tasks",
     href: "/hr/tasks",
     icon: CheckSquare,
@@ -124,7 +124,7 @@ function getWorkModuleLabels(role: MembershipRole): {
   if (role === "hr_member") {
     return { label: "Tasks", mobileLabel: "Tasks" };
   }
-  return { label: "Tasks & Assignments", mobileLabel: "Tasks" };
+  return { label: "Tasks & Work", mobileLabel: "Tasks" };
 }
 
 export function getVisibleHrNavItems(

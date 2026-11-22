@@ -129,8 +129,9 @@ describe("TaskCheckToggle and MemberDeliverablesView work-type split", () => {
       workType: "assignment",
       assignedDate: "2026-11-01",
       dueDate: "2026-11-28",
+      submittedDate: "2026-11-22",
       status: "in_progress",
-      effort: 1,
+      effort: null,
       quality: null,
       onTime: null,
       taskPoints: null,
@@ -158,5 +159,10 @@ describe("TaskCheckToggle and MemberDeliverablesView work-type split", () => {
       "href",
       "https://github.com/ieee-embs/ecg-pcb"
     );
+    // Ungraded submitted assignment must NOT show bogus "Effort 1/5" or "Completed ..."
+    expect(screen.queryByText(/effort 1\/5/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/completed nov 22/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/pending grade/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/submitted nov 22/i).length).toBeGreaterThan(0);
   });
 });

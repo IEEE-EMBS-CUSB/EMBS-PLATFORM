@@ -565,12 +565,13 @@ export async function getMemberTasks(memberId: string): Promise<MemberTask[]> {
           ? task.createdAt.toISOString().slice(0, 10)
           : "",
         dueDate: task.dueAt ? task.dueAt.toISOString().slice(0, 10) : "",
-        completedDate: submission.gradedAt
-          ? submission.gradedAt.toISOString().slice(0, 10)
-          : submission.submittedAt
+        submittedDate: submission.submittedAt
           ? submission.submittedAt.toISOString().slice(0, 10)
           : undefined,
-        effort: submission.effortScore ?? 1,
+        completedDate: submission.gradedAt
+          ? submission.gradedAt.toISOString().slice(0, 10)
+          : undefined,
+        effort: submission.effortScore ?? null,
         quality: submission.qualityScore,
         onTime:
           submission.timelinessScore !== null

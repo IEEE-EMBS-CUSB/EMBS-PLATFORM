@@ -196,21 +196,37 @@ export function BulkTaskGradingView({
     setSaveError(null);
     setSavedNotification(false);
 
-    const invalid = submissions.some(
+    const partialRow = submissions.find((sub) => {
+      const filledCount = [
+        sub.effortScore,
+        sub.qualityScore,
+        sub.timelinessScore,
+      ].filter((s) => s !== null).length;
+      return filledCount > 0 && filledCount < 3;
+    });
+    if (partialRow) {
+      setSaveError(
+        `Please fill all three scores (1-5) for ${partialRow.memberName} or leave all blank.`
+      );
+      setIsSaving(false);
+      return;
+    }
+
+    const gradableRows = submissions.filter(
       (sub) =>
-        !sub.submissionId ||
-        sub.effortScore === null ||
-        sub.qualityScore === null ||
-        sub.timelinessScore === null
+        Boolean(sub.submissionId) &&
+        sub.effortScore !== null &&
+        sub.qualityScore !== null &&
+        sub.timelinessScore !== null
     );
-    if (invalid) {
-      setSaveError("All scores must be between 1 and 5 before saving.");
+    if (gradableRows.length === 0) {
+      setSaveError("Enter scores (1-5) for at least one member before saving.");
       setIsSaving(false);
       return;
     }
 
     try {
-      for (const sub of submissions) {
+      for (const sub of gradableRows) {
         if (!sub.submissionId) continue;
         const res = await onGrade({
           submissionId: sub.submissionId,

@@ -152,4 +152,76 @@ describe("BulkTaskGradingView Component", () => {
     });
     expect(checkbox).toBeChecked();
   });
+
+  it("saves graded rows while skipping unsubmitted blank rows, and rejects partially filled rows", async () => {
+    const user = userEvent.setup();
+    const onGrade = vi.fn().mockResolvedValue({ ok: true });
+
+    render(
+      <BulkTaskGradingView
+        task={{ ...sampleTask, workType: "assignment" }}
+        submissions={[
+          {
+            submissionId: "sub-ahmed",
+            membershipId: "m-ahmed",
+            memberName: "Ahmed AI Member",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: null,
+            notes: "",
+            submissionUrl: "https://github.com/embs/ecg",
+          },
+          {
+            submissionId: "sub-omar",
+            membershipId: "m-omar",
+            memberName: "Omar Multi-Role",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: null,
+            notes: "",
+            submissionUrl: null,
+          },
+        ]}
+        onGrade={onGrade}
+      />
+    );
+
+    // Partially filling only Effort for Ahmed should show a clear row-specific error
+    await user.type(
+      screen.getByLabelText(/effort score for ahmed ai member/i),
+      "5"
+    );
+    await user.click(screen.getByRole("button", { name: /save grades/i }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/ahmed ai member/i);
+    expect(onGrade).not.toHaveBeenCalled();
+
+    // Completing all 3 scores for Ahmed (while leaving Omar blank) should save Ahmed cleanly
+    await user.type(
+      screen.getByLabelText(/quality score for ahmed ai member/i),
+      "4"
+    );
+    await user.type(
+      screen.getByLabelText(/timeliness score for ahmed ai member/i),
+      "5"
+    );
+    await user.type(
+      screen.getByLabelText(/feedback notes for ahmed ai member/i),
+      "Great filter plots!"
+    );
+    await user.click(screen.getByRole("button", { name: /save grades/i }));
+
+    await waitFor(() => {
+      expect(onGrade).toHaveBeenCalledTimes(1);
+    });
+    expect(onGrade).toHaveBeenCalledWith({
+      submissionId: "sub-ahmed",
+      effortScore: 5,
+      qualityScore: 4,
+      timelinessScore: 5,
+      notes: "Great filter plots!",
+    });
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+  });
 });

@@ -6,7 +6,7 @@ import { LoginForm } from "@/components/auth/login-form";
 import { sanitizeNextPath } from "@/lib/checkin-url";
 
 export const metadata: Metadata = {
-  title: "Login · IEEE EMBS CUSB Portal",
+  title: "Login",
   description:
     "Whitelist-guarded portal access for IEEE EMBS CUSB members and attendees.",
 };

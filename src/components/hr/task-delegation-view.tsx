@@ -487,7 +487,7 @@ export function TaskDelegationView({
                       required
                       value={selectedAssignee}
                       onChange={(e) => setSelectedAssignee(e.target.value)}
-                      className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                      className="mt-1 block h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                     >
                       <option value="">Select recipient...</option>
                       {assignableMembers.map((m) => (
@@ -514,7 +514,7 @@ export function TaskDelegationView({
                       onChange={(e) =>
                         setTargetGroup(e.target.value as TaskTargetGroup)
                       }
-                      className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                      className="mt-1 block h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                     >
                       {currentUserRole === "master_admin" ? (
                         <>
