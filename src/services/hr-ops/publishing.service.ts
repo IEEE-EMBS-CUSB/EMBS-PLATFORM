@@ -8,6 +8,7 @@ import {
   type CalculatedSnapshotEntry,
   type MemberRef,
 } from "@/services/hr.service";
+import { isHeadRole, isOverallEligibleRole } from "@/services/scoring.service";
 import {
   isValidMonthKey,
   resolveActiveSeason,
@@ -128,7 +129,14 @@ async function buildDraft(month: string, seasonId: string) {
 
   if (previous) {
     const json = previous.snapshotJson as StoredSnapshotPayload;
-    const prevOverall = json.overallEntries ?? json.entries ?? [];
+    const rawPrevOverall = json.overallEntries ?? json.entries ?? [];
+    const filteredPrevOverall = rawPrevOverall.filter((e) =>
+      isOverallEligibleRole(e.role)
+    );
+    const prevOverall =
+      filteredPrevOverall.length === rawPrevOverall.length
+        ? filteredPrevOverall
+        : filteredPrevOverall.map((e, idx) => ({ ...e, rank: idx + 1 }));
     const prevHeads = json.headsEntries ?? [];
     previousSnapshot = {
       overall: prevOverall.map((e) => ({
@@ -275,12 +283,23 @@ export async function getSnapshotForPublishingPage(month: string) {
     }
 
     const json = existing.snapshotJson as StoredSnapshotPayload;
-    const overallEntries = json.overallEntries ?? json.entries ?? [];
+    const rawOverallEntries = json.overallEntries ?? json.entries ?? [];
+    const filteredOverall = rawOverallEntries.filter((e) =>
+      isOverallEligibleRole(e.role)
+    );
+    const overallEntries =
+      filteredOverall.length === rawOverallEntries.length
+        ? filteredOverall
+        : filteredOverall.map((e, idx) => ({
+            ...e,
+            rank: idx + 1,
+            previousRank: null,
+          }));
     const committeeEntries = json.committeeEntries ?? {};
     const headsEntries =
       json.headsEntries ??
-      overallEntries
-        .filter((e) => e.role === "committee_head" || e.role === "Head")
+      rawOverallEntries
+        .filter((e) => isHeadRole(e.role))
         .map((e, idx) => ({ ...e, rank: idx + 1 }));
     return {
       month,

@@ -67,7 +67,7 @@ describe("HR Service: Live QR Checkin Code Generator", () => {
 });
 
 describe("HR Service: Draft Monthly Snapshot Calculator", () => {
-  it("aggregates ledger scores, orders ranks, and calculates committee-local trends", () => {
+  it("aggregates ledger scores, filters overall rankings to members and hr_members, and calculates committee-local trends", () => {
     const members = [
       {
         id: "mem-1",
@@ -75,7 +75,7 @@ describe("HR Service: Draft Monthly Snapshot Calculator", () => {
         committeeId: "com-ai",
         committeeSlug: "ai-and-machine-learning",
         committeeName: "AI and Machine Learning",
-        role: "Head",
+        role: "committee_head",
       },
       {
         id: "mem-2",
@@ -83,29 +83,29 @@ describe("HR Service: Draft Monthly Snapshot Calculator", () => {
         committeeId: "com-ai",
         committeeSlug: "ai-and-machine-learning",
         committeeName: "AI and Machine Learning",
-        role: "Member",
+        role: "member",
       },
       {
         id: "mem-3",
-        fullName: "Nourhan Khaled",
-        committeeId: "com-gd",
-        committeeSlug: "graphic-design",
-        committeeName: "Graphic Design",
-        role: "Vice",
+        fullName: "Laila Amr",
+        committeeId: "com-hr",
+        committeeSlug: "human-resources",
+        committeeName: "Human Resources",
+        role: "hr_member",
       },
     ];
 
     const currentMonthLedger = [
       { membershipId: "mem-1", points: 40 },
-      { membershipId: "mem-1", points: 54 }, // Total 94
-      { membershipId: "mem-2", points: 80 }, // Total 80
-      { membershipId: "mem-3", points: 91 }, // Total 91
+      { membershipId: "mem-1", points: 54 }, // Total 94 (Head -> excluded from overall)
+      { membershipId: "mem-2", points: 80 }, // Total 80 (Member)
+      { membershipId: "mem-3", points: 91 }, // Total 91 (HR Member)
     ];
 
     const previousMonthSnapshot = {
       overall: [
-        { memberId: "mem-3", rank: 1 },
-        { memberId: "mem-1", rank: 2 },
+        { memberId: "mem-2", rank: 1 },
+        { memberId: "mem-3", rank: 2 },
       ],
       committees: {
         "ai-and-machine-learning": [
@@ -122,22 +122,29 @@ describe("HR Service: Draft Monthly Snapshot Calculator", () => {
       previousSnapshot: previousMonthSnapshot,
     });
 
-    // Overall Top 10
-    expect(snapshot.overallEntries[0].memberName).toBe("Salma El-Sayed");
-    expect(snapshot.overallEntries[0].monthlyScore).toBe(94);
+    // Overall Top 10: excludes Salma (committee_head), keeps Laila (hr_member) and Omar (member)
+    expect(snapshot.overallEntries).toHaveLength(2);
+    expect(snapshot.overallEntries[0].memberName).toBe("Laila Amr");
+    expect(snapshot.overallEntries[0].monthlyScore).toBe(91);
     expect(snapshot.overallEntries[0].rank).toBe(1);
     expect(snapshot.overallEntries[0].previousRank).toBe(2); // Was #2, now #1
 
-    expect(snapshot.overallEntries[1].memberName).toBe("Nourhan Khaled");
-    expect(snapshot.overallEntries[1].monthlyScore).toBe(91);
+    expect(snapshot.overallEntries[1].memberName).toBe("Omar Tarek");
+    expect(snapshot.overallEntries[1].monthlyScore).toBe(80);
     expect(snapshot.overallEntries[1].rank).toBe(2);
+    expect(snapshot.overallEntries[1].previousRank).toBe(1); // Was #1, now #2
 
-    // Committee leaderboards have committee-local trends
+    // Committee leaderboards still include committee heads with committee-local trends
     const aiEntries = snapshot.committeeEntries["ai-and-machine-learning"];
     expect(aiEntries).toBeDefined();
     expect(aiEntries[0].memberName).toBe("Salma El-Sayed");
     expect(aiEntries[0].previousRank).toBe(2); // In previous month AI board, Salma was #2
     expect(aiEntries[1].memberName).toBe("Omar Tarek");
     expect(aiEntries[1].previousRank).toBe(1); // In previous month AI board, Omar was #1
+
+    // Heads board includes Salma
+    expect(snapshot.headsEntries).toHaveLength(1);
+    expect(snapshot.headsEntries[0].memberName).toBe("Salma El-Sayed");
+    expect(snapshot.headsEntries[0].monthlyScore).toBe(94);
   });
 });

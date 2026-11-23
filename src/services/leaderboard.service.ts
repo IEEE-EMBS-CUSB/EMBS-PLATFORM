@@ -3,6 +3,7 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { normalizeSeasonSettings } from "@/lib/season-settings";
+import { isHeadRole, isOverallEligibleRole } from "@/services/scoring.service";
 import type {
   Committee,
   CommitteeLeaderSpotlight,
@@ -34,7 +35,7 @@ interface SnapshotJsonShape {
   headsEntries?: SnapshotEntryShape[];
 }
 
-function getOverallEntriesFromSnapshot(json: SnapshotJsonShape) {
+function getRawOverallEntriesFromSnapshot(json: SnapshotJsonShape) {
   return (json.overallEntries ?? json.entries ?? []).map((e, idx) => ({
     rank: e.rank ?? idx + 1,
     previousRank: e.previousRank ?? null,
@@ -44,6 +45,29 @@ function getOverallEntriesFromSnapshot(json: SnapshotJsonShape) {
     committeeName: e.committeeName,
     role: e.role,
     monthlyScore: e.monthlyScore,
+  }));
+}
+
+/**
+ * Extracts ranked Overall entries from a published snapshot, keeping only
+ * `member` and `hr_member` roles (filtering out committee heads and admin roles).
+ * When a previously published snapshot contained non-member roles, remaining
+ * entries are re-ranked 1..N with `previousRank: null`.
+ */
+export function extractOverallEntriesFromSnapshot(
+  json: SnapshotJsonShape,
+  topLimit?: number
+) {
+  const raw = getRawOverallEntriesFromSnapshot(json);
+  const filtered = raw.filter((e) => isOverallEligibleRole(e.role));
+  const wasFiltered = filtered.length !== raw.length;
+  const limited =
+    topLimit !== undefined ? filtered.slice(0, topLimit) : filtered;
+
+  return limited.map((e, idx) => ({
+    ...e,
+    rank: wasFiltered ? idx + 1 : e.rank,
+    previousRank: wasFiltered ? null : e.previousRank,
   }));
 }
 
@@ -69,8 +93,8 @@ export function extractHeadsEntriesFromSnapshot(
     }));
   }
 
-  return getOverallEntriesFromSnapshot(json)
-    .filter((e) => e.role === "committee_head" || e.role === "Head")
+  return getRawOverallEntriesFromSnapshot(json)
+    .filter((e) => isHeadRole(e.role))
     .slice(0, topLimit)
     .map((e, idx) => ({
       ...e,
@@ -216,7 +240,10 @@ export async function getOverallLeaderboard(
       if (!target) return null;
 
       const json = target.snapshotJson as SnapshotJsonShape;
-      const overallEntries = getOverallEntriesFromSnapshot(json);
+      const overallEntries = extractOverallEntriesFromSnapshot(
+        json,
+        season.publicTopN
+      );
 
       return {
         month: target.month as MonthKey,
@@ -226,7 +253,7 @@ export async function getOverallLeaderboard(
           ? target.publishedAt.toISOString().slice(0, 10)
           : "",
         scope: "overall",
-        entries: overallEntries.slice(0, season.publicTopN),
+        entries: overallEntries,
       };
     }
   } catch {
@@ -372,7 +399,7 @@ export async function getLeaderboardHistory(): Promise<
     if (rows.length > 0) {
       return rows.map((snapshot) => {
         const json = snapshot.snapshotJson as SnapshotJsonShape;
-        const entries = getOverallEntriesFromSnapshot(json);
+        const entries = extractOverallEntriesFromSnapshot(json);
         const top = entries[0] ?? null;
         const committeeSlugs = new Set<string>(
           entries.map((e) => e.committeeSlug)
@@ -433,14 +460,14 @@ export async function getCommitteeLeaders(
       if (!target) return [];
 
       const json = target.snapshotJson as SnapshotJsonShape;
-      const overallEntries = getOverallEntriesFromSnapshot(json);
+      const rawEntries = getRawOverallEntriesFromSnapshot(json);
 
       return comms.map((committee) => {
         const committeeList = json.committeeEntries?.[committee.slug];
         const topEntry =
           committeeList && committeeList.length > 0
             ? committeeList[0]
-            : overallEntries.find((entry) => entry.committeeSlug === committee.slug);
+            : rawEntries.find((entry) => entry.committeeSlug === committee.slug);
 
         return {
           committee: { ...committee },

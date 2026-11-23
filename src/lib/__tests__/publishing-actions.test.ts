@@ -84,10 +84,11 @@ describe("Monthly leaderboard publishing", () => {
     expect(draft?.status).toBe("draft");
     expect(draft?.overallEntries.length).toBeGreaterThan(0);
 
-    // Attendees must never appear in leaderboard draft or published snapshots
+    // Overall leaderboard must only include member and hr_member (excluding attendees, heads, and admins)
     const attendeeIds = new Set(attendees.map((a) => a.id));
     for (const entry of draft!.overallEntries) {
       expect(attendeeIds.has(entry.memberId)).toBe(false);
+      expect(["member", "hr_member"]).toContain(entry.role);
     }
 
     const result = await publishMonthlySnapshotAsActor(testMonth, {
@@ -101,6 +102,9 @@ describe("Monthly leaderboard publishing", () => {
     expect(overall!.entries.length).toBeGreaterThan(0);
     expect(overall!.entries[0].memberId).toBe(omar.id);
     expect(overall!.entries[0].monthlyScore).toBe(75);
+    for (const entry of overall!.entries) {
+      expect(["member", "hr_member"]).toContain(entry.role);
+    }
 
     const history = await getLeaderboardHistory();
     const historyEntry = history.find((h) => h.month === testMonth);

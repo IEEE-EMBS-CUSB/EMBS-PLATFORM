@@ -55,10 +55,11 @@ describe("leaderboard.service", () => {
       "2026-09",
       "2026-08",
     ]);
-    expect(history[0]?.topOverall?.memberName).toBe("Salma El-Sayed");
+    // Heads are filtered out of overall rankings, so topOverall is the highest-ranked Member
+    expect(history[0]?.topOverall?.memberName).toBe("Omar Tarek");
   });
 
-  it("caps overall published leaderboards at top 10 and excludes member identification numbers", async () => {
+  it("caps overall published leaderboards at top 10, filters out heads, and excludes member identification numbers", async () => {
     const latest = await getOverallLeaderboard();
     expect(latest).not.toBeNull();
     expect(latest?.month).toBe("2026-10");
@@ -67,7 +68,14 @@ describe("leaderboard.service", () => {
     expect(latest?.entries.map((entry) => entry.rank)).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
     ]);
-    expect(latest?.entries[0]?.memberName).toBe("Salma El-Sayed");
+    expect(latest?.entries[0]?.memberName).toBe("Omar Tarek");
+    expect(
+      latest?.entries.every(
+        (entry) =>
+          entry.role.toLowerCase() === "member" ||
+          entry.role.toLowerCase() === "hr_member"
+      )
+    ).toBe(true);
 
     for (const entry of latest?.entries ?? []) {
       expect("displayId" in entry).toBe(false);
@@ -100,10 +108,13 @@ describe("leaderboard.service", () => {
 
     const augustBoard = await getOverallLeaderboard("2026-08");
     expect(augustBoard).not.toBeNull();
-    const withPreviousRank = (augustBoard?.entries ?? []).filter(
-      (entry) => entry.previousRank !== null
-    );
-    expect(withPreviousRank.length).toBeGreaterThanOrEqual(8);
+    expect(
+      (augustBoard?.entries ?? []).every(
+        (entry) =>
+          entry.role.toLowerCase() === "member" ||
+          entry.role.toLowerCase() === "hr_member"
+      )
+    ).toBe(true);
   });
 
   it("returns published #1 leaders for all 12 committees without leaking draft months or member IDs", async () => {

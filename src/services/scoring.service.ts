@@ -61,6 +61,24 @@ const BOARD_ROLE_PRIORITY: Record<string, number> = {
   attendee: 6,
 };
 
+/**
+ * Overall chapter rankings include regular members and HR members only,
+ * filtering out committee heads, HR admins, directors, master admins, and attendees.
+ */
+export function isOverallEligibleRole(role: string): boolean {
+  const normalized = role.trim().toLowerCase();
+  return (
+    normalized === "member" ||
+    normalized === "hr_member" ||
+    normalized === "hr member"
+  );
+}
+
+export function isHeadRole(role: string): boolean {
+  const normalized = role.trim().toLowerCase();
+  return normalized === "committee_head" || normalized === "head";
+}
+
 function sortScoreDescending(
   a: { monthlyScore: number; memberName: string },
   b: { monthlyScore: number; memberName: string }
@@ -88,11 +106,15 @@ function buildPreviousRankLookup(
 }
 
 /**
- * Computes global and per-committee leaderboards strictly following Spec §4:
- * - Global board: counts each person ONCE per season/month (sum across all of their eligible memberships).
+ * Computes global, per-committee, and heads leaderboards strictly following Spec §4:
+ * - Global/Overall board: includes `member` and `hr_member` memberships only (filtering out
+ *     `committee_head`, `hr_admin`, `director`, `master_admin`, and `attendee`). Counts each
+ *     eligible person ONCE per season/month using their eligible member/hr_member scoped points
+ *     plus their open ledger points (never inflated by head/admin hats).
  * - Per-committee board C: counts each eligible person in committee C ONCE with:
  *     (person's committee-scoped ledger points for committee C) + (person's open ledger points).
- * - Open/global points count ONCE globally and ONCE per eligible committee board even for multi-hat persons.
+ * - Heads board: counts each `committee_head` ONCE with head-stamped points + open ledger points.
+ * - Open/global points count ONCE globally and ONCE per eligible board even for multi-hat persons.
  * - No board ever sums another board.
  */
 export function computeMonthlyBoards(input: {
@@ -109,20 +131,27 @@ export function computeMonthlyBoards(input: {
   const eligibleMembers = members.filter((m) => m.role !== "attendee");
   const membershipById = new Map<string, ScoringMembershipRef>();
   const membershipsByPerson = new Map<string, ScoringMembershipRef[]>();
+  const overallHatsByPerson = new Map<string, ScoringMembershipRef[]>();
 
   for (const m of eligibleMembers) {
     membershipById.set(m.id, m);
     const list = membershipsByPerson.get(m.personId) ?? [];
     list.push(m);
     membershipsByPerson.set(m.personId, list);
+
+    if (isOverallEligibleRole(m.role)) {
+      const overallList = overallHatsByPerson.get(m.personId) ?? [];
+      overallList.push(m);
+      overallHatsByPerson.set(m.personId, overallList);
+    }
   }
 
   // Partition ledger points per person:
-  // 1. globalTotalByPerson: sum of every eligible ledger row once per person
+  // 1. overallScopedPointsByPerson: non-open ledger rows stamped specifically to a member or hr_member membership
   // 2. openTotalByPerson: sum of every "open" ledger row once per person
   // 3. committeePointsByPersonAndComm: committee-scoped ledger rows keyed by `${personId}::${committeeId}`
   // 4. headScopedPointsByPerson: non-open ledger rows stamped specifically to a committee_head membership
-  const globalTotalByPerson = new Map<string, number>();
+  const overallScopedPointsByPerson = new Map<string, number>();
   const openTotalByPerson = new Map<string, number>();
   const committeePointsByPersonAndComm = new Map<string, number>();
   const headScopedPointsByPerson = new Map<string, number>();
@@ -133,11 +162,6 @@ export function computeMonthlyBoards(input: {
     if (!personId || !membershipsByPerson.has(personId)) {
       continue;
     }
-
-    globalTotalByPerson.set(
-      personId,
-      (globalTotalByPerson.get(personId) ?? 0) + entry.points
-    );
 
     const resolvedScope: LedgerPostingScope =
       entry.postingScope ??
@@ -160,11 +184,13 @@ export function computeMonthlyBoards(input: {
           (committeePointsByPersonAndComm.get(key) ?? 0) + entry.points
         );
       }
-      if (
-        stampedMembership &&
-        (stampedMembership.role === "committee_head" ||
-          stampedMembership.role === "Head")
-      ) {
+      if (stampedMembership && isOverallEligibleRole(stampedMembership.role)) {
+        overallScopedPointsByPerson.set(
+          personId,
+          (overallScopedPointsByPerson.get(personId) ?? 0) + entry.points
+        );
+      }
+      if (stampedMembership && isHeadRole(stampedMembership.role)) {
         headScopedPointsByPerson.set(
           personId,
           (headScopedPointsByPerson.get(personId) ?? 0) + entry.points
@@ -173,17 +199,19 @@ export function computeMonthlyBoards(input: {
     }
   }
 
-  // 1. Build Global Board (one row per distinct person)
+  // 1. Build Global/Overall Board (one row per distinct person holding a member or hr_member hat)
   const prevOverall = buildPreviousRankLookup(previousSnapshot?.overall);
   const overallRaw: Array<Omit<BoardStandingEntry, "rank" | "previousRank">> =
     [];
 
-  for (const [personId, hats] of membershipsByPerson.entries()) {
+  for (const [personId, hats] of overallHatsByPerson.entries()) {
     const primaryHat = [...hats].sort(
       (a, b) =>
         (BOARD_ROLE_PRIORITY[a.role] ?? 99) -
         (BOARD_ROLE_PRIORITY[b.role] ?? 99)
     )[0];
+    const overallScopedPts = overallScopedPointsByPerson.get(personId) ?? 0;
+    const openPts = openTotalByPerson.get(personId) ?? 0;
 
     overallRaw.push({
       memberId: primaryHat.id,
@@ -192,7 +220,7 @@ export function computeMonthlyBoards(input: {
       committeeSlug: primaryHat.committeeSlug ?? "unassigned",
       committeeName: primaryHat.committeeName ?? "Unassigned",
       role: primaryHat.role,
-      monthlyScore: globalTotalByPerson.get(personId) ?? 0,
+      monthlyScore: overallScopedPts + openPts,
     });
   }
 
@@ -279,7 +307,7 @@ export function computeMonthlyBoards(input: {
   // 3. Build Heads-Only Board (committee_head memberships only: head-stamped points + open points once per person)
   const headHatByPerson = new Map<string, ScoringMembershipRef>();
   for (const m of eligibleMembers) {
-    if (m.role !== "committee_head" && m.role !== "Head") continue;
+    if (!isHeadRole(m.role)) continue;
     if (!headHatByPerson.has(m.personId)) {
       headHatByPerson.set(m.personId, m);
     }

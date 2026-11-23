@@ -86,11 +86,12 @@ describe("scoring.service (Spec §4 board eligibility & counting discipline)", (
       ledgerEntries: ledger,
     });
 
-    // Global board: Salma appears ONCE with 110 pts (100 PR + 10 AI), Omar 50, Ziad 30
-    expect(boards.overallEntries.map((e) => [e.memberName, e.monthlyScore])).toEqual([
-      ["Salma El-Sayed", 110],
-      ["Omar Tarek", 50],
-      ["Ziad Hany", 30],
+    // Global (overall) board filters out committee_head hats & points, keeping member/hr_member only:
+    // Omar (50, AI member), Ziad (30, PR member), Salma (10, AI member only — 100 PR head pts excluded!)
+    expect(boards.overallEntries.map((e) => [e.memberName, e.role, e.monthlyScore])).toEqual([
+      ["Omar Tarek", "member", 50],
+      ["Ziad Hany", "member", 30],
+      ["Salma El-Sayed", "member", 10],
     ]);
 
     // PR board: Salma tops PR with 100 pts (NOT 110!)
@@ -363,14 +364,14 @@ describe("scoring.service (Spec §4 board eligibility & counting discipline)", (
       },
     });
 
-    // Global: Ahmed (200), Omar (60+90+15=165), Salma (85), Sara (0)
+    // Overall board includes member & hr_member only (excludes pure committee_head, hr_admin, director, master_admin, attendee)
+    // and excludes head-hat points from multi-hat members:
+    // Ahmed (200 member), Omar (90 AI member + 15 open = 105, PR head 60 excluded)
     expect(
-      boards.overallEntries.map((e) => [e.memberName, e.monthlyScore])
+      boards.overallEntries.map((e) => [e.memberName, e.role, e.monthlyScore])
     ).toEqual([
-      ["Ahmed Member", 200],
-      ["Omar Multi-Role", 165],
-      ["Salma AI Head", 85],
-      ["Sara HR Admin", 0],
+      ["Ahmed Member", "member", 200],
+      ["Omar Multi-Role", "member", 105],
     ]);
 
     // Heads-only board: Salma (85, moved from #2 -> #1) beats Omar (60 head + 15 open = 75, moved from #1 -> #2)
@@ -385,5 +386,101 @@ describe("scoring.service (Spec §4 board eligibility & counting discipline)", (
       [1, 2, "Salma AI Head", 85],
       [2, 1, "Omar Multi-Role", 75],
     ]);
+  });
+
+  it("keeps member and hr_member only on overallEntries while excluding committee_head, hr_admin, director, master_admin, and attendee", () => {
+    const members: ScoringMembershipRef[] = [
+      {
+        id: "mem-master",
+        personId: "person-master",
+        fullName: "Master Admin",
+        role: "master_admin",
+        committeeId: null,
+        committeeSlug: null,
+        committeeName: null,
+      },
+      {
+        id: "mem-director",
+        personId: "person-director",
+        fullName: "Khaled Director",
+        role: "director",
+        committeeId: null,
+        committeeSlug: null,
+        committeeName: null,
+      },
+      {
+        id: "mem-hr-admin",
+        personId: "person-hr-admin",
+        fullName: "Sara HR Admin",
+        role: "hr_admin",
+        committeeId: "comm-hr",
+        committeeSlug: "human-resources",
+        committeeName: "Human Resources",
+      },
+      {
+        id: "mem-head",
+        personId: "person-head",
+        fullName: "Salma Head",
+        role: "committee_head",
+        committeeId: "comm-ai",
+        committeeSlug: "ai-ml",
+        committeeName: "AI & ML",
+      },
+      {
+        id: "mem-hr-member",
+        personId: "person-hr-member",
+        fullName: "Laila HR Member",
+        role: "hr_member",
+        committeeId: "comm-hr",
+        committeeSlug: "human-resources",
+        committeeName: "Human Resources",
+      },
+      {
+        id: "mem-regular",
+        personId: "person-regular",
+        fullName: "Omar Member",
+        role: "member",
+        committeeId: "comm-ai",
+        committeeSlug: "ai-ml",
+        committeeName: "AI & ML",
+      },
+      {
+        id: "mem-attendee",
+        personId: "person-attendee",
+        fullName: "Mariam Attendee",
+        role: "attendee",
+        committeeId: null,
+        committeeSlug: null,
+        committeeName: null,
+      },
+    ];
+
+    const ledger: ScoringLedgerRow[] = [
+      { membershipId: "mem-master", personId: "person-master", postingScope: "open", points: 100 },
+      { membershipId: "mem-director", personId: "person-director", postingScope: "open", points: 95 },
+      { membershipId: "mem-hr-admin", personId: "person-hr-admin", postingScope: "committee", committeeId: "comm-hr", points: 90 },
+      { membershipId: "mem-head", personId: "person-head", postingScope: "committee", committeeId: "comm-ai", points: 85 },
+      { membershipId: "mem-hr-member", personId: "person-hr-member", postingScope: "committee", committeeId: "comm-hr", points: 70 },
+      { membershipId: "mem-regular", personId: "person-regular", postingScope: "committee", committeeId: "comm-ai", points: 60 },
+      { membershipId: "mem-attendee", personId: "person-attendee", postingScope: "open", points: 80 },
+    ];
+
+    const boards = computeMonthlyBoards({
+      month: "2026-11",
+      members,
+      ledgerEntries: ledger,
+    });
+
+    expect(
+      boards.overallEntries.map((e) => [e.rank, e.memberName, e.role, e.monthlyScore])
+    ).toEqual([
+      [1, "Laila HR Member", "hr_member", 70],
+      [2, "Omar Member", "member", 60],
+    ]);
+
+    // Heads board still includes Salma Head
+    expect(
+      boards.headsEntries.map((e) => [e.rank, e.memberName, e.monthlyScore])
+    ).toEqual([[1, "Salma Head", 85]]);
   });
 });
