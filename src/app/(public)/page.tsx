@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import heroImage from "../../../public/hero.png";
+import heroImage from "../../../public/hero.webp";
 import { ArrowRight, Check, KeyRound, Trophy } from "lucide-react";
 import { CommitteeLeadersShowcase } from "@/components/data-display/committee-leaders-showcase";
 import { buttonVariants } from "@/components/ui/button";

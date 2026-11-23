@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { EmbsMark } from "@/components/brand/embs-mark";
 import { LoginForm } from "@/components/auth/login-form";
 import { sanitizeNextPath } from "@/lib/checkin-url";
+import heroImage from "../../../public/hero.webp";
 
 export const metadata: Metadata = {
   title: "Login",
@@ -37,8 +39,18 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </div>
       </header>
 
-      <main className="flex flex-1 items-center justify-center p-4 sm:p-8">
-        <LoginForm nextPath={nextPath} />
+      <main className="relative flex flex-1 items-center justify-center overflow-hidden bg-[#002855] p-4 sm:p-8">
+        <Image
+          src={heroImage}
+          alt="IEEE EMBS Cairo University Student Branch members"
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-center"
+        />
+        <div className="relative z-10 flex w-full justify-center">
+          <LoginForm nextPath={nextPath} />
+        </div>
       </main>
     </div>
   );
