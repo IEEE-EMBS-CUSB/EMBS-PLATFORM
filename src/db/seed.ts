@@ -1,15 +1,14 @@
 import * as dotenv from "dotenv";
-
-dotenv.config({ path: ".env.local" });
-dotenv.config();
-
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "./index";
 import * as schema from "./schema";
+import { assertSafeSeedDatabaseUrl } from "./db-safety";
 import { normalizeEmail } from "@/lib/auth-helpers";
 import { hashPassword } from "@/lib/password";
 
 export async function seedDatabase() {
-  console.log("🌱 Starting IEEE EMBS CUSB Database Seed...");
+  assertSafeSeedDatabaseUrl(process.env);
+  console.log("Starting IEEE EMBS CUSB demo database seed...");
 
   // 1. Seasons: Active Season + Historical Archived Season
   const [activeSeason] = await db
@@ -268,11 +267,16 @@ export async function seedDatabase() {
     )
     .onConflictDoNothing();
 
-  // Ensure all seeded persons have the initial password populated
-  await db.update(schema.persons).set({
-    passwordHash: defaultInitialPasswordHash,
-    mustChangePassword: true,
-  });
+  // Ensure ONLY the seeded demo accounts have the initial demo password populated
+  // (never run an unscoped UPDATE across all rows in `persons`).
+  const seededEmails = rosterData.map((m) => m.email);
+  await db
+    .update(schema.persons)
+    .set({
+      passwordHash: defaultInitialPasswordHash,
+      mustChangePassword: true,
+    })
+    .where(inArray(schema.persons.email, seededEmails));
 
   const allPersons = await db.select().from(schema.persons);
   const personByEmail = new Map(allPersons.map((p) => [p.email, p]));
@@ -332,57 +336,61 @@ export async function seedDatabase() {
       .onConflictDoNothing();
   }
 
-  // 6. Seed Branch Sessions
+  // 6. Seed Branch Sessions (idempotent check by season + title)
   let insertedSessions = await db
-    .insert(schema.branchSessions)
-    .values([
-      {
-        seasonId,
-        committeeId: committeeMap.get("ai-and-machine-learning") ?? null,
-        title: "Biomedical AI & PyTorch Workshop",
-        startsAt: new Date("2026-10-15T18:00:00Z"),
-        checkinCode: "847291",
-        checkinOpen: false,
-        punctualityCutoffMinutes: 15,
-        basePoints: 15,
-        punctualityBonus: 5,
-      },
-      {
-        seasonId,
-        committeeId: null, // Branch-wide
-        title: "All-Hands Branch General Meeting",
-        startsAt: new Date("2026-10-25T17:00:00Z"),
-        checkinCode: "193824",
-        checkinOpen: false,
-        punctualityCutoffMinutes: 15,
-        basePoints: 10,
-        punctualityBonus: 5,
-      },
-    ])
-    .onConflictDoNothing()
-    .returning();
+    .select()
+    .from(schema.branchSessions)
+    .where(eq(schema.branchSessions.seasonId, seasonId));
 
   if (insertedSessions.length === 0) {
-    insertedSessions = await db.select().from(schema.branchSessions);
+    insertedSessions = await db
+      .insert(schema.branchSessions)
+      .values([
+        {
+          seasonId,
+          committeeId: committeeMap.get("ai-and-machine-learning") ?? null,
+          title: "Biomedical AI & PyTorch Workshop",
+          startsAt: new Date("2026-10-15T18:00:00Z"),
+          checkinCode: "847291",
+          checkinOpen: false,
+          punctualityCutoffMinutes: 15,
+          basePoints: 15,
+          punctualityBonus: 5,
+        },
+        {
+          seasonId,
+          committeeId: null, // Branch-wide
+          title: "All-Hands Branch General Meeting",
+          startsAt: new Date("2026-10-25T17:00:00Z"),
+          checkinCode: "193824",
+          checkinOpen: false,
+          punctualityCutoffMinutes: 15,
+          basePoints: 10,
+          punctualityBonus: 5,
+        },
+      ])
+      .returning();
   }
 
-  // 7. Seed Tasks
+  // 7. Seed Tasks (idempotent check by season)
   let insertedTasks = await db
-    .insert(schema.tasks)
-    .values([
-      {
-        seasonId,
-        committeeId: committeeMap.get("ai-and-machine-learning") ?? null,
-        title: "ECG Classification Model Implementation",
-        dueAt: new Date("2026-10-28T23:59:59Z"),
-        maxPoints: 40,
-      },
-    ])
-    .onConflictDoNothing()
-    .returning();
+    .select()
+    .from(schema.tasks)
+    .where(eq(schema.tasks.seasonId, seasonId));
 
   if (insertedTasks.length === 0) {
-    insertedTasks = await db.select().from(schema.tasks);
+    insertedTasks = await db
+      .insert(schema.tasks)
+      .values([
+        {
+          seasonId,
+          committeeId: committeeMap.get("ai-and-machine-learning") ?? null,
+          title: "ECG Classification Model Implementation",
+          dueAt: new Date("2026-10-28T23:59:59Z"),
+          maxPoints: 40,
+        },
+      ])
+      .returning();
   }
 
   // 8. Seed Submissions & Score Ledger (if memberships were inserted)
@@ -444,29 +452,54 @@ export async function seedDatabase() {
         .onConflictDoNothing();
     }
 
-    // Manual Point Override
-    await db
-      .insert(schema.scoreLedger)
-      .values({
+    // Manual Point Override (idempotent check)
+    const manualReason =
+      "Special recognition for presenting at CUSB Annual Biomedical Symposium";
+    const existingManual = await db
+      .select({ id: schema.scoreLedger.id })
+      .from(schema.scoreLedger)
+      .where(
+        and(
+          eq(schema.scoreLedger.seasonId, seasonId),
+          eq(schema.scoreLedger.membershipId, salmaMember.id),
+          eq(schema.scoreLedger.sourceType, "manual_override"),
+          eq(schema.scoreLedger.reason, manualReason)
+        )
+      )
+      .limit(1);
+
+    if (existingManual.length === 0) {
+      await db.insert(schema.scoreLedger).values({
         seasonId,
         membershipId: salmaMember.id,
         month: "2026-10",
         sourceType: "manual_override",
         points: 5,
-        reason: "Special recognition for presenting at CUSB Annual Biomedical Symposium",
+        reason: manualReason,
         createdBy: hrAdminMember?.id ?? null,
-      })
-      .onConflictDoNothing();
+      });
+    }
 
-    // 9. Seed HR Feedback (Public Recognition vs. Private Warning)
-    const feedbackAuthorId = hrAdminMember?.id ?? salmaMember.id;
-    await db
-      .insert(schema.hrFeedback)
-      .values([
+    // 9. Seed HR Feedback (Public Recognition vs. Private Note — idempotent)
+    const existingFeedback = await db
+      .select({ id: schema.hrFeedback.id })
+      .from(schema.hrFeedback)
+      .where(
+        and(
+          eq(schema.hrFeedback.seasonId, seasonId),
+          eq(schema.hrFeedback.membershipId, salmaMember.id)
+        )
+      )
+      .limit(1);
+
+    if (existingFeedback.length === 0) {
+      const feedbackAuthorId = hrAdminMember?.id ?? salmaMember.id;
+      await db.insert(schema.hrFeedback).values([
         {
           seasonId,
           membershipId: salmaMember.id,
-          content: "Exceptional leadership delivering the biomedical AI hands-on workshop to 40+ members.",
+          content:
+            "Exceptional leadership delivering the biomedical AI hands-on workshop to 40+ members.",
           isPublished: true,
           isWarning: false,
           createdBy: feedbackAuthorId,
@@ -474,76 +507,29 @@ export async function seedDatabase() {
         {
           seasonId,
           membershipId: salmaMember.id,
-          content: "Internal HR note: Coordination sync was rescheduled once without prior notice.",
+          content:
+            "Internal HR note: Coordination sync was rescheduled once without prior notice.",
           isPublished: false,
           isWarning: true,
           createdBy: feedbackAuthorId,
         },
-      ])
-      .onConflictDoNothing();
+      ]);
+    }
   }
 
-  if (salmaMember) {
-    await db
-      .insert(schema.memberActivities)
-      .values([
-        {
-          seasonId,
-          membershipId: salmaMember.id,
-          month: "2026-10",
-          date: "2026-10-18",
-          category: "delivered_session",
-          title: "Delivered PyTorch Workshop",
-          role: "Lead Speaker",
-          summary: "Delivered a 2-hour technical hands-on workshop covering attention heads for 45 members.",
-          pointsAwarded: 5,
-        },
-        {
-          seasonId,
-          membershipId: salmaMember.id,
-          month: "2026-10",
-          date: "2026-10-15",
-          category: "project",
-          title: "Skin Lesion Classifier Deployment",
-          role: "ML Architect",
-          summary: "Published Dockerized inference API with ONNX runtime.",
-          pointsAwarded: 15,
-        },
-      ])
-      .onConflictDoNothing();
-
-    await db
-      .insert(schema.seasonalEvaluations)
-      .values({
-        seasonId,
-        membershipId: salmaMember.id,
-        seasonLabel: "Fall 2026",
-        publishedAt: new Date("2026-10-25T12:00:00Z"),
-        status: "complete",
-        evaluatorRole: "Vice Chair",
-        finalScore: 96,
-        outOf: 100,
-        bonusPoints: 4,
-        grade: "Outstanding",
-        criteria: [
-          { id: "c1", label: "Technical Competence & Execution", earned: 25, max: 25, ratingOutOfFive: 5 },
-          { id: "c2", label: "Committee Leadership & Mentorship", earned: 24, max: 25, ratingOutOfFive: 5 },
-          { id: "c3", label: "Session Delivery & Knowledge Sharing", earned: 24, max: 25, ratingOutOfFive: 5 },
-          { id: "c4", label: "Chapter Initiative & Cross-Team Support", earned: 23, max: 25, ratingOutOfFive: 5 },
-        ],
-      })
-      .onConflictDoNothing();
-  }
-
-  console.log("✅ Seed completed successfully with snapshots, sessions, tasks, ledger, feedback, activities, and evaluations.");
+  console.log(
+    "Demo seed completed successfully with snapshots, sessions, tasks, ledger, and feedback."
+  );
 }
 
 // Allow direct execution via tsx/node if executed as main
 if (process.argv[1]?.endsWith("seed.ts")) {
+  dotenv.config({ path: ".env.local" });
+  dotenv.config();
   seedDatabase()
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error("❌ Seed failed:", err);
+      console.error("Seed failed:", err);
       process.exit(1);
     });
 }

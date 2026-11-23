@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { db, withTransaction } from "@/db";
 import * as schema from "@/db/schema";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
@@ -25,6 +25,7 @@ import {
   assertMonthNotPublished,
   formatMonthInCairo,
   getDirectorTrackCommitteeIds,
+  isSamePersonOrMembership,
   isValidDateString,
   isValidHttpUrl,
   resolveActiveSeason,
@@ -130,6 +131,7 @@ export function validateTaskGroupPermission(
 export interface TaskActor {
   profile: {
     id: string;
+    personId?: string | null;
     role: MembershipRole;
     committeeId: string | null;
     trackedCommitteeId?: string | null;
@@ -137,6 +139,20 @@ export interface TaskActor {
     email?: string;
     fullName?: string;
   };
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function resolveActorPersonId(actor: TaskActor): Promise<string | null> {
+  if (actor.profile.personId) return actor.profile.personId;
+  if (!actor.profile.id || !UUID_PATTERN.test(actor.profile.id)) return null;
+  const [row] = await db
+    .select({ personId: schema.rosterMemberships.personId })
+    .from(schema.rosterMemberships)
+    .where(eq(schema.rosterMemberships.id, actor.profile.id))
+    .limit(1);
+  return row?.personId ?? null;
 }
 
 const BROADCAST_ROLE_PRIORITY: Record<MembershipRole, number> = {
@@ -615,29 +631,32 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
       }
     }
 
-    const [task] = await db
-      .insert(schema.tasks)
-      .values({
-        seasonId,
-        committeeId: taskCommitteeId,
-        title: trimmedTitle,
-        description: input.description?.trim() || null,
-        dueAt: new Date(input.dueAt),
-        maxPoints,
-        workType,
-        completionMode,
-        targetType: input.targetType ?? null,
-        targetGroup: input.targetGroup ?? null,
-        createdBy: resolvedCreatedBy,
-      })
-      .returning();
+    const task = await withTransaction(async (tx) => {
+      const [insertedTask] = await tx
+        .insert(schema.tasks)
+        .values({
+          seasonId,
+          committeeId: taskCommitteeId,
+          title: trimmedTitle,
+          description: input.description?.trim() || null,
+          dueAt: new Date(input.dueAt),
+          maxPoints,
+          workType,
+          completionMode,
+          targetType: input.targetType ?? null,
+          targetGroup: input.targetGroup ?? null,
+          createdBy: resolvedCreatedBy,
+        })
+        .returning();
 
-    const submissions = targetMembershipIds.map((mId) => ({
-      taskId: task.id,
-      membershipId: mId,
-    }));
+      const submissions = targetMembershipIds.map((mId) => ({
+        taskId: insertedTask.id,
+        membershipId: mId,
+      }));
 
-    await db.insert(schema.taskSubmissions).values(submissions);
+      await tx.insert(schema.taskSubmissions).values(submissions);
+      return insertedTask;
+    });
 
     return {
       ok: true,
@@ -695,19 +714,25 @@ export async function gradeTaskSubmissionAsActor(
     const seasonRes = await resolveActiveSeason(task.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
 
-    if (submission.membershipId === actor.profile.id) {
-      return {
-        ok: false,
-        error: "You cannot grade your own assignment submission.",
-      };
-    }
-
     const [member] = await db
       .select()
       .from(schema.rosterMemberships)
       .where(eq(schema.rosterMemberships.id, submission.membershipId))
       .limit(1);
     if (!member) return { ok: false, error: "Assignee record not found." };
+
+    const actorPersonId = await resolveActorPersonId(actor);
+    if (
+      isSamePersonOrMembership(
+        { id: actor.profile.id, personId: actorPersonId },
+        member
+      )
+    ) {
+      return {
+        ok: false,
+        error: "You cannot grade your own assignment submission.",
+      };
+    }
 
     const hrCommitteeId =
       (!task.committeeId && !member.committeeId && member.role === "hr_admin") ||
@@ -774,36 +799,38 @@ export async function gradeTaskSubmissionAsActor(
       grading: seasonSettings.grading,
     });
 
-    await db
-      .update(schema.taskSubmissions)
-      .set({
-        effortScore: input.effortScore,
-        qualityScore: input.qualityScore,
-        timelinessScore: input.timelinessScore,
-        totalPoints,
-        notes: input.notes?.trim() || null,
-        gradedBy: actor.profile.id,
-        gradedAt: submission.gradedAt ?? new Date(),
-      })
-      .where(eq(schema.taskSubmissions.id, input.submissionId));
+    await withTransaction(async (tx) => {
+      await tx
+        .update(schema.taskSubmissions)
+        .set({
+          effortScore: input.effortScore,
+          qualityScore: input.qualityScore,
+          timelinessScore: input.timelinessScore,
+          totalPoints,
+          notes: input.notes?.trim() || null,
+          gradedBy: actor.profile.id,
+          gradedAt: submission.gradedAt ?? new Date(),
+        })
+        .where(eq(schema.taskSubmissions.id, input.submissionId));
 
-    if (member.role !== "attendee") {
-      const workLabel = task.workType === "task" ? "Task" : "Assignment";
-      const sourceType = resolveLedgerSourceTypeForWorkItem(task.workType);
-      const scope = resolveLedgerPostingScopeForWorkItem(task.committeeId);
-      await upsertScoreLedgerEntry(db, {
-        seasonId: task.seasonId,
-        membershipId: submission.membershipId,
-        month: monthKey,
-        sourceType,
-        sourceId: submission.id,
-        postingScope: scope.postingScope,
-        committeeId: scope.committeeId,
-        points: totalPoints,
-        reason: `${workLabel}: ${task.title}`,
-        createdBy: actor.profile.id,
-      });
-    }
+      if (member.role !== "attendee") {
+        const workLabel = task.workType === "task" ? "Task" : "Assignment";
+        const sourceType = resolveLedgerSourceTypeForWorkItem(task.workType);
+        const scope = resolveLedgerPostingScopeForWorkItem(task.committeeId);
+        await upsertScoreLedgerEntry(tx, {
+          seasonId: task.seasonId,
+          membershipId: submission.membershipId,
+          month: monthKey,
+          sourceType,
+          sourceId: submission.id,
+          postingScope: scope.postingScope,
+          committeeId: scope.committeeId,
+          points: totalPoints,
+          reason: `${workLabel}: ${task.title}`,
+          createdBy: actor.profile.id,
+        });
+      }
+    });
 
     return { ok: true, totalPoints };
   } catch (err: unknown) {
@@ -844,22 +871,26 @@ export async function toggleTaskCompletionAsActor(
     const seasonRes = await resolveActiveSeason(task.seasonId);
     if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
 
-    if (
-      submission.membershipId === actor.profile.id &&
-      task.completionMode === "hr_only"
-    ) {
-      return {
-        ok: false,
-        error: "You cannot verify your own HR-only task.",
-      };
-    }
-
     const [member] = await db
       .select()
       .from(schema.rosterMemberships)
       .where(eq(schema.rosterMemberships.id, submission.membershipId))
       .limit(1);
     if (!member) return { ok: false, error: "Assignee record not found." };
+
+    const actorPersonId = await resolveActorPersonId(actor);
+    if (
+      task.completionMode === "hr_only" &&
+      isSamePersonOrMembership(
+        { id: actor.profile.id, personId: actorPersonId },
+        member
+      )
+    ) {
+      return {
+        ok: false,
+        error: "You cannot verify your own HR-only task.",
+      };
+    }
 
     const hrCommitteeId =
       !task.committeeId && !member.committeeId && member.role === "hr_admin"
@@ -915,33 +946,35 @@ export async function toggleTaskCompletionAsActor(
     const now = new Date();
     const totalPoints = input.completed ? task.maxPoints : 0;
 
-    await db
-      .update(schema.taskSubmissions)
-      .set({
-        submittedAt: input.completed ? submission.submittedAt ?? now : null,
-        gradedAt: input.completed ? submission.gradedAt ?? now : null,
-        gradedBy: input.completed ? actor.profile.id : null,
-        totalPoints: input.completed ? task.maxPoints : null,
-      })
-      .where(eq(schema.taskSubmissions.id, submission.id));
+    await withTransaction(async (tx) => {
+      await tx
+        .update(schema.taskSubmissions)
+        .set({
+          submittedAt: input.completed ? submission.submittedAt ?? now : null,
+          gradedAt: input.completed ? submission.gradedAt ?? now : null,
+          gradedBy: input.completed ? actor.profile.id : null,
+          totalPoints: input.completed ? task.maxPoints : null,
+        })
+        .where(eq(schema.taskSubmissions.id, submission.id));
 
-    if (member.role !== "attendee") {
-      const scope = resolveLedgerPostingScopeForWorkItem(task.committeeId);
-      await upsertScoreLedgerEntry(db, {
-        seasonId: task.seasonId,
-        membershipId: submission.membershipId,
-        month: monthKey,
-        sourceType: "task",
-        sourceId: submission.id,
-        postingScope: scope.postingScope,
-        committeeId: scope.committeeId,
-        points: totalPoints,
-        reason: input.completed
-          ? `Task: ${task.title}`
-          : `Task unchecked: ${task.title}`,
-        createdBy: actor.profile.id,
-      });
-    }
+      if (member.role !== "attendee") {
+        const scope = resolveLedgerPostingScopeForWorkItem(task.committeeId);
+        await upsertScoreLedgerEntry(tx, {
+          seasonId: task.seasonId,
+          membershipId: submission.membershipId,
+          month: monthKey,
+          sourceType: "task",
+          sourceId: submission.id,
+          postingScope: scope.postingScope,
+          committeeId: scope.committeeId,
+          points: totalPoints,
+          reason: input.completed
+            ? `Task: ${task.title}`
+            : `Task unchecked: ${task.title}`,
+          createdBy: actor.profile.id,
+        });
+      }
+    });
 
     return { ok: true, completed: input.completed, totalPoints };
   } catch (err: unknown) {
@@ -1301,46 +1334,48 @@ export async function toggleMemberTaskCompletion(
     const totalPoints = input.completed ? task.maxPoints : 0;
     let submissionId: string | null = existing?.id ?? null;
 
-    if (existing) {
-      await db
-        .update(schema.taskSubmissions)
-        .set({
-          submittedAt: input.completed ? existing.submittedAt ?? now : null,
-          gradedAt: input.completed ? existing.gradedAt ?? now : null,
-          totalPoints: input.completed ? task.maxPoints : null,
-        })
-        .where(eq(schema.taskSubmissions.id, existing.id));
-    } else if (input.completed) {
-      const [inserted] = await db
-        .insert(schema.taskSubmissions)
-        .values({
-          taskId: input.taskId,
-          membershipId: targetMembershipId,
-          submittedAt: now,
-          gradedAt: now,
-          totalPoints: task.maxPoints,
-        })
-        .returning();
-      submissionId = inserted.id;
-    }
+    await withTransaction(async (tx) => {
+      if (existing) {
+        await tx
+          .update(schema.taskSubmissions)
+          .set({
+            submittedAt: input.completed ? existing.submittedAt ?? now : null,
+            gradedAt: input.completed ? existing.gradedAt ?? now : null,
+            totalPoints: input.completed ? task.maxPoints : null,
+          })
+          .where(eq(schema.taskSubmissions.id, existing.id));
+      } else if (input.completed) {
+        const [inserted] = await tx
+          .insert(schema.taskSubmissions)
+          .values({
+            taskId: input.taskId,
+            membershipId: targetMembershipId,
+            submittedAt: now,
+            gradedAt: now,
+            totalPoints: task.maxPoints,
+          })
+          .returning();
+        submissionId = inserted.id;
+      }
 
-    if (!isAttendee && submissionId) {
-      const scope = resolveLedgerPostingScopeForWorkItem(task.committeeId);
-      await upsertScoreLedgerEntry(db, {
-        seasonId: task.seasonId,
-        membershipId: targetMembershipId,
-        month: monthKey,
-        sourceType: "task",
-        sourceId: submissionId,
-        postingScope: scope.postingScope,
-        committeeId: scope.committeeId,
-        points: totalPoints,
-        reason: input.completed
-          ? `Task: ${task.title}`
-          : `Task unchecked: ${task.title}`,
-        createdBy: targetMembershipId,
-      });
-    }
+      if (!isAttendee && submissionId) {
+        const scope = resolveLedgerPostingScopeForWorkItem(task.committeeId);
+        await upsertScoreLedgerEntry(tx, {
+          seasonId: task.seasonId,
+          membershipId: targetMembershipId,
+          month: monthKey,
+          sourceType: "task",
+          sourceId: submissionId,
+          postingScope: scope.postingScope,
+          committeeId: scope.committeeId,
+          points: totalPoints,
+          reason: input.completed
+            ? `Task: ${task.title}`
+            : `Task unchecked: ${task.title}`,
+          createdBy: targetMembershipId,
+        });
+      }
+    });
 
     return { ok: true, completed: input.completed, totalPoints };
   } catch (err: unknown) {

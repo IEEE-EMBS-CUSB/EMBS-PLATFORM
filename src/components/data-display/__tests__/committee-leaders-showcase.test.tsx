@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommitteeLeadersShowcase } from "@/components/data-display/committee-leaders-showcase";
-import { getCommitteeOrThrow } from "@/db/seed-data";
+import { getOfficialCommitteeOrThrow as getCommitteeOrThrow } from "@/lib/committee-catalog";
 import type { CommitteeLeaderSpotlight } from "@/types";
 
 const SAMPLE_SPOTLIGHTS: CommitteeLeaderSpotlight[] = [

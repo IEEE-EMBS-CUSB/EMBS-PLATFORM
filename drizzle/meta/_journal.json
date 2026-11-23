@@ -99,6 +99,13 @@
       "when": 1795382400000,
       "tag": "0013_release_polish_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795468800000,
+      "tag": "0014_auth_rate_limits",
+      "breakpoints": true
     }
   ]
 }

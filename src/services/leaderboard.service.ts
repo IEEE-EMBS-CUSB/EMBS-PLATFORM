@@ -1,4 +1,7 @@
-import * as store from "@/db/store";
+import {
+  LEADERBOARD_TOP_LIMIT as CATALOG_TOP_LIMIT,
+  OFFICIAL_CHAPTER_COMMITTEES,
+} from "@/lib/committee-catalog";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
@@ -17,7 +20,7 @@ import type {
   PublishedMonthOption,
 } from "@/types";
 
-export const LEADERBOARD_TOP_LIMIT = store.LEADERBOARD_TOP_LIMIT;
+export const LEADERBOARD_TOP_LIMIT = CATALOG_TOP_LIMIT;
 
 interface SnapshotEntryShape {
   rank?: number;
@@ -140,11 +143,12 @@ export async function getCommittees(): Promise<Committee[]> {
       );
 
     if (rows.length > 0) {
-      const storeCommittees = store.getCommittees();
-      const storeMap = new Map(storeCommittees.map((c) => [c.slug, c]));
+      const catalogMap = new Map(
+        OFFICIAL_CHAPTER_COMMITTEES.map((c) => [c.slug, c])
+      );
 
       return rows.map((c) => {
-        const existing = storeMap.get(c.slug);
+        const existing = catalogMap.get(c.slug);
         return {
           id: c.id,
           slug: c.slug,

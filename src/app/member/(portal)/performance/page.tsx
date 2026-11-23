@@ -46,8 +46,8 @@ async function MemberPerformanceContent({
             Performance and monthly scores
           </h1>
           <p className="text-sm text-muted-foreground">
-            Activity-based monthly scores across attendance, tasks, projects,
-            hackathons, delivered sessions, and bonuses.
+            Activity-based monthly scores across attendance, tasks, assignments,
+            and HR adjustments.
           </p>
         </div>
         <EmptyState

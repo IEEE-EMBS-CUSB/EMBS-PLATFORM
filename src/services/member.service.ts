@@ -8,7 +8,6 @@ import {
   normalizeSeasonSettings,
 } from "@/lib/season-settings";
 import type {
-  MemberActivity,
   MemberAttendanceRecord,
   MemberDashboardData,
   MemberEngagementMetrics,
@@ -19,7 +18,6 @@ import type {
   MonthlyScoreRecord,
   PublishedFeedback,
   ScoreComponent,
-  SeasonalEvaluation,
 } from "@/types";
 
 function formatMonthLabel(monthKey: string): string {
@@ -613,70 +611,6 @@ export async function getMemberTasks(memberId: string): Promise<MemberTask[]> {
   return [];
 }
 
-export async function getMemberActivities(
-  memberId: string
-): Promise<MemberActivity[]> {
-  try {
-    const scope = await resolvePersonSeasonScope(memberId);
-    const membershipIds = scope?.membershipIds ?? [memberId];
-
-    const rows = await db
-      .select()
-      .from(schema.memberActivities)
-      .where(inArray(schema.memberActivities.membershipId, membershipIds))
-      .orderBy(desc(schema.memberActivities.date));
-
-    if (rows.length > 0) {
-      return rows.map((r) => ({
-        id: r.id,
-        month: r.month as MonthKey,
-        date: r.date,
-        category: r.category as MemberActivity["category"],
-        title: r.title,
-        role: r.role,
-        summary: r.summary,
-        pointsAwarded: r.pointsAwarded,
-      }));
-    }
-  } catch {
-    // Fall through
-  }
-  return [];
-}
-
-export async function getMemberEvaluations(
-  memberId: string
-): Promise<SeasonalEvaluation[]> {
-  try {
-    const scope = await resolvePersonSeasonScope(memberId);
-    const membershipIds = scope?.membershipIds ?? [memberId];
-
-    const rows = await db
-      .select()
-      .from(schema.seasonalEvaluations)
-      .where(inArray(schema.seasonalEvaluations.membershipId, membershipIds))
-      .orderBy(desc(schema.seasonalEvaluations.publishedAt));
-
-    if (rows.length > 0) {
-      return rows.map((r) => ({
-        id: r.id,
-        seasonLabel: r.seasonLabel,
-        publishedAt: r.publishedAt.toISOString(),
-        status: r.status as "complete" | "pending",
-        evaluatorRole: r.evaluatorRole,
-        finalScore: r.finalScore,
-        outOf: r.outOf,
-        bonusPoints: r.bonusPoints,
-        grade: r.grade as SeasonalEvaluation["grade"],
-        criteria: (r.criteria as SeasonalEvaluation["criteria"]) ?? [],
-      }));
-    }
-  } catch {
-    // Fall through
-  }
-  return [];
-}
-
 export async function getMemberFeedback(
   memberId: string
 ): Promise<PublishedFeedback[]> {
@@ -758,14 +692,12 @@ export async function getMemberDashboard(
   const profile = await getMemberProfile(memberId);
   if (!profile) return null;
 
-  const [monthlyHistory, activities, feedback, attendance, tasks] =
-    await Promise.all([
-      getMemberMonthlyScores(memberId),
-      getMemberActivities(memberId),
-      getMemberFeedback(memberId),
-      getMemberAttendance(memberId),
-      getMemberTasks(memberId),
-    ]);
+  const [monthlyHistory, feedback, attendance, tasks] = await Promise.all([
+    getMemberMonthlyScores(memberId),
+    getMemberFeedback(memberId),
+    getMemberAttendance(memberId),
+    getMemberTasks(memberId),
+  ]);
 
   const currentMonthScore = month
     ? monthlyHistory.find((r) => r.month === month) ?? monthlyHistory[0] ?? null
@@ -892,13 +824,6 @@ export async function getMemberDashboard(
     (c) => c.key === "bonuses"
   );
   const bonusesPoints = bonusComponent?.points ?? 0;
-  const projectAndHackathonCount = activities.filter(
-    (a) => a.category === "project" || a.category === "hackathon"
-  ).length;
-  const deliveredSessionsCount = activities.filter(
-    (a) => a.category === "delivered_session"
-  ).length;
-  const bonusesCount = activities.filter((a) => a.category === "bonus").length;
 
   return {
     profile,
@@ -906,11 +831,7 @@ export async function getMemberDashboard(
     monthlyHistory,
     attendanceSummary,
     taskSummary,
-    projectAndHackathonCount,
-    deliveredSessionsCount,
     bonusesPoints,
-    bonusesCount,
-    recentActivities: activities.slice(0, 5),
     recentFeedback: feedback.slice(0, 3),
     engagement,
   };

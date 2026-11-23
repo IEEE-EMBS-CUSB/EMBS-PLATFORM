@@ -251,7 +251,7 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
     );
 
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/cannot assign/i);
+    expect(result.error).toMatch(/only assign group items/i);
   });
 
   it("enforces Assignments vs Tasks workType rules across director, head, hr_member, hr_admin, and master_admin", async () => {

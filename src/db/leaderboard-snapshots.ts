@@ -1,5 +1,5 @@
 import type { LeaderboardEntry, LeaderboardStatus, MonthKey } from "@/types";
-import { getCommitteeOrThrow } from "./seed-data";
+import { getOfficialCommitteeOrThrow as getCommitteeOrThrow } from "@/lib/committee-catalog";
 
 export interface MockLeaderboardEntry extends LeaderboardEntry {
   previousCommitteeRank: number | null;

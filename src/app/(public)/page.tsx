@@ -89,10 +89,10 @@ async function SessionAwareRoleLink({
 }
 
 const MEMBER_HIGHLIGHTS = [
-  "Monthly score breakdown and overall / committee ranking",
-  "Meeting, workshop, and event attendance with bonus points",
-  "Tasks with effort, quality ratings, and task points",
-  "Seasonal HR evaluation and published review notes",
+  "Monthly score breakdown and committee ranking",
+  "Meeting, workshop, and event attendance with punctuality bonuses",
+  "Tasks and deliverables with effort, quality, and timeliness scoring",
+  "Published HR recognition, official warnings, and feedback notes",
 ] as const;
 
 const ATTENDEE_HIGHLIGHTS = [
@@ -125,8 +125,8 @@ export default async function HomePage() {
               IEEE EMBS CUSB Portal
             </h1>
             <p className="max-w-lg text-base leading-relaxed text-white/90 sm:text-lg">
-              Monthly committee standings, attendance, tasks, and evaluations
-              for Cairo University Student Branch.
+              Monthly committee standings, attendance, tasks, and feedback for
+              Cairo University Student Branch.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-2">

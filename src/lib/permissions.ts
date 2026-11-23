@@ -2,6 +2,7 @@ import type { MembershipRole } from "./auth-helpers";
 
 export interface UserPermissionContext {
   id: string;
+  personId?: string | null;
   email: string;
   role: MembershipRole;
   committeeId: string | null;
@@ -582,6 +583,7 @@ export function canGradeWorkSubmission(input: {
   workType: WorkItemType;
   taskCommitteeId: string | null;
   submissionMembershipId: string;
+  submissionPersonId?: string | null;
   memberRole: MembershipRole;
   memberCommitteeId: string | null;
   directorTrackCommitteeIds?: ReadonlySet<string> | null;
@@ -592,6 +594,7 @@ export function canGradeWorkSubmission(input: {
     workType,
     taskCommitteeId,
     submissionMembershipId,
+    submissionPersonId,
     memberRole,
     memberCommitteeId,
     directorTrackCommitteeIds,
@@ -599,6 +602,10 @@ export function canGradeWorkSubmission(input: {
   } = input;
 
   if (submissionMembershipId === actor.id) {
+    return false;
+  }
+
+  if (actor.personId && submissionPersonId && actor.personId === submissionPersonId) {
     return false;
   }
 

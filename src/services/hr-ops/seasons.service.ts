@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { db, withTransaction } from "@/db";
 import * as schema from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { canManageRubrics, canManageSeasons } from "@/lib/permissions";
@@ -67,34 +67,37 @@ export async function createSeasonAsActor(
   }
 
   try {
-    const [season] = await db
-      .insert(schema.seasons)
-      .values({
-        name: trimmedName,
-        status: "draft",
-        startDate,
-        endDate,
-        settingsJson: settings,
-      })
-      .returning();
+    const seasonId = await withTransaction(async (tx) => {
+      const [season] = await tx
+        .insert(schema.seasons)
+        .values({
+          name: trimmedName,
+          status: "draft",
+          startDate,
+          endDate,
+          settingsJson: settings,
+        })
+        .returning();
 
-    // Seed the 3 default editable committee tracks and guarantee core Human Resources committee exists
-    await db
-      .insert(schema.committeeTracks)
-      .values(
-        DEFAULT_COMMITTEE_TRACKS.map((t) => ({
-          seasonId: season.id,
-          name: t.name,
-          slug: t.slug,
-          description: t.description,
-          sortOrder: t.sortOrder,
-        }))
-      )
-      .onConflictDoNothing();
+      // Seed the 3 default editable committee tracks and guarantee core Human Resources committee exists
+      await tx
+        .insert(schema.committeeTracks)
+        .values(
+          DEFAULT_COMMITTEE_TRACKS.map((t) => ({
+            seasonId: season.id,
+            name: t.name,
+            slug: t.slug,
+            description: t.description,
+            sortOrder: t.sortOrder,
+          }))
+        )
+        .onConflictDoNothing();
 
-    await ensureHrCommitteeForSeason(season.id);
+      await ensureHrCommitteeForSeason(season.id, tx);
+      return season.id;
+    });
 
-    return { ok: true, seasonId: season.id };
+    return { ok: true, seasonId };
   } catch (err: unknown) {
     return {
       ok: false,
@@ -188,101 +191,105 @@ export async function cloneSeasonAsActor(
     const sourceTracks = await ensureDefaultTracksForSeason(sourceSeasonId);
     const clonedSettings = normalizeSeasonSettings(source.settingsJson);
 
-    const [newSeason] = await db
-      .insert(schema.seasons)
-      .values({
-        name: trimmedName,
-        status: "draft",
-        startDate: source.startDate,
-        endDate: source.endDate,
-        settingsJson: clonedSettings,
-      })
-      .returning();
-
-    // Clone committee tracks (preserving custom titles and sort order)
-    const trackMap = new Map<string, string>();
-    for (const t of sourceTracks) {
-      const [nt] = await db
-        .insert(schema.committeeTracks)
+    const newSeasonId = await withTransaction(async (tx) => {
+      const [newSeason] = await tx
+        .insert(schema.seasons)
         .values({
-          seasonId: newSeason.id,
-          name: t.name,
-          slug: t.slug,
-          description: t.description,
-          sortOrder: t.sortOrder,
+          name: trimmedName,
+          status: "draft",
+          startDate: source.startDate,
+          endDate: source.endDate,
+          settingsJson: clonedSettings,
         })
         .returning();
-      trackMap.set(t.id, nt.id);
-    }
 
-    const committees = await db
-      .select()
-      .from(schema.committees)
-      .where(eq(schema.committees.seasonId, sourceSeasonId));
-
-    const committeeMap = new Map<string, string>();
-    for (const c of committees) {
-      const [nc] = await db
-        .insert(schema.committees)
-        .values({
-          seasonId: newSeason.id,
-          trackId: c.trackId ? trackMap.get(c.trackId) ?? null : null,
-          name: c.name,
-          slug: c.slug,
-          category: c.category,
-          isActive: c.isActive,
-        })
-        .returning();
-      committeeMap.set(c.id, nc.id);
-    }
-
-    const rubrics = await db
-      .select()
-      .from(schema.scoringRubrics)
-      .where(eq(schema.scoringRubrics.seasonId, sourceSeasonId));
-
-    if (rubrics.length > 0) {
-      await db.insert(schema.scoringRubrics).values(
-        rubrics.map((r) => ({
-          seasonId: newSeason.id,
-          name: r.name,
-          maxPoints: r.maxPoints,
-          weight: r.weight,
-          leadersOnly: r.leadersOnly,
-          sortOrder: r.sortOrder,
-        }))
-      );
-    }
-
-    if (options?.includeRoster) {
-      const members = await db
-        .select()
-        .from(schema.rosterMemberships)
-        .where(eq(schema.rosterMemberships.seasonId, sourceSeasonId));
-
-      const activeMembers = members.filter((m) => m.isActive);
-      if (activeMembers.length > 0) {
-        await db.insert(schema.rosterMemberships).values(
-          activeMembers.map((m) => ({
+      // Clone committee tracks (preserving custom titles and sort order)
+      const trackMap = new Map<string, string>();
+      for (const t of sourceTracks) {
+        const [nt] = await tx
+          .insert(schema.committeeTracks)
+          .values({
             seasonId: newSeason.id,
-            personId: m.personId,
-            committeeId: m.committeeId
-              ? committeeMap.get(m.committeeId) ?? null
-              : null,
-            trackedCommitteeId: m.trackedCommitteeId
-              ? committeeMap.get(m.trackedCommitteeId) ?? null
-              : null,
-            managedTrackId: m.managedTrackId
-              ? trackMap.get(m.managedTrackId) ?? null
-              : null,
-            role: m.role,
-            isActive: m.isActive,
+            name: t.name,
+            slug: t.slug,
+            description: t.description,
+            sortOrder: t.sortOrder,
+          })
+          .returning();
+        trackMap.set(t.id, nt.id);
+      }
+
+      const committees = await tx
+        .select()
+        .from(schema.committees)
+        .where(eq(schema.committees.seasonId, sourceSeasonId));
+
+      const committeeMap = new Map<string, string>();
+      for (const c of committees) {
+        const [nc] = await tx
+          .insert(schema.committees)
+          .values({
+            seasonId: newSeason.id,
+            trackId: c.trackId ? trackMap.get(c.trackId) ?? null : null,
+            name: c.name,
+            slug: c.slug,
+            category: c.category,
+            isActive: c.isActive,
+          })
+          .returning();
+        committeeMap.set(c.id, nc.id);
+      }
+
+      const rubrics = await tx
+        .select()
+        .from(schema.scoringRubrics)
+        .where(eq(schema.scoringRubrics.seasonId, sourceSeasonId));
+
+      if (rubrics.length > 0) {
+        await tx.insert(schema.scoringRubrics).values(
+          rubrics.map((r) => ({
+            seasonId: newSeason.id,
+            name: r.name,
+            maxPoints: r.maxPoints,
+            weight: r.weight,
+            leadersOnly: r.leadersOnly,
+            sortOrder: r.sortOrder,
           }))
         );
       }
-    }
 
-    return { ok: true, seasonId: newSeason.id };
+      if (options?.includeRoster) {
+        const members = await tx
+          .select()
+          .from(schema.rosterMemberships)
+          .where(eq(schema.rosterMemberships.seasonId, sourceSeasonId));
+
+        const activeMembers = members.filter((m) => m.isActive);
+        if (activeMembers.length > 0) {
+          await tx.insert(schema.rosterMemberships).values(
+            activeMembers.map((m) => ({
+              seasonId: newSeason.id,
+              personId: m.personId,
+              committeeId: m.committeeId
+                ? committeeMap.get(m.committeeId) ?? null
+                : null,
+              trackedCommitteeId: m.trackedCommitteeId
+                ? committeeMap.get(m.trackedCommitteeId) ?? null
+                : null,
+              managedTrackId: m.managedTrackId
+                ? trackMap.get(m.managedTrackId) ?? null
+                : null,
+              role: m.role,
+              isActive: m.isActive,
+            }))
+          );
+        }
+      }
+
+      return newSeason.id;
+    });
+
+    return { ok: true, seasonId: newSeasonId };
   } catch (err: unknown) {
     return {
       ok: false,
@@ -322,14 +329,16 @@ export async function activateSeasonAsActor(
       return { ok: true };
     }
 
-    await db
-      .update(schema.seasons)
-      .set({ status: "archived" })
-      .where(eq(schema.seasons.status, "active"));
-    await db
-      .update(schema.seasons)
-      .set({ status: "active" })
-      .where(eq(schema.seasons.id, seasonId));
+    await withTransaction(async (tx) => {
+      await tx
+        .update(schema.seasons)
+        .set({ status: "archived" })
+        .where(eq(schema.seasons.status, "active"));
+      await tx
+        .update(schema.seasons)
+        .set({ status: "active" })
+        .where(eq(schema.seasons.id, seasonId));
+    });
 
     return { ok: true };
   } catch (err: unknown) {

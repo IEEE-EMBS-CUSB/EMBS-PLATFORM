@@ -1,15 +1,15 @@
-import { neon } from "@neondatabase/serverless";
-import { drizzle as drizzleNeon, type NeonHttpDatabase } from "drizzle-orm/neon-http";
-import { drizzle as drizzlePostgres, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { Pool } from "@neondatabase/serverless";
+import { drizzle as drizzleNeon } from "drizzle-orm/neon-serverless";
+import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import postgres from "postgres";
 import * as schema from "./schema";
 
-export type AppDatabase =
-  | NeonHttpDatabase<typeof schema>
-  | PostgresJsDatabase<typeof schema>;
+export type AppDatabase = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 let cachedDb: AppDatabase | null = null;
 let cachedPgClient: ReturnType<typeof postgres> | null = null;
+let cachedNeonPool: Pool | null = null;
 
 export function getDb(): AppDatabase {
   if (cachedDb) return cachedDb;
@@ -21,13 +21,16 @@ export function getDb(): AppDatabase {
     );
   }
 
-  // Detect whether to use Neon HTTP driver (stateless HTTPS for serverless)
-  // or Postgres.js client (TCP wire protocol for local Docker / standard Postgres)
+  // Use Neon serverless WebSocket Pool for Neon URLs so interactive SQL transactions
+  // (`db.transaction`) work atomically in serverless/edge runtimes as well as Node 22+,
+  // and Postgres.js over TCP for local Docker / standard PostgreSQL.
   const isNeon = connectionString.includes("neon.tech");
 
   if (isNeon) {
-    const sql = neon(connectionString);
-    cachedDb = drizzleNeon(sql, { schema });
+    if (!cachedNeonPool) {
+      cachedNeonPool = new Pool({ connectionString });
+    }
+    cachedDb = drizzleNeon({ client: cachedNeonPool, schema });
   } else {
     if (!cachedPgClient) {
       cachedPgClient = postgres(connectionString, { max: 10 });
@@ -36,6 +39,21 @@ export function getDb(): AppDatabase {
   }
 
   return cachedDb;
+}
+
+/**
+ * Executes `fn` inside a real PostgreSQL `BEGIN ... COMMIT` transaction
+ * (rolling back all writes on any thrown error) across both Neon WebSocket Pool
+ * and local Postgres.js clients.
+ */
+export async function withTransaction<T>(
+  fn: (tx: AppDatabase) => Promise<T>
+): Promise<T> {
+  const instance = getDb();
+  // Both NeonDatabase and PostgresJsDatabase implement identical `.transaction(tx => ...)`
+  // whose `tx` exposes the full Drizzle PgDatabase query builder API.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (instance as any).transaction(async (tx: AppDatabase) => fn(tx));
 }
 
 /**
@@ -49,4 +67,3 @@ export const db = new Proxy({} as AppDatabase, {
     return (instance as any)[prop];
   },
 });
-

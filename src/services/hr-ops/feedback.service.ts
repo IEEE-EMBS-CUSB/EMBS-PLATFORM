@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { db, withTransaction } from "@/db";
 import * as schema from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { upsertScoreLedgerEntry } from "@/db/ledger";
@@ -270,39 +270,43 @@ export async function addHrFeedbackAsActor(
       if (!monthGuard.ok) return { ok: false, error: monthGuard.error };
     }
 
-    const [row] = await db
-      .insert(schema.hrFeedback)
-      .values({
-        seasonId: seasonRes.season.id,
-        membershipId: member.id,
-        content: trimmedContent,
-        category: policy.category,
-        pointsDelta,
-        isPublished: policy.isPublished,
-        isWarning: policy.isWarning,
-        createdBy: actor.profile.id,
-      })
-      .returning();
+    const row = await withTransaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(schema.hrFeedback)
+        .values({
+          seasonId: seasonRes.season.id,
+          membershipId: member.id,
+          content: trimmedContent,
+          category: policy.category,
+          pointsDelta,
+          isPublished: policy.isPublished,
+          isWarning: policy.isWarning,
+          createdBy: actor.profile.id,
+        })
+        .returning();
 
-    if (pointsDelta !== 0) {
-      const metaLabel = FEEDBACK_CATEGORY_META[policy.category].label;
-      const excerpt =
-        trimmedContent.length > 80
-          ? `${trimmedContent.slice(0, 77)}...`
-          : trimmedContent;
-      await upsertScoreLedgerEntry(db, {
-        seasonId: seasonRes.season.id,
-        membershipId: member.id,
-        month: monthKey,
-        sourceType: "manual_override",
-        sourceId: null,
-        postingScope: member.committeeId ? "committee" : "open",
-        committeeId: member.committeeId,
-        points: pointsDelta,
-        reason: `${metaLabel}: ${excerpt}`,
-        createdBy: actor.profile.id,
-      });
-    }
+      if (pointsDelta !== 0) {
+        const metaLabel = FEEDBACK_CATEGORY_META[policy.category].label;
+        const excerpt =
+          trimmedContent.length > 80
+            ? `${trimmedContent.slice(0, 77)}...`
+            : trimmedContent;
+        await upsertScoreLedgerEntry(tx, {
+          seasonId: seasonRes.season.id,
+          membershipId: member.id,
+          month: monthKey,
+          sourceType: "manual_override",
+          sourceId: null,
+          postingScope: member.committeeId ? "committee" : "open",
+          committeeId: member.committeeId,
+          points: pointsDelta,
+          reason: `${metaLabel}: ${excerpt}`,
+          createdBy: actor.profile.id,
+        });
+      }
+
+      return inserted;
+    });
 
     return {
       ok: true,

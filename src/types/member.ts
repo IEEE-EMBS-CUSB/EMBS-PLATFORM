@@ -19,12 +19,6 @@ export type MemberRole =
   | "Chairwoman"
   | "Treasurer";
 
-export type ActivityCategory =
-  | "project"
-  | "hackathon"
-  | "delivered_session"
-  | "bonus";
-
 export type ScoreComponentKey =
   | "attendance"
   | "tasks"
@@ -103,50 +97,6 @@ export interface MemberTask {
   notes?: string;
 }
 
-export interface MemberActivity {
-  id: string;
-  month: MonthKey;
-  date: string;
-  category: ActivityCategory;
-  title: string;
-  role: string;
-  summary: string;
-  pointsAwarded?: number;
-}
-
-export type EvaluationGrade =
-  | "Outstanding"
-  | "Very Good"
-  | "Good"
-  | "Needs Improvement"
-  | "Unsatisfactory";
-
-export interface EvaluationCriterion {
-  id: string;
-  label: string;
-  /** Backend-provided earned points (e.g. 20 out of 20). */
-  earned: number | null;
-  max: number;
-  /** Optional 0–5 HR rubric rating when applicable. */
-  ratingOutOfFive?: number | null;
-}
-
-/**
- * Seasonal evaluation results are kept strictly separate from monthly activity scores.
- */
-export interface SeasonalEvaluation {
-  id: string;
-  seasonLabel: string;
-  publishedAt: string;
-  status: "complete" | "pending";
-  evaluatorRole: string;
-  finalScore: number | null;
-  outOf: number;
-  bonusPoints: number;
-  grade: EvaluationGrade | null;
-  criteria: EvaluationCriterion[];
-}
-
 export type ReviewType =
   | "recognition"
   | "performance_review"
@@ -199,11 +149,7 @@ export interface MemberDashboardData {
   monthlyHistory: MonthlyScoreRecord[];
   attendanceSummary: MemberAttendanceSummary;
   taskSummary: MemberTaskSummary;
-  projectAndHackathonCount: number;
-  deliveredSessionsCount: number;
   bonusesPoints: number;
-  bonusesCount: number;
-  recentActivities: MemberActivity[];
   recentFeedback: PublishedFeedback[];
   engagement?: MemberEngagementMetrics;
 }

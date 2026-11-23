@@ -634,6 +634,30 @@ export const seasonalEvaluations = pgTable(
 );
 
 // ============================================================================
+// 12. Auth Rate Limits (PostgreSQL-backed brute-force protection)
+// Shared across serverless instances without external Redis dependencies.
+// ============================================================================
+
+export const authRateLimits = pgTable(
+  "auth_rate_limits",
+  {
+    key: text("key").primaryKey(),
+    attempts: integer("attempts").notNull().default(0),
+    windowStartedAt: timestamp("window_started_at", {
+      withTimezone: true,
+      mode: "date",
+    })
+      .defaultNow()
+      .notNull(),
+    lockedUntil: timestamp("locked_until", {
+      withTimezone: true,
+      mode: "date",
+    }),
+  },
+  (table) => [index("auth_rate_limits_locked_until_idx").on(table.lockedUntil)]
+);
+
+// ============================================================================
 // Drizzle Relations
 // ============================================================================
 

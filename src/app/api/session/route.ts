@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isSameOriginRequest } from "@/lib/request-origin";
 import {
   buildClearLastContextCookieOptions,
   buildClearSessionCookieOptions,
@@ -64,7 +65,13 @@ export async function GET(request: NextRequest) {
   return response;
 }
 
-export async function DELETE() {
+export async function DELETE(request?: NextRequest) {
+  if (request && !isSameOriginRequest(request)) {
+    return NextResponse.json(
+      { ok: false, error: "Forbidden: cross-origin request rejected." },
+      { status: 403 }
+    );
+  }
   const response = NextResponse.json(
     { ok: true },
     {

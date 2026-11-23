@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { db, withTransaction } from "@/db";
 import * as schema from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { resetPersonPassword } from "@/services/auth-password.service";
@@ -173,48 +173,58 @@ export async function addRosterMemberAsActor(
       managedTrackId = track.id;
     }
 
-    // Reuse existing person identity & password if this email already exists across any season
-    const [existingPerson] = await db
-      .select()
-      .from(schema.persons)
-      .where(eq(schema.persons.email, normalizedEmail))
-      .limit(1);
+    const { inserted, personId, existingPersonFlag, tempPassword } =
+      await withTransaction(async (tx) => {
+        // Reuse existing person identity & password if this email already exists across any season
+        const [existingPerson] = await tx
+          .select()
+          .from(schema.persons)
+          .where(eq(schema.persons.email, normalizedEmail))
+          .limit(1);
 
-    let personId: string;
-    let tempPassword: string | undefined;
-    let existingPersonFlag = false;
+        let resolvedPersonId: string;
+        let resolvedTempPassword: string | undefined;
+        let isExistingPerson = false;
 
-    if (existingPerson) {
-      personId = existingPerson.id;
-      existingPersonFlag = true;
-    } else {
-      tempPassword = getDefaultMemberPassword();
-      const passwordHash = hashPassword(tempPassword);
-      const [createdPerson] = await db
-        .insert(schema.persons)
-        .values({
-          email: normalizedEmail,
-          fullName: trimmedName,
-          passwordHash,
-          mustChangePassword: true,
-          isActive: true,
-        })
-        .returning();
-      personId = createdPerson.id;
-    }
+        if (existingPerson) {
+          resolvedPersonId = existingPerson.id;
+          isExistingPerson = true;
+        } else {
+          resolvedTempPassword = getDefaultMemberPassword();
+          const passwordHash = hashPassword(resolvedTempPassword);
+          const [createdPerson] = await tx
+            .insert(schema.persons)
+            .values({
+              email: normalizedEmail,
+              fullName: trimmedName,
+              passwordHash,
+              mustChangePassword: true,
+              isActive: true,
+            })
+            .returning();
+          resolvedPersonId = createdPerson.id;
+        }
 
-    const [inserted] = await db
-      .insert(schema.rosterMemberships)
-      .values({
-        seasonId,
-        personId,
-        role: input.role,
-        committeeId: input.role === "director" ? null : committeeId,
-        trackedCommitteeId,
-        managedTrackId,
-        isActive: true,
-      })
-      .returning();
+        const [membership] = await tx
+          .insert(schema.rosterMemberships)
+          .values({
+            seasonId,
+            personId: resolvedPersonId,
+            role: input.role,
+            committeeId: input.role === "director" ? null : committeeId,
+            trackedCommitteeId,
+            managedTrackId,
+            isActive: true,
+          })
+          .returning();
+
+        return {
+          inserted: membership,
+          personId: resolvedPersonId,
+          existingPersonFlag: isExistingPerson,
+          tempPassword: resolvedTempPassword,
+        };
+      });
 
     return {
       ok: true,
@@ -312,65 +322,69 @@ export async function bulkImportRosterAsActor(
     }
 
     try {
-      const [existingPerson] = await db
-        .select()
-        .from(schema.persons)
-        .where(eq(schema.persons.email, rec.email))
-        .limit(1);
+      const rowImported = await withTransaction(async (tx) => {
+        const [existingPerson] = await tx
+          .select()
+          .from(schema.persons)
+          .where(eq(schema.persons.email, rec.email))
+          .limit(1);
 
-      let personId: string;
-      let personFullName: string;
-      let tempPassword: string | undefined;
+        let personId: string;
+        let personFullName: string;
+        let tempPassword: string | undefined;
 
-      if (existingPerson) {
-        personId = existingPerson.id;
-        personFullName = existingPerson.fullName;
-      } else {
-        tempPassword = getDefaultMemberPassword();
-        const [createdPerson] = await db
-          .insert(schema.persons)
+        if (existingPerson) {
+          personId = existingPerson.id;
+          personFullName = existingPerson.fullName;
+        } else {
+          tempPassword = getDefaultMemberPassword();
+          const [createdPerson] = await tx
+            .insert(schema.persons)
+            .values({
+              email: rec.email,
+              fullName: rec.fullName,
+              passwordHash: hashPassword(tempPassword),
+              mustChangePassword: true,
+              isActive: true,
+            })
+            .returning();
+          personId = createdPerson.id;
+          personFullName = createdPerson.fullName;
+        }
+
+        let membershipCommitteeId = rec.role === "director" ? null : committeeId;
+        let membershipTrackedCommitteeId: string | null = null;
+        if (rec.role === "hr_member") {
+          const hrComm = await ensureHrCommitteeForSeason(seasonId, tx);
+          membershipTrackedCommitteeId =
+            committeeId && committeeId !== hrComm.id ? committeeId : null;
+          membershipCommitteeId = hrComm.id;
+        }
+
+        const [inserted] = await tx
+          .insert(schema.rosterMemberships)
           .values({
-            email: rec.email,
-            fullName: rec.fullName,
-            passwordHash: hashPassword(tempPassword),
-            mustChangePassword: true,
+            seasonId,
+            personId,
+            role: rec.role,
+            committeeId: membershipCommitteeId,
+            trackedCommitteeId: membershipTrackedCommitteeId,
             isActive: true,
           })
           .returning();
-        personId = createdPerson.id;
-        personFullName = createdPerson.fullName;
-      }
 
-      let membershipCommitteeId = rec.role === "director" ? null : committeeId;
-      let membershipTrackedCommitteeId: string | null = null;
-      if (rec.role === "hr_member") {
-        const hrComm = await ensureHrCommitteeForSeason(seasonId);
-        membershipTrackedCommitteeId =
-          committeeId && committeeId !== hrComm.id ? committeeId : null;
-        membershipCommitteeId = hrComm.id;
-      }
-
-      const [inserted] = await db
-        .insert(schema.rosterMemberships)
-        .values({
-          seasonId,
+        return {
+          id: inserted.id,
           personId,
-          role: rec.role,
-          committeeId: membershipCommitteeId,
-          trackedCommitteeId: membershipTrackedCommitteeId,
-          isActive: true,
-        })
-        .returning();
-
-      imported.push({
-        id: inserted.id,
-        personId,
-        fullName: personFullName,
-        email: rec.email,
-        role: inserted.role as MembershipRole,
-        committeeId: inserted.committeeId,
-        ...(tempPassword ? { tempPassword } : {}),
+          fullName: personFullName,
+          email: rec.email,
+          role: inserted.role as MembershipRole,
+          committeeId: inserted.committeeId,
+          ...(tempPassword ? { tempPassword } : {}),
+        };
       });
+
+      imported.push(rowImported);
     } catch (err) {
       skippedCount++;
       rowErrors.push(

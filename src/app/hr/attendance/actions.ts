@@ -1,8 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { getActorContext, unauthorizedResult } from "@/lib/action-auth";
 import { getServerSession } from "@/lib/session-cookie";
+import {
+  checkRateLimit,
+  clearRateLimit,
+  extractClientIp,
+  formatRateLimitMessage,
+  RATE_LIMIT_POLICIES,
+  recordRateLimitFailure,
+} from "@/lib/rate-limit";
 import {
   createSessionAsActor,
   extendSessionCheckinWindowAsActor,
@@ -137,7 +146,41 @@ export async function memberCheckinAction(
     };
   }
 
+  let clientIp = "unknown";
+  try {
+    const hdrs = await headers();
+    clientIp = extractClientIp((name) => hdrs.get(name));
+  } catch {
+    // Outside Next.js request context
+  }
+
+  const personKey = `checkin:person:${session.personId}`;
+  const ipKey = `checkin:ip:${clientIp}`;
+  const [personLimit, ipLimit] = await Promise.all([
+    checkRateLimit(personKey, RATE_LIMIT_POLICIES.checkinPerson),
+    checkRateLimit(ipKey, RATE_LIMIT_POLICIES.checkinIp),
+  ]);
+
+  if (!personLimit.allowed || !ipLimit.allowed) {
+    const retryAfter = Math.max(
+      personLimit.retryAfterSeconds,
+      ipLimit.retryAfterSeconds
+    );
+    return {
+      ok: false,
+      error: formatRateLimitMessage(retryAfter, "check-in"),
+    };
+  }
+
   const res = await recordMemberCheckin(checkinCode, session.participantId);
-  if (res.ok) safeRevalidateAttendance();
+  if (res.ok) {
+    await clearRateLimit(personKey);
+    safeRevalidateAttendance();
+  } else {
+    await Promise.all([
+      recordRateLimitFailure(personKey, RATE_LIMIT_POLICIES.checkinPerson),
+      recordRateLimitFailure(ipKey, RATE_LIMIT_POLICIES.checkinIp),
+    ]);
+  }
   return res;
 }

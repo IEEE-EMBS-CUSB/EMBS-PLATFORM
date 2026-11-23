@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { db, type AppDatabase } from "@/db";
 import * as schema from "@/db/schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { canManageCommittees, canManageRubrics } from "@/lib/permissions";
@@ -53,12 +53,15 @@ export function isProtectedCoreCommittee(committee: {
  * Guarantees that the core Human Resources committee exists and is active in a season.
  * Handles the edge case where a season was created or edited without an HR committee row.
  */
-export async function ensureHrCommitteeForSeason(seasonId: string): Promise<{
+export async function ensureHrCommitteeForSeason(
+  seasonId: string,
+  dbClient: AppDatabase = db
+): Promise<{
   id: string;
   name: string;
   slug: string;
 }> {
-  const [existing] = await db
+  const [existing] = await dbClient
     .select({
       id: schema.committees.id,
       name: schema.committees.name,
@@ -76,7 +79,7 @@ export async function ensureHrCommitteeForSeason(seasonId: string): Promise<{
 
   if (existing) {
     if (!existing.isActive) {
-      await db
+      await dbClient
         .update(schema.committees)
         .set({ isActive: true })
         .where(eq(schema.committees.id, existing.id));
@@ -84,11 +87,11 @@ export async function ensureHrCommitteeForSeason(seasonId: string): Promise<{
     return { id: existing.id, name: existing.name, slug: existing.slug };
   }
 
-  const tracks = await ensureDefaultTracksForSeason(seasonId);
+  const tracks = await ensureDefaultTracksForSeason(seasonId, dbClient);
   const opsTrack =
     tracks.find((t) => t.slug === "operations") ?? tracks[0] ?? null;
 
-  await db
+  await dbClient
     .insert(schema.committees)
     .values({
       seasonId,
@@ -100,7 +103,7 @@ export async function ensureHrCommitteeForSeason(seasonId: string): Promise<{
     })
     .onConflictDoNothing();
 
-  const [ensured] = await db
+  const [ensured] = await dbClient
     .select({
       id: schema.committees.id,
       name: schema.committees.name,
@@ -130,15 +133,18 @@ function slugifyName(name: string): string {
  * Ensures a season has the 3 default committee tracks (Technical, Creative, Operations)
  * when no tracks exist yet, and backfills any unlinked committees into their matching track.
  */
-export async function ensureDefaultTracksForSeason(seasonId: string) {
-  let tracks = await db
+export async function ensureDefaultTracksForSeason(
+  seasonId: string,
+  dbClient: AppDatabase = db
+) {
+  let tracks = await dbClient
     .select()
     .from(schema.committeeTracks)
     .where(eq(schema.committeeTracks.seasonId, seasonId))
     .orderBy(asc(schema.committeeTracks.sortOrder), asc(schema.committeeTracks.createdAt));
 
   if (tracks.length === 0) {
-    await db
+    await dbClient
       .insert(schema.committeeTracks)
       .values(
         DEFAULT_COMMITTEE_TRACKS.map((t) => ({
@@ -151,7 +157,7 @@ export async function ensureDefaultTracksForSeason(seasonId: string) {
       )
       .onConflictDoNothing();
 
-    tracks = await db
+    tracks = await dbClient
       .select()
       .from(schema.committeeTracks)
       .where(eq(schema.committeeTracks.seasonId, seasonId))
@@ -159,7 +165,7 @@ export async function ensureDefaultTracksForSeason(seasonId: string) {
   }
 
   // Backfill any committees in this season that don't yet have a trackId
-  const unlinked = await db
+  const unlinked = await dbClient
     .select()
     .from(schema.committees)
     .where(
@@ -175,7 +181,7 @@ export async function ensureDefaultTracksForSeason(seasonId: string) {
     for (const comm of unlinked) {
       const targetSlug = inferDefaultTrackSlug(comm);
       const trackId = bySlug.get(targetSlug) ?? fallbackId;
-      await db
+      await dbClient
         .update(schema.committees)
         .set({ trackId })
         .where(eq(schema.committees.id, comm.id));

@@ -1,7 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type {
-  ActivityCategory,
   ArrivalStatus,
   AttendanceStatus,
   AttendeeAssignmentStatus,
@@ -69,28 +68,6 @@ const ATTENDEE_ASSIGNMENT_STYLES: Record<
   missed: {
     label: "Missed",
     className: "bg-[#fdebed] text-[#9b0b27] border-[#ba0c2f]/25",
-  },
-};
-
-const ACTIVITY_STYLES: Record<
-  ActivityCategory,
-  { label: string; className: string }
-> = {
-  project: {
-    label: "Project",
-    className: "bg-[#ebf3f8] text-[#002855] border-[#00629b]/25",
-  },
-  hackathon: {
-    label: "Hackathon",
-    className: "bg-[#f5edf7] text-[#5a1b63] border-[#772583]/25",
-  },
-  delivered_session: {
-    label: "Delivered session",
-    className: "bg-[#e3f5f6] text-[#005b5e] border-[#009ca6]/30",
-  },
-  bonus: {
-    label: "Bonus",
-    className: "bg-[#eaf5dd] text-[#2f600b] border-[#78be20]/35",
   },
 };
 
@@ -172,22 +149,6 @@ export function TaskStatusBadge({
   status: AttendeeAssignmentStatus;
 }) {
   const style = ATTENDEE_ASSIGNMENT_STYLES[status];
-  return (
-    <Badge
-      variant="outline"
-      className={cn("font-semibold border", style.className)}
-    >
-      {style.label}
-    </Badge>
-  );
-}
-
-export function ActivityCategoryBadge({
-  category,
-}: {
-  category: ActivityCategory;
-}) {
-  const style = ACTIVITY_STYLES[category];
   return (
     <Badge
       variant="outline"

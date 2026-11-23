@@ -1,6 +1,6 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import {
   authenticateWithPassword,
   changeFirstLoginPassword,
@@ -18,6 +18,23 @@ import {
 } from "@/lib/session-cookie";
 import { getRoleLandingPath, normalizeEmail } from "@/lib/auth-helpers";
 import { sanitizeNextPath } from "@/lib/checkin-url";
+import {
+  checkRateLimit,
+  clearRateLimit,
+  extractClientIp,
+  formatRateLimitMessage,
+  RATE_LIMIT_POLICIES,
+  recordRateLimitFailure,
+} from "@/lib/rate-limit";
+
+async function getSafeRequestIp(): Promise<string> {
+  try {
+    const hdrs = await headers();
+    return extractClientIp((name) => hdrs.get(name));
+  } catch {
+    return "unknown";
+  }
+}
 
 export interface LoginActionResult {
   ok: boolean;
@@ -31,6 +48,29 @@ export async function loginWithPasswordAction(
   password: string,
   nextPath?: string | null
 ): Promise<LoginActionResult> {
+  const normalized = normalizeEmail(email);
+  const clientIp = await getSafeRequestIp();
+  const ipKey = `login:ip:${clientIp}`;
+  const emailKey = normalized ? `login:email:${normalized}` : null;
+
+  const [ipLimit, emailLimit] = await Promise.all([
+    checkRateLimit(ipKey, RATE_LIMIT_POLICIES.loginIp),
+    emailKey
+      ? checkRateLimit(emailKey, RATE_LIMIT_POLICIES.loginEmail)
+      : Promise.resolve({ allowed: true, retryAfterSeconds: 0 }),
+  ]);
+
+  if (!ipLimit.allowed || !emailLimit.allowed) {
+    const retryAfter = Math.max(
+      ipLimit.retryAfterSeconds,
+      emailLimit.retryAfterSeconds
+    );
+    return {
+      ok: false,
+      error: formatRateLimitMessage(retryAfter, "sign-in"),
+    };
+  }
+
   const cookieStore = await cookies();
   const preferredMembershipId =
     cookieStore.get(LAST_CONTEXT_COOKIE_NAME)?.value ?? null;
@@ -42,7 +82,17 @@ export async function loginWithPasswordAction(
   });
 
   if (!result.ok) {
+    await Promise.all([
+      recordRateLimitFailure(ipKey, RATE_LIMIT_POLICIES.loginIp),
+      emailKey
+        ? recordRateLimitFailure(emailKey, RATE_LIMIT_POLICIES.loginEmail)
+        : Promise.resolve(),
+    ]);
     return { ok: false, error: result.reason };
+  }
+
+  if (emailKey) {
+    await clearRateLimit(emailKey);
   }
 
   if (result.mustChangePassword) {
@@ -101,6 +151,24 @@ export async function changePasswordOnFirstLoginAction(
     return { ok: false, error: "Please provide a valid email address." };
   }
 
+  const clientIp = await getSafeRequestIp();
+  const ipKey = `login:ip:${clientIp}`;
+  const emailKey = `login:email:${normalized}`;
+  const [ipLimit, emailLimit] = await Promise.all([
+    checkRateLimit(ipKey, RATE_LIMIT_POLICIES.loginIp),
+    checkRateLimit(emailKey, RATE_LIMIT_POLICIES.loginEmail),
+  ]);
+  if (!ipLimit.allowed || !emailLimit.allowed) {
+    const retryAfter = Math.max(
+      ipLimit.retryAfterSeconds,
+      emailLimit.retryAfterSeconds
+    );
+    return {
+      ok: false,
+      error: formatRateLimitMessage(retryAfter, "password setup"),
+    };
+  }
+
   const cookieStore = await cookies();
   const preferredMembershipId =
     cookieStore.get(LAST_CONTEXT_COOKIE_NAME)?.value ?? null;
@@ -110,6 +178,10 @@ export async function changePasswordOnFirstLoginAction(
     preferredMembershipId
   );
   if (!member || !member.isActive || !member.passwordHash) {
+    await Promise.all([
+      recordRateLimitFailure(ipKey, RATE_LIMIT_POLICIES.loginIp),
+      recordRateLimitFailure(emailKey, RATE_LIMIT_POLICIES.loginEmail),
+    ]);
     return { ok: false, error: "Invalid email or password." };
   }
 
@@ -144,8 +216,14 @@ export async function changePasswordOnFirstLoginAction(
   });
 
   if (!changeRes.ok) {
+    await Promise.all([
+      recordRateLimitFailure(ipKey, RATE_LIMIT_POLICIES.loginIp),
+      recordRateLimitFailure(emailKey, RATE_LIMIT_POLICIES.loginEmail),
+    ]);
     return { ok: false, error: changeRes.reason };
   }
+
+  await clearRateLimit(emailKey);
 
   // Mint the final session AFTER passwordChangedAt is recorded so issuedAt >= passwordChangedAt
   const sessionUser = createSessionForMember({

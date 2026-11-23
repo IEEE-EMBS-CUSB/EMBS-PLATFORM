@@ -12,8 +12,11 @@
     "test:watch": "vitest",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:bootstrap": "tsx src/db/bootstrap.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "db:local:setup": "docker compose up -d && DATABASE_URL=postgresql://postgres:postgrespassword@localhost:5432/embs_portal DATABASE_URL_UNPOOLED=postgresql://postgres:postgrespassword@localhost:5432/embs_portal tsx src/db/migrate.ts && DATABASE_URL=postgresql://postgres:postgrespassword@localhost:5432/embs_portal tsx src/db/seed.ts",
+    "db:test:reset": "DATABASE_URL=postgresql://postgres:postgrespassword@localhost:5432/embs_portal_test DATABASE_URL_UNPOOLED=postgresql://postgres:postgrespassword@localhost:5432/embs_portal_test tsx src/db/migrate.ts && DATABASE_URL=postgresql://postgres:postgrespassword@localhost:5432/embs_portal_test tsx src/db/seed.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
@@ -21,7 +24,6 @@
     "@neon/config": "^1.14.5",
     "@neon/env": "^2.1.8",
     "@neondatabase/serverless": "^1.2.1",
-    "@types/qrcode": "^1.5.6",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
     "drizzle-orm": "^0.45.4",
@@ -32,7 +34,6 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "recharts": "^3.10.1",
-    "shadcn": "^4.23.0",
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
@@ -41,6 +42,7 @@
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.12",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.3.0",
@@ -49,6 +51,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "jsdom": "^31.0.1",
+    "shadcn": "^4.23.0",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^5",

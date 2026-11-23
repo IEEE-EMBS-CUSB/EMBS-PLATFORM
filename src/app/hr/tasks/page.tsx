@@ -270,6 +270,7 @@ export default async function HrTasksPage() {
       // Pre-filter tasks strictly by role work-type and committee/track authority before loading submissions
       const actorPermCtx = {
         id: profile.id,
+        personId: profile.personId,
         email: profile.email,
         role: profile.role,
         committeeId: profile.committeeId,
@@ -296,6 +297,7 @@ export default async function HrTasksPage() {
             sub: schema.taskSubmissions,
             member: {
               id: schema.rosterMemberships.id,
+              personId: schema.rosterMemberships.personId,
               role: schema.rosterMemberships.role,
               committeeId: schema.rosterMemberships.committeeId,
               fullName: schema.persons.fullName,
@@ -325,6 +327,7 @@ export default async function HrTasksPage() {
               workType: itemWorkType,
               taskCommitteeId: parentTask.committeeId,
               submissionMembershipId: member.id,
+              submissionPersonId: member.personId,
               memberRole: member.role as MembershipRole,
               memberCommitteeId: member.committeeId,
               directorTrackCommitteeIds,

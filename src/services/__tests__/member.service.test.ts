@@ -3,10 +3,8 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { eq } from "drizzle-orm";
 import {
-  getMemberActivities,
   getMemberAttendance,
   getMemberDashboard,
-  getMemberEvaluations,
   getMemberFeedback,
   getMemberMonthlyScores,
   getMemberProfile,
@@ -29,7 +27,7 @@ beforeAll(async () => {
 });
 
 describe("member.service (Database-Backed & Privacy Guarded)", () => {
-  it("loads member profile, dashboard, attendance, tasks, activities, and monthly scores", async () => {
+  it("loads member profile, dashboard, attendance, tasks, and monthly scores", async () => {
     const profile = await getMemberProfile(salmaId);
     expect(profile).not.toBeNull();
     expect(profile?.fullName).toBe("Salma El-Sayed");
@@ -50,16 +48,8 @@ describe("member.service (Database-Backed & Privacy Guarded)", () => {
     expect(tasks.length).toBeGreaterThan(0);
     expect(tasks[0]?.effort).toBeGreaterThanOrEqual(1);
 
-    const activities = await getMemberActivities(salmaId);
-    expect(activities.length).toBeGreaterThan(0);
-
     const scores = await getMemberMonthlyScores(salmaId);
     expect(scores.map((s) => s.month)).toEqual(["2026-10"]);
-
-    const evaluations = await getMemberEvaluations(salmaId);
-    expect(evaluations).toHaveLength(1);
-    expect(evaluations[0]?.seasonLabel).toBe("Fall 2026");
-    expect(evaluations[0]?.grade).toBe("Outstanding");
   });
 
   it("strictly filters out unpublished internal feedback and HR warnings from member queries", async () => {

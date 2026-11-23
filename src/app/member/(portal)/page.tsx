@@ -15,7 +15,7 @@ import { getMemberDashboard, getMemberTasks } from "@/services/member.service";
 export const metadata: Metadata = {
   title: "Member dashboard",
   description:
-    "Personal IEEE EMBS CUSB member dashboard with monthly score, rankings, attendance, tasks, activities, and published feedback.",
+    "Personal IEEE EMBS CUSB member dashboard with monthly score, rankings, attendance, tasks, and published feedback.",
 };
 
 async function MemberDashboardContent() {

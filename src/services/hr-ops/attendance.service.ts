@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { db } from "@/db";
+import { db, withTransaction } from "@/db";
 import * as schema from "@/db/schema";
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
@@ -617,54 +617,56 @@ export async function setSessionMemberAttendanceAsActor(
     const reasonText =
       input.overrideReason?.trim() || "Manual HR attendance update";
 
-    const [record] = await db
-      .insert(schema.attendanceRecords)
-      .values({
-        sessionId: session.id,
-        membershipId: member.id,
-        checkedInAt: new Date(),
-        status: dbStatus,
-        isPunctual,
-        pointsAwarded,
-        overrideReason: reasonText,
-      })
-      .onConflictDoUpdate({
-        target: [
-          schema.attendanceRecords.sessionId,
-          schema.attendanceRecords.membershipId,
-        ],
-        set: {
+    await withTransaction(async (tx) => {
+      const [record] = await tx
+        .insert(schema.attendanceRecords)
+        .values({
+          sessionId: session.id,
+          membershipId: member.id,
+          checkedInAt: new Date(),
           status: dbStatus,
           isPunctual,
           pointsAwarded,
           overrideReason: reasonText,
-        },
-      })
-      .returning();
+        })
+        .onConflictDoUpdate({
+          target: [
+            schema.attendanceRecords.sessionId,
+            schema.attendanceRecords.membershipId,
+          ],
+          set: {
+            status: dbStatus,
+            isPunctual,
+            pointsAwarded,
+            overrideReason: reasonText,
+          },
+        })
+        .returning();
 
-    if (!isAttendee) {
-      const statusLabel =
-        input.status === "on_time"
-          ? "On Time"
-          : input.status === "late"
-            ? "Late"
-            : input.status === "excused"
-              ? "Excused"
-              : "Absent";
+      if (!isAttendee) {
+        const statusLabel =
+          input.status === "on_time"
+            ? "On Time"
+            : input.status === "late"
+              ? "Late"
+              : input.status === "excused"
+                ? "Excused"
+                : "Absent";
 
-      await upsertScoreLedgerEntry(db, {
-        seasonId: session.seasonId,
-        membershipId: member.id,
-        month: monthKey,
-        sourceType: "attendance",
-        sourceId: record.id,
-        postingScope: session.committeeId ? "committee" : "open",
-        committeeId: session.committeeId,
-        points: pointsAwarded,
-        reason: `Attendance: ${session.title} (${statusLabel})`,
-        createdBy: actor.profile.id,
-      });
-    }
+        await upsertScoreLedgerEntry(tx, {
+          seasonId: session.seasonId,
+          membershipId: member.id,
+          month: monthKey,
+          sourceType: "attendance",
+          sourceId: record.id,
+          postingScope: session.committeeId ? "committee" : "open",
+          committeeId: session.committeeId,
+          points: pointsAwarded,
+          reason: `Attendance: ${session.title} (${statusLabel})`,
+          createdBy: actor.profile.id,
+        });
+      }
+    });
 
     return { ok: true, pointsAwarded, status: input.status };
   } catch (err: unknown) {
@@ -849,30 +851,32 @@ export async function recordMemberCheckin(
       }
     }
 
-    const [record] = await db
-      .insert(schema.attendanceRecords)
-      .values({
-        sessionId: sessionRow.id,
-        membershipId: member.id,
-        checkedInAt: now,
-        isPunctual,
-        pointsAwarded,
-      })
-      .returning();
+    await withTransaction(async (tx) => {
+      const [record] = await tx
+        .insert(schema.attendanceRecords)
+        .values({
+          sessionId: sessionRow.id,
+          membershipId: member.id,
+          checkedInAt: now,
+          isPunctual,
+          pointsAwarded,
+        })
+        .returning();
 
-    if (!isAttendee && pointsAwarded > 0) {
-      await upsertScoreLedgerEntry(db, {
-        seasonId: sessionRow.seasonId,
-        membershipId: member.id,
-        month: monthKey,
-        sourceType: "attendance",
-        sourceId: record.id,
-        postingScope: sessionRow.committeeId ? "committee" : "open",
-        committeeId: sessionRow.committeeId,
-        points: pointsAwarded,
-        reason: `Attendance: ${sessionRow.title}${isPunctual ? " (Punctual)" : ""}`,
-      });
-    }
+      if (!isAttendee && pointsAwarded > 0) {
+        await upsertScoreLedgerEntry(tx, {
+          seasonId: sessionRow.seasonId,
+          membershipId: member.id,
+          month: monthKey,
+          sourceType: "attendance",
+          sourceId: record.id,
+          postingScope: sessionRow.committeeId ? "committee" : "open",
+          committeeId: sessionRow.committeeId,
+          points: pointsAwarded,
+          reason: `Attendance: ${sessionRow.title}${isPunctual ? " (Punctual)" : ""}`,
+        });
+      }
+    });
 
     return {
       ok: true,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isSameOriginRequest } from "@/lib/request-origin";
 import {
   buildLastContextCookieOptions,
   buildSessionCookieOptions,
@@ -48,6 +49,12 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isSameOriginRequest(request)) {
+    return NextResponse.json(
+      { ok: false, error: "Forbidden: cross-origin request rejected." },
+      { status: 403 }
+    );
+  }
   const session = await getServerSession();
   if (!session) {
     return NextResponse.json(

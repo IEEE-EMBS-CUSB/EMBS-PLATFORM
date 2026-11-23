@@ -6,7 +6,7 @@ import {
 } from "@/services/hr-ops/tasks.service";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 const MASTER = {
   profile: { id: "master-test", role: "master_admin" as const, committeeId: null },
@@ -36,7 +36,11 @@ async function loadFixtures() {
         eq(schema.rosterMemberships.seasonId, season.id),
         eq(schema.rosterMemberships.isActive, true),
         eq(schema.persons.isActive, true),
-        ne(schema.rosterMemberships.role, "attendee")
+        inArray(schema.rosterMemberships.role, [
+          "member",
+          "committee_head",
+          "hr_member",
+        ])
       )
     )
     .limit(10);

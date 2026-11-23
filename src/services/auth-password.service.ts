@@ -70,6 +70,14 @@ const ROLE_PRECEDENCE: Record<MembershipRole, number> = {
 
 const GENERIC_AUTH_FAILURE = "Invalid email or password.";
 
+let cachedDummyHash: string | null = null;
+function getDummyPasswordHash(): string {
+  if (!cachedDummyHash) {
+    cachedDummyHash = hashPassword("embs-timing-equalization-dummy-secret");
+  }
+  return cachedDummyHash;
+}
+
 /**
  * Deterministically chooses the initial login membership for a person across seasons and hats:
  * 1. If the person has any membership in an active season, only active memberships in that
@@ -227,6 +235,8 @@ export async function authenticateWithPassword(params: {
   }
 
   if (!member || !member.isActive || !member.passwordHash) {
+    // Run scrypt against a dummy hash so unknown/inactive emails cannot be distinguished by timing
+    verifyPassword(password, getDummyPasswordHash());
     return { ok: false, reason: GENERIC_AUTH_FAILURE };
   }
 

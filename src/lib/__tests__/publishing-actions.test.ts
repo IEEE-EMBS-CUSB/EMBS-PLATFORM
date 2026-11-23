@@ -46,6 +46,7 @@ describe("Monthly leaderboard publishing", () => {
       .select({
         id: schema.rosterMemberships.id,
         fullName: schema.persons.fullName,
+        committeeId: schema.rosterMemberships.committeeId,
       })
       .from(schema.rosterMemberships)
       .innerJoin(
@@ -75,6 +76,8 @@ describe("Monthly leaderboard publishing", () => {
       month: testMonth,
       sourceType: "manual_override",
       sourceId: null,
+      postingScope: omar.committeeId ? "committee" : "open",
+      committeeId: omar.committeeId,
       points: 75,
       reason: "Publishing E2E test",
     });

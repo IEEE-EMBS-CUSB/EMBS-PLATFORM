@@ -58,6 +58,7 @@ export function computeMemberWorkBadgeCounts(
 export interface HrSubmissionCandidate {
   submissionId: string;
   membershipId: string;
+  personId?: string | null;
   workType: WorkItemType;
   completionMode: "self_report" | "hr_only";
   taskCommitteeId: string | null;
@@ -88,6 +89,11 @@ export function computeHrActionableWorkCount(input: {
       if (actor.role === "hr_admin" && !sub.submittedAt) {
         countedSubmissionIds.add(sub.submissionId);
       }
+      continue;
+    }
+
+    // Never count another hat owned by the same human as gradeable/verifiable
+    if (actor.personId && sub.personId && actor.personId === sub.personId) {
       continue;
     }
 
@@ -431,6 +437,7 @@ export async function getHrNavNotifications(
             .select({
               submissionId: schema.taskSubmissions.id,
               membershipId: schema.taskSubmissions.membershipId,
+              personId: schema.rosterMemberships.personId,
               workType: schema.tasks.workType,
               completionMode: schema.tasks.completionMode,
               taskCommitteeId: schema.tasks.committeeId,
@@ -529,6 +536,7 @@ export async function getHrNavNotifications(
       const workCount = computeHrActionableWorkCount({
         actor: {
           id: profile.id,
+          personId: profile.personId,
           email: profile.email,
           role: profile.role,
           committeeId: profile.committeeId,
@@ -537,6 +545,7 @@ export async function getHrNavNotifications(
         submissions: ungradedSubmissions.map((s) => ({
           submissionId: s.submissionId,
           membershipId: s.membershipId,
+          personId: s.personId,
           workType: s.workType === "task" ? "task" : "assignment",
           completionMode:
             s.completionMode === "hr_only" ? "hr_only" : "self_report",
