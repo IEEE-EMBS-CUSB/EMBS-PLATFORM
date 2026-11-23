@@ -1,5 +1,7 @@
 import { Suspense } from "react";
+import Image from "next/image";
 import Link from "next/link";
+import heroImage from "../../../public/hero.png";
 import { ArrowRight, Check, KeyRound, Trophy } from "lucide-react";
 import { CommitteeLeadersShowcase } from "@/components/data-display/committee-leaders-showcase";
 import { buttonVariants } from "@/components/ui/button";
@@ -106,30 +108,38 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* Focused hero */}
-      <section className="border-b border-border bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:py-16">
+      {/* Fullscreen hero */}
+      <section className="relative flex min-h-[calc(100svh-4rem)] w-full items-center overflow-hidden border-b border-border bg-[#002855]">
+        <Image
+          src={heroImage}
+          alt="IEEE EMBS Cairo University Student Branch members"
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-center"
+        />
+        <div className="relative z-10 mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 lg:py-24">
           <div className="max-w-2xl space-y-5">
-            <h1 className="font-heading text-3xl font-extrabold tracking-tight text-[#002855] sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
+            <h1 className="font-heading text-3xl font-extrabold tracking-tight text-white drop-shadow-xs sm:text-5xl lg:text-[3.25rem] lg:leading-[1.08]">
               IEEE EMBS CUSB Portal
             </h1>
-            <p className="max-w-lg text-base leading-relaxed text-muted-foreground">
+            <p className="max-w-lg text-base leading-relaxed text-white/90 sm:text-lg">
               Monthly committee standings, attendance, tasks, and evaluations
               for Cairo University Student Branch.
             </p>
 
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-3 pt-2">
               <Suspense fallback={<DefaultPrimaryPortalCta />}>
                 <SessionAwarePrimaryPortalCta />
               </Suspense>
               <Link
                 href="/leaderboards"
                 className={cn(
-                  buttonVariants({ variant: "outline", size: "lg" }),
-                  "h-11 gap-2 border-[#00629b]/30 px-5 text-sm font-semibold text-[#002855] hover:bg-[#ebf3f8]"
+                  buttonVariants({ variant: "secondary", size: "lg" }),
+                  "h-11 gap-2 bg-white px-5 text-sm font-semibold text-[#002855] hover:bg-[#f5edf7]"
                 )}
               >
-                <Trophy className="h-4 w-4 text-[#00629b]" aria-hidden="true" />
+                <Trophy className="h-4 w-4 text-[#772583]" aria-hidden="true" />
                 <span>Committee Leaderboards</span>
               </Link>
             </div>
