@@ -209,7 +209,7 @@ export function QrCheckinHandler({
               </h1>
               <p className="mt-1 text-xs text-muted-foreground">
                 {phase === "error"
-                  ? "If the code rotated while you signed in, enter the current 6-digit code shown on screen."
+                  ? "Verify the 6-digit code shown on screen and try again."
                   : "Enter the 6-digit code displayed on the projector."}
               </p>
             </div>

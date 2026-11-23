@@ -6,10 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { getServerSession } from "@/lib/session-cookie";
 import { cn } from "@/lib/utils";
 import { getRoleLandingPath, isOperationalRole } from "@/lib/auth-helpers";
-import {
-  getCommitteeLeaders,
-  getOverallLeaderboard,
-} from "@/services/leaderboard.service";
+import { getCommitteeLeaders } from "@/services/leaderboard.service";
 import { getOperationalUserProfile } from "@/services/member.service";
 
 function DefaultPrimaryPortalCta() {
@@ -103,25 +100,22 @@ const ATTENDEE_HIGHLIGHTS = [
 ] as const;
 
 export default async function HomePage() {
-  const [latestLeaderboard, committeeLeaders] = await Promise.all([
-    getOverallLeaderboard(),
-    getCommitteeLeaders(),
-  ]);
-
-  const topFive = latestLeaderboard?.entries.slice(0, 5) ?? [];
+  const committeeLeaders = await getCommitteeLeaders();
+  const latestMonthLabel = committeeLeaders[0]?.monthLabel ?? "Current";
+  const latestMonth = committeeLeaders[0]?.month;
 
   return (
     <div>
-      {/* Focused hero + live standings */}
+      {/* Focused hero */}
       <section className="border-b border-border bg-white">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-12 lg:py-16">
-          <div className="space-y-5 lg:col-span-7">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:py-16">
+          <div className="max-w-2xl space-y-5">
             <h1 className="font-heading text-3xl font-extrabold tracking-tight text-[#002855] sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
               IEEE EMBS CUSB Portal
             </h1>
             <p className="max-w-lg text-base leading-relaxed text-muted-foreground">
-              Monthly standings, attendance, tasks, and evaluations for Cairo
-              University Student Branch.
+              Monthly committee standings, attendance, tasks, and evaluations
+              for Cairo University Student Branch.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -136,70 +130,8 @@ export default async function HomePage() {
                 )}
               >
                 <Trophy className="h-4 w-4 text-[#00629b]" aria-hidden="true" />
-                <span>Leaderboard</span>
+                <span>Committee Leaderboards</span>
               </Link>
-            </div>
-          </div>
-
-          {/* Live Top 5 standings */}
-          <div className="lg:col-span-5">
-            <div className="overflow-hidden rounded-lg border border-border bg-white">
-              <div className="flex items-center justify-between border-b border-border bg-[#f8f9fb] px-4 py-3">
-                <h2 className="font-heading text-sm font-bold text-[#002855]">
-                  {latestLeaderboard
-                    ? `${latestLeaderboard.monthLabel} Top 5`
-                    : "Current Standings"}
-                </h2>
-                <Link
-                  href="/leaderboards"
-                  className="text-xs font-semibold text-[#00629b] hover:text-[#002855] hover:underline"
-                >
-                  Full top 10
-                </Link>
-              </div>
-
-              {topFive.length > 0 ? (
-                <ol className="divide-y divide-border">
-                  {topFive.map((entry) => (
-                    <li
-                      key={entry.memberId}
-                      className="flex items-center justify-between gap-3 px-4 py-3"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span
-                          className={cn(
-                            "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded font-heading text-xs font-bold tabular-nums",
-                            entry.rank === 1
-                              ? "bg-[#ffc627]/35 text-[#002855] ring-1 ring-[#ffc627]/80"
-                              : entry.rank === 2
-                                ? "bg-[#f5edf7] text-[#5a1b63]"
-                                : entry.rank === 3
-                                  ? "bg-[#ebf3f8] text-[#002855]"
-                                  : "text-muted-foreground"
-                          )}
-                        >
-                          {entry.rank}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-foreground">
-                            {entry.memberName}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {entry.committeeName}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="shrink-0 font-heading text-sm font-bold text-[#002855] tabular-nums">
-                        {entry.monthlyScore}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                  No published rankings yet.
-                </p>
-              )}
             </div>
           </div>
         </div>
@@ -209,7 +141,8 @@ export default async function HomePage() {
       {committeeLeaders.length > 0 && (
         <CommitteeLeadersShowcase
           spotlights={committeeLeaders}
-          monthLabel={latestLeaderboard?.monthLabel ?? "Current"}
+          monthLabel={latestMonthLabel}
+          month={latestMonth}
         />
       )}
 

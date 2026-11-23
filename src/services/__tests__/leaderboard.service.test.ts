@@ -1,13 +1,96 @@
 import { describe, expect, it } from "vitest";
 import { MOCK_LEADERBOARD_SNAPSHOTS } from "@/db/leaderboard-snapshots";
 import {
+  extractCommitteeEntriesFromSnapshot,
   getCommitteeLeaderboard,
   getCommitteeLeaders,
   getCommittees,
   getLeaderboardHistory,
-  getOverallLeaderboard,
   getPublishedMonths,
 } from "@/services/leaderboard.service";
+
+describe("extractCommitteeEntriesFromSnapshot", () => {
+  it("filters out heads and admin roles from already-published committee snapshots, re-ranking 1..N", () => {
+    const entries = extractCommitteeEntriesFromSnapshot(
+      {
+        monthLabel: "October 2026",
+        committeeEntries: {
+          "ai-and-machine-learning": [
+            {
+              rank: 1,
+              previousRank: 1,
+              memberId: "m-salma",
+              memberName: "Salma AI Head",
+              committeeSlug: "ai-and-machine-learning",
+              committeeName: "AI and Machine Learning",
+              role: "committee_head",
+              monthlyScore: 110,
+            },
+            {
+              rank: 2,
+              previousRank: 3,
+              memberId: "m-nadia-hr",
+              memberName: "Nadia HR Member",
+              committeeSlug: "ai-and-machine-learning",
+              committeeName: "AI and Machine Learning",
+              role: "hr_member",
+              monthlyScore: 100,
+            },
+            {
+              rank: 3,
+              previousRank: 2,
+              memberId: "m-omar",
+              memberName: "Omar AI Member",
+              committeeSlug: "ai-and-machine-learning",
+              committeeName: "AI and Machine Learning",
+              role: "member",
+              monthlyScore: 88,
+            },
+          ],
+        },
+      },
+      "ai-and-machine-learning",
+      10
+    );
+
+    expect(
+      entries.map((e) => [e.rank, e.previousRank, e.memberName, e.role, e.monthlyScore])
+    ).toEqual([[1, null, "Omar AI Member", "member", 88]]);
+  });
+
+  it("keeps hr_member entries on human-resources and preserves ranks when already clean", () => {
+    const entries = extractCommitteeEntriesFromSnapshot(
+      {
+        monthLabel: "November 2026",
+        committeeEntries: {
+          "human-resources": [
+            {
+              rank: 1,
+              previousRank: 2,
+              memberId: "m-laila",
+              memberName: "Laila HR Member",
+              committeeSlug: "human-resources",
+              committeeName: "Human Resources",
+              role: "hr_member",
+              monthlyScore: 95,
+            },
+          ],
+        },
+      },
+      "human-resources",
+      10
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      rank: 1,
+      previousRank: 2,
+      memberName: "Laila HR Member",
+      role: "hr_member",
+      monthlyScore: 95,
+    });
+  });
+});
 
 describe("leaderboard.service", () => {
   it("returns all 12 IEEE EMBS CUSB committees across technical and non-technical tracks", async () => {
@@ -33,7 +116,7 @@ describe("leaderboard.service", () => {
     );
   });
 
-  it("excludes unpublished draft months from published months, overall leaderboard, and history", async () => {
+  it("excludes unpublished draft months from published months and history", async () => {
     const rawDraftExists = MOCK_LEADERBOARD_SNAPSHOTS.some(
       (s) => s.month === "2026-11" && s.status === "draft"
     );
@@ -46,43 +129,15 @@ describe("leaderboard.service", () => {
       "2026-08",
     ]);
 
-    const draftResult = await getOverallLeaderboard("2026-11");
-    expect(draftResult).toBeNull();
-
     const history = await getLeaderboardHistory();
     expect(history.map((h) => h.month)).toEqual([
       "2026-10",
       "2026-09",
       "2026-08",
     ]);
-    // Heads are filtered out of overall rankings, so topOverall is the highest-ranked Member
-    expect(history[0]?.topOverall?.memberName).toBe("Omar Tarek");
   });
 
-  it("caps overall published leaderboards at top 10, filters out heads, and excludes member identification numbers", async () => {
-    const latest = await getOverallLeaderboard();
-    expect(latest).not.toBeNull();
-    expect(latest?.month).toBe("2026-10");
-    expect(latest?.status).toBe("published");
-    expect(latest?.entries).toHaveLength(10);
-    expect(latest?.entries.map((entry) => entry.rank)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-    ]);
-    expect(latest?.entries[0]?.memberName).toBe("Omar Tarek");
-    expect(
-      latest?.entries.every(
-        (entry) =>
-          entry.role.toLowerCase() === "member" ||
-          entry.role.toLowerCase() === "hr_member"
-      )
-    ).toBe(true);
-
-    for (const entry of latest?.entries ?? []) {
-      expect("displayId" in entry).toBe(false);
-    }
-  });
-
-  it("caps committee-specific leaderboards at top 10 and re-ranks within the committee", async () => {
+  it("caps committee-specific leaderboards at top 10, filters out heads, and excludes member identification numbers", async () => {
     const aiBoard = await getCommitteeLeaderboard(
       "ai-and-machine-learning",
       "2026-10"
@@ -92,41 +147,27 @@ describe("leaderboard.service", () => {
     expect(aiBoard?.scope).toBe("committee");
     expect(aiBoard?.committee?.name).toBe("AI and Machine Learning");
     expect(aiBoard?.entries.length).toBeLessThanOrEqual(10);
-    expect(aiBoard?.entries).toHaveLength(3);
     expect(
       aiBoard?.entries.every(
-        (entry) => entry.committeeSlug === "ai-and-machine-learning"
-      )
-    ).toBe(true);
-    expect(aiBoard?.entries.map((entry) => entry.rank)).toEqual([1, 2, 3]);
-    expect(aiBoard?.entries[0]?.memberName).toBe("Salma El-Sayed");
-    for (const entry of aiBoard?.entries ?? []) {
-      if (entry.previousRank !== null) {
-        expect(entry.previousRank).toBeLessThanOrEqual(3);
-      }
-    }
-
-    const augustBoard = await getOverallLeaderboard("2026-08");
-    expect(augustBoard).not.toBeNull();
-    expect(
-      (augustBoard?.entries ?? []).every(
         (entry) =>
-          entry.role.toLowerCase() === "member" ||
-          entry.role.toLowerCase() === "hr_member"
+          entry.committeeSlug === "ai-and-machine-learning" &&
+          entry.role.toLowerCase() === "member"
       )
     ).toBe(true);
+    for (const entry of aiBoard?.entries ?? []) {
+      expect("displayId" in entry).toBe(false);
+    }
   });
 
   it("returns published #1 leaders for all 12 committees without leaking draft months or member IDs", async () => {
     const leaders = await getCommitteeLeaders();
     expect(leaders).toHaveLength(12);
 
-    const aiLeader = leaders.find(
-      (item) => item.committee.slug === "ai-and-machine-learning"
-    );
-    expect(aiLeader?.leader?.memberName).toBe("Salma El-Sayed");
-    expect(aiLeader?.leader?.monthlyScore).toBe(94);
-    expect(aiLeader?.leader && "displayId" in aiLeader.leader).toBe(false);
+    for (const item of leaders) {
+      if (item.leader) {
+        expect("displayId" in item.leader).toBe(false);
+      }
+    }
 
     expect(await getCommitteeLeaders("2026-11")).toEqual([]);
   });

@@ -3,10 +3,14 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { normalizeSeasonSettings } from "@/lib/season-settings";
-import { isHeadRole, isOverallEligibleRole } from "@/services/scoring.service";
+import {
+  isCommitteeBoardEligibleRole,
+  isHrMemberEligibleForCommittee,
+} from "@/services/scoring.service";
 import type {
   Committee,
   CommitteeLeaderSpotlight,
+  LeaderboardEntry,
   LeaderboardHistorySummary,
   MonthKey,
   MonthlyLeaderboard,
@@ -32,75 +36,53 @@ interface SnapshotJsonShape {
   entries?: SnapshotEntryShape[];
   overallEntries?: SnapshotEntryShape[];
   committeeEntries?: Record<string, SnapshotEntryShape[]>;
-  headsEntries?: SnapshotEntryShape[];
-}
-
-function getRawOverallEntriesFromSnapshot(json: SnapshotJsonShape) {
-  return (json.overallEntries ?? json.entries ?? []).map((e, idx) => ({
-    rank: e.rank ?? idx + 1,
-    previousRank: e.previousRank ?? null,
-    memberId: e.memberId,
-    memberName: e.memberName,
-    committeeSlug: e.committeeSlug,
-    committeeName: e.committeeName,
-    role: e.role,
-    monthlyScore: e.monthlyScore,
-  }));
 }
 
 /**
- * Extracts ranked Overall entries from a published snapshot, keeping only
- * `member` and `hr_member` roles (filtering out committee heads and admin roles).
- * When a previously published snapshot contained non-member roles, remaining
- * entries are re-ranked 1..N with `previousRank: null`.
+ * Extracts ranked entries for a single committee from a published snapshot,
+ * keeping `member` and `hr_member` roles only (and restricting `hr_member`
+ * strictly to the `human-resources` committee board).
  */
-export function extractOverallEntriesFromSnapshot(
+export function extractCommitteeEntriesFromSnapshot(
   json: SnapshotJsonShape,
+  committeeSlug: string,
   topLimit?: number
-) {
-  const raw = getRawOverallEntriesFromSnapshot(json);
-  const filtered = raw.filter((e) => isOverallEligibleRole(e.role));
-  const wasFiltered = filtered.length !== raw.length;
+): LeaderboardEntry[] {
+  const hasCommitteeEntries = Array.isArray(
+    json.committeeEntries?.[committeeSlug]
+  );
+  const rawCommEntries = hasCommitteeEntries
+    ? json.committeeEntries![committeeSlug]
+    : (json.entries ?? json.overallEntries ?? []).filter(
+        (e) => e.committeeSlug === committeeSlug
+      );
+
+  const filtered = rawCommEntries.filter(
+    (entry) =>
+      isCommitteeBoardEligibleRole(entry.role) &&
+      isHrMemberEligibleForCommittee(entry.role, committeeSlug)
+  );
+  const wasFiltered = filtered.length !== rawCommEntries.length;
   const limited =
     topLimit !== undefined ? filtered.slice(0, topLimit) : filtered;
 
-  return limited.map((e, idx) => ({
-    ...e,
-    rank: wasFiltered ? idx + 1 : e.rank,
-    previousRank: wasFiltered ? null : e.previousRank,
+  return limited.map((entry, index) => ({
+    rank:
+      hasCommitteeEntries && !wasFiltered
+        ? (entry.rank ?? index + 1)
+        : index + 1,
+    previousRank: wasFiltered
+      ? null
+      : entry.previousCommitteeRank !== undefined
+        ? entry.previousCommitteeRank
+        : (entry.previousRank ?? null),
+    memberId: entry.memberId,
+    memberName: entry.memberName,
+    committeeSlug: entry.committeeSlug,
+    committeeName: entry.committeeName,
+    role: entry.role,
+    monthlyScore: entry.monthlyScore,
   }));
-}
-
-/**
- * Extracts ranked Heads-only entries from a published snapshot.
- * Uses frozen `headsEntries` when available, or gracefully derives from
- * pre-Priority-5 snapshots by filtering committee heads and re-ranking 1..N.
- */
-export function extractHeadsEntriesFromSnapshot(
-  json: SnapshotJsonShape,
-  topLimit: number = LEADERBOARD_TOP_LIMIT
-) {
-  if (Array.isArray(json.headsEntries)) {
-    return json.headsEntries.slice(0, topLimit).map((e, idx) => ({
-      rank: e.rank ?? idx + 1,
-      previousRank: e.previousRank ?? null,
-      memberId: e.memberId,
-      memberName: e.memberName,
-      committeeSlug: e.committeeSlug,
-      committeeName: e.committeeName,
-      role: e.role,
-      monthlyScore: e.monthlyScore,
-    }));
-  }
-
-  return getRawOverallEntriesFromSnapshot(json)
-    .filter((e) => isHeadRole(e.role))
-    .slice(0, topLimit)
-    .map((e, idx) => ({
-      ...e,
-      rank: idx + 1,
-      previousRank: null,
-    }));
 }
 
 async function resolvePublicSeason(): Promise<{
@@ -217,96 +199,6 @@ export async function getPublishedMonths(): Promise<PublishedMonthOption[]> {
   return [];
 }
 
-export async function getOverallLeaderboard(
-  month?: MonthKey
-): Promise<MonthlyLeaderboard | null> {
-  try {
-    const season = await resolvePublicSeason();
-    if (!season) return null;
-
-    const rows = await db
-      .select()
-      .from(schema.monthlySnapshots)
-      .where(
-        and(
-          eq(schema.monthlySnapshots.status, "published"),
-          eq(schema.monthlySnapshots.seasonId, season.id)
-        )
-      )
-      .orderBy(desc(schema.monthlySnapshots.month));
-
-    if (rows.length > 0) {
-      const target = month ? rows.find((r) => r.month === month) : rows[0];
-      if (!target) return null;
-
-      const json = target.snapshotJson as SnapshotJsonShape;
-      const overallEntries = extractOverallEntriesFromSnapshot(
-        json,
-        season.publicTopN
-      );
-
-      return {
-        month: target.month as MonthKey,
-        monthLabel: json.monthLabel ?? target.month,
-        status: target.status,
-        publishedAt: target.publishedAt
-          ? target.publishedAt.toISOString().slice(0, 10)
-          : "",
-        scope: "overall",
-        entries: overallEntries,
-      };
-    }
-  } catch {
-    // Graceful fallback
-  }
-  return null;
-}
-
-export async function getHeadsLeaderboard(
-  month?: MonthKey
-): Promise<MonthlyLeaderboard | null> {
-  try {
-    const season = await resolvePublicSeason();
-    if (!season) return null;
-
-    const rows = await db
-      .select()
-      .from(schema.monthlySnapshots)
-      .where(
-        and(
-          eq(schema.monthlySnapshots.status, "published"),
-          eq(schema.monthlySnapshots.seasonId, season.id)
-        )
-      )
-      .orderBy(desc(schema.monthlySnapshots.month));
-
-    if (rows.length > 0) {
-      const target = month ? rows.find((r) => r.month === month) : rows[0];
-      if (!target) return null;
-
-      const json = target.snapshotJson as SnapshotJsonShape;
-      const headsEntries = extractHeadsEntriesFromSnapshot(
-        json,
-        season.publicTopN
-      );
-
-      return {
-        month: target.month as MonthKey,
-        monthLabel: json.monthLabel ?? target.month,
-        status: target.status,
-        publishedAt: target.publishedAt
-          ? target.publishedAt.toISOString().slice(0, 10)
-          : "",
-        scope: "heads",
-        entries: headsEntries,
-      };
-    }
-  } catch {
-    // Graceful fallback
-  }
-  return null;
-}
-
 export async function getCommitteeLeaderboard(
   committeeSlug: string,
   month?: MonthKey
@@ -335,30 +227,11 @@ export async function getCommitteeLeaderboard(
       if (!target) return null;
 
       const json = target.snapshotJson as SnapshotJsonShape;
-      const hasCommitteeEntries = Array.isArray(
-        json.committeeEntries?.[committee.slug]
+      const committeeEntries = extractCommitteeEntriesFromSnapshot(
+        json,
+        committee.slug,
+        season.publicTopN
       );
-      const rawCommEntries = (
-        hasCommitteeEntries
-          ? json.committeeEntries![committee.slug]
-          : (json.entries ?? json.overallEntries ?? []).filter(
-              (e) => e.committeeSlug === committee.slug
-            )
-      ).slice(0, season.publicTopN);
-
-      const committeeEntries = rawCommEntries.map((entry, index: number) => ({
-        rank: hasCommitteeEntries ? (entry.rank ?? index + 1) : index + 1,
-        previousRank:
-          entry.previousCommitteeRank !== undefined
-            ? entry.previousCommitteeRank
-            : (entry.previousRank ?? null),
-        memberId: entry.memberId,
-        memberName: entry.memberName,
-        committeeSlug: entry.committeeSlug,
-        committeeName: entry.committeeName,
-        role: entry.role,
-        monthlyScore: entry.monthlyScore,
-      }));
 
       return {
         month: target.month as MonthKey,
@@ -399,16 +272,28 @@ export async function getLeaderboardHistory(): Promise<
     if (rows.length > 0) {
       return rows.map((snapshot) => {
         const json = snapshot.snapshotJson as SnapshotJsonShape;
-        const entries = extractOverallEntriesFromSnapshot(json);
-        const top = entries[0] ?? null;
-        const committeeSlugs = new Set<string>(
-          entries.map((e) => e.committeeSlug)
-        );
+        const committeeSlugs = new Set<string>();
+        const distinctMemberIds = new Set<string>();
+
         if (json.committeeEntries) {
           for (const slug of Object.keys(json.committeeEntries)) {
-            if ((json.committeeEntries[slug]?.length ?? 0) > 0) {
+            const entries = extractCommitteeEntriesFromSnapshot(json, slug);
+            if (entries.length > 0) {
               committeeSlugs.add(slug);
+              for (const entry of entries) {
+                distinctMemberIds.add(entry.memberId);
+              }
             }
+          }
+        } else {
+          const fallbackEntries = (json.entries ?? json.overallEntries ?? []).filter(
+            (e) =>
+              isCommitteeBoardEligibleRole(e.role) &&
+              isHrMemberEligibleForCommittee(e.role, e.committeeSlug)
+          );
+          for (const entry of fallbackEntries) {
+            committeeSlugs.add(entry.committeeSlug);
+            distinctMemberIds.add(entry.memberId);
           }
         }
 
@@ -418,14 +303,7 @@ export async function getLeaderboardHistory(): Promise<
           publishedAt: snapshot.publishedAt
             ? snapshot.publishedAt.toISOString().slice(0, 10)
             : "",
-          totalRankedMembers: entries.length,
-          topOverall: top
-            ? {
-                memberName: top.memberName,
-                committeeName: top.committeeName,
-                monthlyScore: top.monthlyScore,
-              }
-            : null,
+          totalRankedMembers: distinctMemberIds.size,
           committeeCount: committeeSlugs.size,
         };
       });
@@ -460,14 +338,14 @@ export async function getCommitteeLeaders(
       if (!target) return [];
 
       const json = target.snapshotJson as SnapshotJsonShape;
-      const rawEntries = getRawOverallEntriesFromSnapshot(json);
 
       return comms.map((committee) => {
-        const committeeList = json.committeeEntries?.[committee.slug];
-        const topEntry =
-          committeeList && committeeList.length > 0
-            ? committeeList[0]
-            : rawEntries.find((entry) => entry.committeeSlug === committee.slug);
+        const committeeEntries = extractCommitteeEntriesFromSnapshot(
+          json,
+          committee.slug,
+          1
+        );
+        const topEntry = committeeEntries[0] ?? null;
 
         return {
           committee: { ...committee },

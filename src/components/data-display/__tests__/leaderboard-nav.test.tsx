@@ -1,68 +1,59 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { LeaderboardNav } from "@/components/data-display/leaderboard-nav";
-import { CHAPTER_COMMITTEES as MOCK_COMMITTEES } from "@/db/seed-data";
-import type { PublishedMonthOption } from "@/types";
 
-const MONTHS: PublishedMonthOption[] = [
-  { month: "2026-10", monthLabel: "October 2026", publishedAt: "2026-11-02" },
-  { month: "2026-09", monthLabel: "September 2026", publishedAt: "2026-10-03" },
-];
-
-describe("LeaderboardNav", () => {
+describe("LeaderboardNav — Committee Leaders & Per-Committee navigation", () => {
   afterEach(() => {
     cleanup();
   });
 
-  it("renders mobile compact controls and desktop sidebar with Overall, Previous months, month switcher, and all 12 committees", () => {
+  it("renders Committee leaders and History links without Overall ranking or Committee heads links", () => {
     render(
       <LeaderboardNav
-        committees={[...MOCK_COMMITTEES]}
-        months={MONTHS}
-        activeMonth="2026-09"
-        activeCommitteeSlug="robotics-and-automation"
+        committees={[
+          {
+            id: "c-ai",
+            slug: "ai-and-machine-learning",
+            name: "AI and Machine Learning",
+            shortName: "AI & ML",
+            track: "technical",
+            description: "",
+          },
+        ]}
+        months={[
+          {
+            month: "2026-11",
+            monthLabel: "November 2026",
+            publishedAt: "2026-12-01",
+          },
+          {
+            month: "2026-10",
+            monthLabel: "October 2026",
+            publishedAt: "2026-11-01",
+          },
+        ]}
+        activeMonth="2026-11"
       />
     );
 
-    expect(screen.getByText(/^technical committees$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^non-technical committees$/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/committee: robotics and automation/i)
-    ).toBeInTheDocument();
-
-    const overallLink = screen.getByRole("link", { name: /overall ranking/i });
-    expect(overallLink).toHaveAttribute("href", "/leaderboards?month=2026-09");
-    expect(overallLink).not.toHaveAttribute("aria-current");
-
-    const archiveLinks = screen.getAllByRole("link", {
-      name: /previous months/i,
+    const leadersLinks = screen.getAllByRole("link", {
+      name: /committee leaders/i,
     });
-    expect(archiveLinks.length).toBeGreaterThanOrEqual(1);
-    for (const link of archiveLinks) {
-      expect(link).toHaveAttribute("href", "/leaderboards/history");
+    expect(leadersLinks.length).toBeGreaterThanOrEqual(2);
+    for (const link of leadersLinks) {
+      expect(link).toHaveAttribute("href", "/leaderboards?month=2026-11");
+      expect(link).toHaveAttribute("aria-current", "page");
     }
 
-    const activeCommitteeLinks = screen.getAllByRole("link", {
-      name: "Robotics and Automation",
-    });
-    expect(activeCommitteeLinks.length).toBeGreaterThanOrEqual(1);
     expect(
-      activeCommitteeLinks.some(
-        (link) => link.getAttribute("aria-current") === "page"
-      )
-    ).toBe(true);
+      screen.queryByRole("link", { name: /committee heads|heads/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /overall/i })
+    ).not.toBeInTheDocument();
 
     const octLinks = screen.getAllByRole("link", { name: "October 2026" });
-    expect(octLinks.length).toBeGreaterThanOrEqual(1);
-    expect(octLinks[0]).toHaveAttribute(
-      "href",
-      "/leaderboards/committees/robotics-and-automation?month=2026-10"
-    );
-
-    for (const committee of MOCK_COMMITTEES) {
-      expect(
-        screen.getAllByRole("link", { name: committee.name }).length
-      ).toBeGreaterThanOrEqual(1);
-    }
+    expect(octLinks.length).toBeGreaterThan(0);
+    expect(octLinks[0]).toHaveAttribute("href", "/leaderboards?month=2026-10");
   });
 });

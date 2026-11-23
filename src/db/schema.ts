@@ -272,7 +272,7 @@ export const scoringRubrics = pgTable(
 
 // ============================================================================
 // 5. Branch Sessions (Named branch_sessions to avoid Better-Auth collision)
-// Meetings, workshops, and events with rotating QR check-in codes.
+// Meetings, workshops, and events with QR check-in codes.
 // ============================================================================
 
 export const branchSessions = pgTable(
@@ -295,7 +295,7 @@ export const branchSessions = pgTable(
       withTimezone: true,
       mode: "date",
     }),
-    checkinCode: text("checkin_code"), // Rotating 6-digit or crypto nonce for QR
+    checkinCode: text("checkin_code"), // 6-digit numeric check-in code for QR
     checkinExpiresAt: timestamp("checkin_expires_at", {
       withTimezone: true,
       mode: "date",

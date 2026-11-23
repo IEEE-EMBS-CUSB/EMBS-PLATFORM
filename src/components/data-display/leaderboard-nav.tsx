@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Calendar, ChevronDown, Crown, History, Trophy } from "lucide-react";
+import { Calendar, ChevronDown, Crown, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Committee, MonthKey, PublishedMonthOption } from "@/types";
 
@@ -8,7 +8,6 @@ interface LeaderboardNavProps {
   months: PublishedMonthOption[];
   activeMonth: MonthKey;
   activeCommitteeSlug?: string;
-  isHeadsPage?: boolean;
   isHistoryPage?: boolean;
 }
 
@@ -17,51 +16,35 @@ export function LeaderboardNav({
   months,
   activeMonth,
   activeCommitteeSlug,
-  isHeadsPage = false,
   isHistoryPage = false,
 }: LeaderboardNavProps) {
   const technical = committees.filter((c) => c.track === "technical");
   const nonTechnical = committees.filter((c) => c.track === "non_technical");
   const activeCommittee = committees.find((c) => c.slug === activeCommitteeSlug);
 
-  const monthBaseHref = isHeadsPage
-    ? "/leaderboards/heads"
-    : activeCommitteeSlug
-      ? `/leaderboards/committees/${activeCommitteeSlug}`
-      : "/leaderboards";
+  const monthBaseHref = activeCommitteeSlug
+    ? `/leaderboards/committees/${activeCommitteeSlug}`
+    : "/leaderboards";
 
-  const isOverallActive = !activeCommitteeSlug && !isHistoryPage && !isHeadsPage;
+  const isLeadersActive = !activeCommitteeSlug && !isHistoryPage;
 
   return (
     <aside aria-label="Leaderboard navigation">
-      {/* Mobile-first compact control strip so Rank #1 appears above the fold */}
+      {/* Mobile-first compact control strip so standings appear above the fold */}
       <div className="space-y-3 lg:hidden">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Link
             href={`/leaderboards?month=${activeMonth}`}
-            aria-current={isOverallActive ? "page" : undefined}
+            aria-current={isLeadersActive ? "page" : undefined}
             className={cn(
               "flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs font-semibold transition-colors sm:text-sm",
-              isOverallActive
-                ? "border-[#772583] bg-[#772583] text-white"
-                : "border-border bg-white text-foreground"
-            )}
-          >
-            <Trophy className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Overall
-          </Link>
-          <Link
-            href={`/leaderboards/heads?month=${activeMonth}`}
-            aria-current={isHeadsPage ? "page" : undefined}
-            className={cn(
-              "flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs font-semibold transition-colors sm:text-sm",
-              isHeadsPage
+              isLeadersActive
                 ? "border-[#772583] bg-[#772583] text-white"
                 : "border-border bg-white text-foreground"
             )}
           >
             <Crown className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Heads
+            Committee leaders
           </Link>
           <Link
             href="/leaderboards/history"
@@ -175,29 +158,16 @@ export function LeaderboardNav({
           <nav className="space-y-1">
             <Link
               href={`/leaderboards?month=${activeMonth}`}
-              aria-current={isOverallActive ? "page" : undefined}
+              aria-current={isLeadersActive ? "page" : undefined}
               className={cn(
                 "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
-                isOverallActive
-                  ? "bg-[#772583] text-white"
-                  : "text-foreground hover:bg-muted"
-              )}
-            >
-              <Trophy className="h-4 w-4 shrink-0" aria-hidden="true" />
-              Overall ranking
-            </Link>
-            <Link
-              href={`/leaderboards/heads?month=${activeMonth}`}
-              aria-current={isHeadsPage ? "page" : undefined}
-              className={cn(
-                "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
-                isHeadsPage
+                isLeadersActive
                   ? "bg-[#772583] text-white"
                   : "text-foreground hover:bg-muted"
               )}
             >
               <Crown className="h-4 w-4 shrink-0" aria-hidden="true" />
-              Committee heads
+              Committee leaders
             </Link>
             <Link
               href="/leaderboards/history"

@@ -28,7 +28,6 @@ import {
   createSessionAction,
   extendSessionCheckinWindowAction,
   getSessionAttendanceRosterAction,
-  rotateSessionCheckinCodeAction,
   setSessionMemberAttendanceAction,
   toggleSessionCheckinAction,
   type CreateSessionInput,
@@ -299,18 +298,23 @@ export function AttendanceManagerView({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  const liveSessionIsActive = liveCheckinSession
+    ? isSessionLiveAt(liveCheckinSession, nowMs)
+    : false;
+  const activeQrCode = liveSessionIsActive
+    ? (liveCheckinSession?.checkinCode ?? null)
+    : null;
+
   useEffect(() => {
     let cancelled = false;
-    const isLive =
-      liveCheckinSession && isSessionLiveAt(liveCheckinSession, nowMs);
-    if (isLive && liveCheckinSession?.checkinCode) {
+    if (activeQrCode) {
       const origin =
         typeof window !== "undefined" && window.location?.origin
           ? window.location.origin
           : "";
       const qrPayload = origin
-        ? buildCheckinQrUrl(origin, liveCheckinSession.checkinCode)
-        : liveCheckinSession.checkinCode;
+        ? buildCheckinQrUrl(origin, activeQrCode)
+        : activeQrCode;
       QRCode.toDataURL(qrPayload, {
         width: 256,
         margin: 1,
@@ -329,55 +333,7 @@ export function AttendanceManagerView({
     return () => {
       cancelled = true;
     };
-  }, [liveCheckinSession, nowMs]);
-
-  useEffect(() => {
-    if (!liveCheckinSession || !isSessionLiveAt(liveCheckinSession, nowMs)) {
-      return;
-    }
-    const rotationMs =
-      Math.max(15, attendanceDefaults.qrRotationSeconds) * 1000;
-    const interval = setInterval(async () => {
-      try {
-        const res = await rotateSessionCheckinCodeAction(
-          liveCheckinSession.id,
-          attendanceDefaults.defaultCheckinWindowMinutes
-        );
-        if (res.expired) {
-          setSessionList((prev) =>
-            prev.map((item) =>
-              item.id === liveCheckinSession.id
-                ? { ...item, checkinOpen: false }
-                : item
-            )
-          );
-          return;
-        }
-        if (res.ok && res.checkinCode) {
-          setSessionList((prev) =>
-            prev.map((item) =>
-              item.id === liveCheckinSession.id
-                ? {
-                    ...item,
-                    checkinCode: res.checkinCode ?? item.checkinCode,
-                    checkinExpiresAt:
-                      res.checkinExpiresAt ?? item.checkinExpiresAt,
-                  }
-                : item
-            )
-          );
-        }
-      } catch {
-        // Keep current code visible if rotation request transiently fails
-      }
-    }, rotationMs);
-    return () => clearInterval(interval);
-  }, [
-    liveCheckinSession,
-    nowMs,
-    attendanceDefaults.qrRotationSeconds,
-    attendanceDefaults.defaultCheckinWindowMinutes,
-  ]);
+  }, [activeQrCode]);
 
   const isCommitteeScoped =
     currentUserRole === "committee_head" || currentUserRole === "hr_member";
@@ -739,17 +695,9 @@ export function AttendanceManagerView({
     handleSetRowAttendance,
   ]);
 
-  const rotationLabel =
-    attendanceDefaults.qrRotationSeconds === 60
-      ? "every minute"
-      : `every ${attendanceDefaults.qrRotationSeconds}s`;
-
   const liveCountdown = liveCheckinSession
     ? formatRemainingCountdown(liveCheckinSession.checkinExpiresAt, nowMs)
     : null;
-  const liveSessionIsActive = liveCheckinSession
-    ? isSessionLiveAt(liveCheckinSession, nowMs)
-    : false;
 
   return (
     <div className="space-y-6">
@@ -1508,10 +1456,6 @@ export function AttendanceManagerView({
                     {liveCheckinSession.checkinCode}
                   </div>
                 </div>
-
-                <p className="mt-4 text-xs text-muted-foreground">
-                  Codes rotate {rotationLabel} to prevent remote sharing.
-                </p>
 
                 {canManageSession(liveCheckinSession) && (
                   <div className="mt-4 flex flex-wrap items-center justify-center gap-2">

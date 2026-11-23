@@ -158,9 +158,7 @@ export interface PreviousRankRef {
 }
 
 export interface PreviousSnapshotRef {
-  overall?: PreviousRankRef[];
   committees?: Record<string, PreviousRankRef[]>;
-  heads?: PreviousRankRef[];
 }
 
 export interface CalculatedSnapshotEntry {
@@ -177,14 +175,12 @@ export interface CalculatedSnapshotEntry {
 
 export interface DraftSnapshotResult {
   month: string;
-  overallEntries: CalculatedSnapshotEntry[];
   committeeEntries: Record<string, CalculatedSnapshotEntry[]>;
-  headsEntries: CalculatedSnapshotEntry[];
 }
 
 /**
- * Calculates a draft monthly snapshot from score ledger points using the unified
- * Spec §4 scoring engine (once per person globally, once per eligible committee board).
+ * Calculates a draft monthly snapshot from score ledger points using the
+ * per-committee Spec §4 scoring engine (members & HR members only).
  */
 export function calculateDraftMonthlySnapshot(input: {
   month: string;

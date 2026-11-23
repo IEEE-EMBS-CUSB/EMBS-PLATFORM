@@ -38,7 +38,7 @@ Persistence runs on PostgreSQL via Drizzle ORM, defined in [`src/db/schema.ts`](
 2. **`committees`**: Season-scoped committees (`id`, `seasonId`, `name`, `slug`, `category: technical | non_technical`, `isActive`, timestamps).
 3. **`roster_memberships`**: Chapter roster, role assignment, and authentication credentials (`id`, `seasonId`, `email` [indexed lowercase], `fullName`, `committeeId` [nullable], `role: master_admin | director | hr_admin | hr_member | committee_head | member | attendee`, `passwordHash`, `mustChangePassword`, `isActive`, timestamps).
 4. **`scoring_rubrics`**: Seasonal scoring weights and categories (`id`, `seasonId`, `name`, `maxPoints`, `weight`, `leadersOnly: boolean`, `sortOrder`).
-5. **`branch_sessions`**: Meetings, workshops, and events (`id`, `seasonId`, `committeeId` [nullable = branch-wide], `title`, `startsAt`, `checkinCode` [rotating 6-digit numeric nonce], `checkinExpiresAt`, `checkinOpen: boolean`, `punctualityCutoffMinutes`, `basePoints`, `punctualityBonus`, timestamps).
+5. **`branch_sessions`**: Meetings, workshops, and events (`id`, `seasonId`, `committeeId` [nullable = branch-wide], `title`, `startsAt`, `checkinCode` [6-digit numeric check-in code], `checkinExpiresAt`, `checkinOpen: boolean`, `punctualityCutoffMinutes`, `basePoints`, `punctualityBonus`, timestamps).
 6. **`attendance_records`**: Session check-in records (`id`, `sessionId`, `membershipId`, `checkedInAt`, `isPunctual`, `pointsAwarded`, `overrideReason`). Unique on `(sessionId, membershipId)`.
 7. **`tasks`**: Assigned committee or branch deliverables (`id`, `seasonId`, `committeeId` [nullable = branch-wide], `title`, `description`, `dueAt`, `maxPoints`, timestamps).
 8. **`task_submissions`**: Member deliverables and grades (`id`, `taskId`, `membershipId`, `effortScore: 1-5`, `qualityScore: 1-5`, `timelinessScore: 1-5`, `totalPoints`, `notes`, `gradedBy`, `gradedAt`, timestamps). Unique on `(taskId, membershipId)`.
@@ -94,9 +94,9 @@ The platform enforces a 7-tier role model implemented in [`src/lib/permissions.t
 - **Member Self-Check-in**: Members enter the code via the `LiveCheckinCard` on `/member/attendance`. The action verifies active season, committee authorization, duplicate prevention, and window expiration. On success, attendance is recorded and points are posted directly to `score_ledger`.
 
 ### Leaderboard Publishing (`/hr/publishing` & `/leaderboards`)
-- **Monthly Aggregation**: Ranks are computed deterministically from `score_ledger` entries for the specified month.
-- **Snapshot Freezing**: Clicking "Publish Month" stores the rankings in `monthly_snapshots`. Once frozen, rankings never shift even if past data is reviewed.
-- **Public Showcase**: `/` displays the Top 5 overall and committee leaders. `/leaderboards` displays full monthly standings and committee-specific boards with historical season/month selectors.
+- **Monthly Aggregation**: Per-committee ranks are computed deterministically from `score_ledger` entries for the specified month (members and HR members only; HR members appear exclusively on the Human Resources board).
+- **Snapshot Freezing**: Clicking "Publish Month" stores the per-committee rankings in `monthly_snapshots`. Once frozen, rankings never shift even if past data is reviewed.
+- **Public Showcase**: `/` and `/leaderboards` showcase each committee's #1 Committee Leader, with per-committee full monthly standings at `/leaderboards/committees/[slug]` and historical month archives at `/leaderboards/history`.
 
 ---
 

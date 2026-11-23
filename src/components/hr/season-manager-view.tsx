@@ -720,8 +720,9 @@ export function SeasonManagerView({
                 </span>
               </div>
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                Default session points, punctuality cutoffs, QR rotation, and
-                Effort/Quality/Timeliness multipliers used across HR grading.
+                Default session points, punctuality cutoffs, check-in windows,
+                and Effort/Quality/Timeliness multipliers used across HR
+                grading.
               </p>
             </div>
             <div className="rounded-lg border border-border/80 bg-white p-3">
@@ -1023,7 +1024,7 @@ export function SeasonManagerView({
                       </p>
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div>
                       <label
                         htmlFor="setting-base-points"
@@ -1130,34 +1131,6 @@ export function SeasonManagerView({
                             attendance: {
                               ...prev.attendance,
                               defaultCheckinWindowMinutes: parseNonNegativeInt(
-                                e.target.value
-                              ),
-                            },
-                          }))
-                        }
-                        className="mt-1 h-9 text-xs font-semibold tabular-nums"
-                      />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor="setting-qr-rotation"
-                        className="block text-xs font-semibold text-foreground/85"
-                      >
-                        QR Rotation (sec)
-                      </label>
-                      <Input
-                        id="setting-qr-rotation"
-                        type="number"
-                        min={15}
-                        max={300}
-                        disabled={settingsReadOnly}
-                        value={draftSettings.attendance.qrRotationSeconds}
-                        onChange={(e) =>
-                          setDraftSettings((prev) => ({
-                            ...prev,
-                            attendance: {
-                              ...prev.attendance,
-                              qrRotationSeconds: parseNonNegativeInt(
                                 e.target.value
                               ),
                             },

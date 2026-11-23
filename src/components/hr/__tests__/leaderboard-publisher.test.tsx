@@ -13,33 +13,11 @@ import {
 const mockSnapshot: SnapshotDisplayData = {
   month: "2026-10",
   status: "draft",
-  overallEntries: [
-    {
-      rank: 1,
-      previousRank: 3,
-      memberId: "mem-1",
-      memberName: "Salma El-Sayed",
-      committeeSlug: "ai",
-      committeeName: "AI & Machine Learning",
-      role: "member",
-      monthlyScore: 195,
-    },
-    {
-      rank: 2,
-      previousRank: 1,
-      memberId: "mem-2",
-      memberName: "Ziad Hany",
-      committeeSlug: "web",
-      committeeName: "Web Development",
-      role: "member",
-      monthlyScore: 180,
-    },
-  ],
   committeeEntries: {
     ai: [
       {
         rank: 1,
-        previousRank: 1,
+        previousRank: 3,
         memberId: "mem-1",
         memberName: "Salma El-Sayed",
         committeeSlug: "ai",
@@ -58,6 +36,16 @@ const mockSnapshot: SnapshotDisplayData = {
         committeeName: "Web Development",
         role: "member",
         monthlyScore: 180,
+      },
+      {
+        rank: 2,
+        previousRank: 1,
+        memberId: "mem-3",
+        memberName: "Omar Tarek",
+        committeeSlug: "web",
+        committeeName: "Web Development",
+        role: "member",
+        monthlyScore: 165,
       },
     ],
   },
@@ -101,7 +89,7 @@ describe("Publishing Month State Helpers", () => {
 });
 
 describe("LeaderboardPublisherView", () => {
-  it("renders a completed past draft month as Ready to Review & Publish with Overall Rankings tab", () => {
+  it("renders a completed past draft month as Ready to Review & Publish with Committee Leaders and By Committee tabs only", () => {
     render(
       <LeaderboardPublisherView
         snapshot={mockSnapshot}
@@ -115,9 +103,17 @@ describe("LeaderboardPublisherView", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/ready to review & publish/i)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /overall rankings/i })
+      screen.getByRole("button", { name: /committee leaders/i })
     ).toBeInTheDocument();
-    expect(screen.queryByText(/overall top 10/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /by committee/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /overall rankings/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /committee heads/i })
+    ).not.toBeInTheDocument();
 
     expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
     expect(screen.getByText("Ziad Hany")).toBeInTheDocument();
@@ -125,7 +121,7 @@ describe("LeaderboardPublisherView", () => {
     expect(screen.getByText("180 pts")).toBeInTheDocument();
 
     expect(screen.getByText("▲ 2")).toBeInTheDocument();
-    expect(screen.getByText("▼ 1")).toBeInTheDocument();
+    expect(screen.getByText("▲ 1")).toBeInTheDocument();
   });
 
   it("publishes and locks a due_review month directly when HR clicks Publish & Freeze Rankings", async () => {
@@ -170,14 +166,12 @@ describe("LeaderboardPublisherView", () => {
       screen.queryByRole("button", { name: /publish & freeze rankings/i })
     ).not.toBeInTheDocument();
 
-    // Click Publish Early... -> opens confirmation modal
     await user.click(screen.getByRole("button", { name: /publish early/i }));
     expect(handlePublish).not.toHaveBeenCalled();
     expect(
       screen.getByRole("dialog", { name: /publish november 2026 early/i })
     ).toBeInTheDocument();
 
-    // Confirm early publish
     await user.click(
       screen.getByRole("button", { name: /confirm publish early/i })
     );
@@ -202,25 +196,11 @@ describe("LeaderboardPublisherView", () => {
     expect(screen.getByText(/sara hassan/i)).toBeInTheDocument();
   });
 
-  it("switches to committee breakdowns and Committee Heads preview tabs", async () => {
+  it("switches to By Committee tab and displays per-committee member rankings", async () => {
     const user = userEvent.setup();
     render(
       <LeaderboardPublisherView
-        snapshot={{
-          ...mockSnapshot,
-          headsEntries: [
-            {
-              rank: 1,
-              previousRank: 2,
-              memberId: "mem-head-1",
-              memberName: "Omar Multi-Role",
-              committeeSlug: "public-relations",
-              committeeName: "Public Relations",
-              role: "committee_head",
-              monthlyScore: 95,
-            },
-          ],
-        }}
+        snapshot={mockSnapshot}
         availableMonths={["2026-10", "2026-09"]}
         currentMonth="2026-11"
       />
@@ -229,10 +209,7 @@ describe("LeaderboardPublisherView", () => {
     await user.click(screen.getByRole("button", { name: /by committee/i }));
     expect(screen.getByText("AI & Machine Learning")).toBeInTheDocument();
     expect(screen.getByText("Web Development")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /committee heads/i }));
-    expect(screen.getByText("Omar Multi-Role")).toBeInTheDocument();
-    expect(screen.getByText("Public Relations")).toBeInTheDocument();
-    expect(screen.getByText("95 pts")).toBeInTheDocument();
+    expect(screen.getByText("Omar Tarek")).toBeInTheDocument();
+    expect(screen.getByText("165 pts")).toBeInTheDocument();
   });
 });

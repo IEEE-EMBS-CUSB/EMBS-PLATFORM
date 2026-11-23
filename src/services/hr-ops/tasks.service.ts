@@ -8,6 +8,7 @@ import {
   canManageWorkItem,
   getDefaultWorkTypeForRole,
   getOperationalCommitteeScope,
+  resolveWorkScopeCommitteeId,
   type WorkItemType,
 } from "@/lib/permissions";
 import {
@@ -708,16 +709,21 @@ export async function gradeTaskSubmissionAsActor(
       .limit(1);
     if (!member) return { ok: false, error: "Assignee record not found." };
 
-    let scopeCommitteeId = task.committeeId ?? member.committeeId;
-    if (!scopeCommitteeId && member.role === "hr_admin") {
-      const hrComm = await ensureHrCommitteeForSeason(task.seasonId);
-      scopeCommitteeId = hrComm.id;
-    }
-    let effectiveActorCommitteeId = actor.profile.committeeId;
-    if (actor.profile.role === "hr_admin" && !effectiveActorCommitteeId) {
-      const hrComm = await ensureHrCommitteeForSeason(task.seasonId);
-      effectiveActorCommitteeId = hrComm.id;
-    }
+    const hrCommitteeId =
+      (!task.committeeId && !member.committeeId && member.role === "hr_admin") ||
+      (actor.profile.role === "hr_admin" && !actor.profile.committeeId)
+        ? (await ensureHrCommitteeForSeason(task.seasonId)).id
+        : null;
+    const scopeCommitteeId = resolveWorkScopeCommitteeId({
+      taskCommitteeId: task.committeeId,
+      memberCommitteeId: member.committeeId,
+      memberRole: member.role as MembershipRole,
+      hrCommitteeId,
+    });
+    const effectiveActorCommitteeId =
+      actor.profile.role === "hr_admin" && !actor.profile.committeeId
+        ? hrCommitteeId
+        : actor.profile.committeeId;
     const permCtx = {
       id: actor.profile.id,
       email: actor.profile.email ?? "",
@@ -855,11 +861,16 @@ export async function toggleTaskCompletionAsActor(
       .limit(1);
     if (!member) return { ok: false, error: "Assignee record not found." };
 
-    let scopeCommitteeId = task.committeeId ?? member.committeeId;
-    if (!scopeCommitteeId && member.role === "hr_admin") {
-      const hrComm = await ensureHrCommitteeForSeason(task.seasonId);
-      scopeCommitteeId = hrComm.id;
-    }
+    const hrCommitteeId =
+      !task.committeeId && !member.committeeId && member.role === "hr_admin"
+        ? (await ensureHrCommitteeForSeason(task.seasonId)).id
+        : null;
+    const scopeCommitteeId = resolveWorkScopeCommitteeId({
+      taskCommitteeId: task.committeeId,
+      memberCommitteeId: member.committeeId,
+      memberRole: member.role as MembershipRole,
+      hrCommitteeId,
+    });
     const permCtx = {
       id: actor.profile.id,
       email: actor.profile.email ?? "",

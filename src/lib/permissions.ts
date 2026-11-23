@@ -501,3 +501,129 @@ export function canAssignTask(
 
   return false;
 }
+
+/**
+ * Resolves the authoritative committee scope for a work submission:
+ * committee-bound tasks use `taskCommitteeId`; branch-wide tasks (`null`)
+ * fall back to the assignee's committee (or the HR committee for `hr_admin`).
+ */
+export function resolveWorkScopeCommitteeId(input: {
+  taskCommitteeId: string | null;
+  memberCommitteeId: string | null;
+  memberRole: MembershipRole;
+  hrCommitteeId?: string | null;
+}): string | null {
+  let scopeCommitteeId = input.taskCommitteeId ?? input.memberCommitteeId;
+  if (!scopeCommitteeId && input.memberRole === "hr_admin") {
+    scopeCommitteeId = input.hrCommitteeId ?? null;
+  }
+  return scopeCommitteeId;
+}
+
+/**
+ * Pre-filters tasks before loading submissions in `/hr/tasks`, eliminating any
+ * task whose workType or explicit committeeId cannot possibly be graded/verified
+ * by the actor (including out-of-track committee tasks for Track Directors).
+ */
+export function canTaskHaveGradeableSubmissions(input: {
+  actor: UserPermissionContext;
+  workType: WorkItemType;
+  taskCommitteeId: string | null;
+  directorTrackCommitteeIds?: ReadonlySet<string> | null;
+  hrCommitteeId?: string | null;
+}): boolean {
+  const {
+    actor,
+    workType,
+    taskCommitteeId,
+    directorTrackCommitteeIds,
+    hrCommitteeId,
+  } = input;
+
+  const effectiveActor: UserPermissionContext =
+    actor.role === "hr_admin" && !actor.committeeId
+      ? { ...actor, committeeId: hrCommitteeId ?? null }
+      : actor;
+
+  if (taskCommitteeId !== null) {
+    if (!canManageWorkItem(effectiveActor, workType, taskCommitteeId)) {
+      return false;
+    }
+    if (
+      directorTrackCommitteeIds &&
+      !directorTrackCommitteeIds.has(taskCommitteeId)
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  if (actor.role === "master_admin") return true;
+  if (actor.role === "director") return workType === "assignment";
+  if (actor.role === "hr_admin") {
+    return workType === "task" || Boolean(effectiveActor.committeeId);
+  }
+  if (actor.role === "committee_head") {
+    return workType === "assignment" && Boolean(actor.committeeId);
+  }
+  if (actor.role === "hr_member") {
+    return workType === "task" && Boolean(getOperationalCommitteeScope(actor));
+  }
+  return false;
+}
+
+/**
+ * Single source of truth for whether an operational actor can grade/verify a
+ * specific work submission — matches server-side `gradeTaskSubmissionAsActor`
+ * and `toggleTaskCompletionAsActor` guards so UI visibility never diverges.
+ */
+export function canGradeWorkSubmission(input: {
+  actor: UserPermissionContext;
+  workType: WorkItemType;
+  taskCommitteeId: string | null;
+  submissionMembershipId: string;
+  memberRole: MembershipRole;
+  memberCommitteeId: string | null;
+  directorTrackCommitteeIds?: ReadonlySet<string> | null;
+  hrCommitteeId?: string | null;
+}): boolean {
+  const {
+    actor,
+    workType,
+    taskCommitteeId,
+    submissionMembershipId,
+    memberRole,
+    memberCommitteeId,
+    directorTrackCommitteeIds,
+    hrCommitteeId,
+  } = input;
+
+  if (submissionMembershipId === actor.id) {
+    return false;
+  }
+
+  const scopeCommitteeId = resolveWorkScopeCommitteeId({
+    taskCommitteeId,
+    memberCommitteeId,
+    memberRole,
+    hrCommitteeId,
+  });
+
+  const effectiveActor: UserPermissionContext =
+    actor.role === "hr_admin" && !actor.committeeId
+      ? { ...actor, committeeId: hrCommitteeId ?? null }
+      : actor;
+
+  if (!canManageWorkItem(effectiveActor, workType, scopeCommitteeId)) {
+    return false;
+  }
+
+  if (
+    directorTrackCommitteeIds &&
+    (!scopeCommitteeId || !directorTrackCommitteeIds.has(scopeCommitteeId))
+  ) {
+    return false;
+  }
+
+  return true;
+}

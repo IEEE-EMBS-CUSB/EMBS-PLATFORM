@@ -26,11 +26,15 @@ const AVATAR_BG_BY_SLUG: Record<string, string> = {
 interface CommitteeLeadersShowcaseProps {
   spotlights: CommitteeLeaderSpotlight[];
   monthLabel: string;
+  month?: string;
+  embedded?: boolean;
 }
 
 export function CommitteeLeadersShowcase({
   spotlights,
   monthLabel,
+  month,
+  embedded = false,
 }: CommitteeLeadersShowcaseProps) {
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
 
@@ -45,11 +49,6 @@ export function CommitteeLeadersShowcase({
     trackFilter === "all"
       ? spotlights
       : spotlights.filter((item) => item.committee.track === trackFilter);
-
-  const highestScore = spotlights.reduce(
-    (max, item) => Math.max(max, item.leader?.monthlyScore ?? 0),
-    0
-  );
 
   const filterOptions: {
     id: TrackFilter;
@@ -66,7 +65,11 @@ export function CommitteeLeadersShowcase({
   ];
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+    <section
+      className={cn(
+        embedded ? "w-full" : "mx-auto max-w-6xl px-4 py-12 sm:px-6"
+      )}
+    >
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="font-heading text-xl font-bold text-[#002855] sm:text-2xl">
@@ -114,31 +117,37 @@ export function CommitteeLeadersShowcase({
             })}
           </div>
 
-          <Link
-            href="/leaderboards"
-            className="inline-flex min-h-9 items-center gap-1 text-sm font-semibold text-[#00629b] hover:text-[#002855] hover:underline"
-          >
-            <span>All standings</span>
-            <ArrowRight className="h-4 w-4" aria-hidden="true" />
-          </Link>
+          {!embedded && (
+            <Link
+              href="/leaderboards"
+              className="inline-flex min-h-9 items-center gap-1 text-sm font-semibold text-[#00629b] hover:text-[#002855] hover:underline"
+            >
+              <span>All standings</span>
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          )}
         </div>
       </div>
 
       {/* Open card-free roster of crowned honorees */}
-      <ul className="grid grid-cols-2 items-start gap-x-4 gap-y-8 pt-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+      <ul
+        className={cn(
+          "grid grid-cols-2 items-start gap-x-4 gap-y-8 pt-2 sm:grid-cols-3",
+          embedded ? "md:grid-cols-3 xl:grid-cols-4" : "md:grid-cols-4 lg:grid-cols-6"
+        )}
+      >
         {filtered.map(({ committee, leader }) => {
           const avatarBg =
             AVATAR_BG_BY_SLUG[committee.slug] ??
             (committee.track === "technical" ? "bg-[#00629b]" : "bg-[#772583]");
-          const isTopOverall =
-            leader !== null &&
-            highestScore > 0 &&
-            leader.monthlyScore === highestScore;
+          const committeeHref = month
+            ? `/leaderboards/committees/${committee.slug}?month=${month}`
+            : `/leaderboards/committees/${committee.slug}`;
 
           return (
             <li key={committee.id} className="flex justify-center">
               <Link
-                href={`/leaderboards/committees/${committee.slug}`}
+                href={committeeHref}
                 className="group flex w-full flex-col items-center rounded-xl px-1 py-1 text-center focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#00629b]"
               >
                 {/* Crowned user emblem with locked vertical rhythm */}
@@ -150,21 +159,15 @@ export function CommitteeLeadersShowcase({
                     <Crown
                       data-slot="leader-crown"
                       aria-hidden="true"
-                      className={cn(
-                        "fill-[#ffc627] text-[#a37000] drop-shadow-[0_1px_1px_rgba(0,40,85,0.2)]",
-                        isTopOverall ? "h-7 w-7" : "h-6 w-6"
-                      )}
+                      className="h-6 w-6 fill-[#ffc627] text-[#a37000] drop-shadow-[0_1px_1px_rgba(0,40,85,0.2)]"
                       strokeWidth={1.75}
                     />
                   </div>
 
                   <div
                     className={cn(
-                      "flex h-16 w-16 items-center justify-center rounded-full text-white shadow-sm transition-shadow sm:h-[72px] sm:w-[72px]",
-                      avatarBg,
-                      isTopOverall
-                        ? "ring-[3px] ring-[#ffc627] ring-offset-2 ring-offset-background"
-                        : "ring-2 ring-white group-hover:ring-[#ffc627]"
+                      "flex h-16 w-16 items-center justify-center rounded-full text-white shadow-sm ring-2 ring-white transition-shadow group-hover:ring-[#ffc627] sm:h-[72px] sm:w-[72px]",
+                      avatarBg
                     )}
                   >
                     <UserRound
@@ -177,14 +180,7 @@ export function CommitteeLeadersShowcase({
 
                   <div className="relative z-10 -mt-3 flex h-5 items-center justify-center">
                     {leader && (
-                      <span
-                        className={cn(
-                          "inline-flex h-5 items-center rounded-full px-2 font-heading text-[11px] font-bold tabular-nums shadow-xs",
-                          isTopOverall
-                            ? "bg-[#ffc627] text-[#002855]"
-                            : "bg-white text-[#002855] ring-1 ring-border"
-                        )}
-                      >
+                      <span className="inline-flex h-5 items-center rounded-full bg-white px-2 font-heading text-[11px] font-bold text-[#002855] shadow-xs ring-1 ring-border tabular-nums">
                         {leader.monthlyScore}
                       </span>
                     )}

@@ -3,7 +3,6 @@ export interface SeasonAttendanceSettings {
   defaultPunctualityBonus: number;
   punctualityCutoffMinutes: number;
   defaultCheckinWindowMinutes: number;
-  qrRotationSeconds: number;
 }
 
 export type TaskCompletionMode = "self_report" | "hr_only";
@@ -51,7 +50,6 @@ export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
     defaultPunctualityBonus: 5,
     punctualityCutoffMinutes: 15,
     defaultCheckinWindowMinutes: 30,
-    qrRotationSeconds: 60,
   },
   tasks: {
     defaultTaskPoints: 15,
@@ -162,10 +160,6 @@ export function normalizeSeasonSettings(raw?: unknown): SeasonSettings {
         att.defaultCheckinWindowMinutes,
         DEFAULT_SEASON_SETTINGS.attendance.defaultCheckinWindowMinutes
       ),
-      qrRotationSeconds: asFiniteInt(
-        att.qrRotationSeconds,
-        DEFAULT_SEASON_SETTINGS.attendance.qrRotationSeconds
-      ),
     },
     tasks: {
       defaultTaskPoints: asFiniteInt(
@@ -263,12 +257,6 @@ export function validateSeasonSettings(
     return {
       ok: false,
       error: "Default check-in window must be between 5 and 360 minutes.",
-    };
-  }
-  if (attendance.qrRotationSeconds < 15 || attendance.qrRotationSeconds > 300) {
-    return {
-      ok: false,
-      error: "QR code rotation interval must be between 15 and 300 seconds.",
     };
   }
 

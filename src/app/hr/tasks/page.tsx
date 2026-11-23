@@ -7,7 +7,8 @@ import {
 import { requireHrModule } from "@/lib/portal-guards";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
-  canManageWorkItem,
+  canGradeWorkSubmission,
+  canTaskHaveGradeableSubmissions,
   getOperationalCommitteeScope,
   type WorkItemType,
 } from "@/lib/permissions";
@@ -266,25 +267,29 @@ export default async function HrTasksPage() {
         };
       });
 
-      // Filter tasks strictly by role work-type authority before loading submissions
+      // Pre-filter tasks strictly by role work-type and committee/track authority before loading submissions
+      const actorPermCtx = {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+        committeeId: profile.committeeId,
+        trackedCommitteeId: profile.trackedCommitteeId,
+      };
       const roleAuthorizedTasks = dbTasks.filter((t) => {
         const itemWorkType: WorkItemType =
           t.workType === "task" ? "task" : "assignment";
-        return canManageWorkItem(
-          {
-            id: profile.id,
-            email: profile.email,
-            role: profile.role,
-            committeeId: profile.committeeId,
-            trackedCommitteeId: profile.trackedCommitteeId,
-          },
-          itemWorkType,
-          t.committeeId
-        );
+        return canTaskHaveGradeableSubmissions({
+          actor: actorPermCtx,
+          workType: itemWorkType,
+          taskCommitteeId: t.committeeId,
+          directorTrackCommitteeIds,
+          hrCommitteeId,
+        });
       });
 
       // Load all submissions for visible tasks in a single query (eliminates N+1)
       if (roleAuthorizedTasks.length > 0) {
+        const taskById = new Map(roleAuthorizedTasks.map((t) => [t.id, t]));
         const taskIds = roleAuthorizedTasks.map((t) => t.id);
         const allSubs = await db
           .select({
@@ -309,20 +314,26 @@ export default async function HrTasksPage() {
 
         const subsByTask = new Map<string, BulkSubmission[]>();
         for (const { sub, member } of allSubs) {
-          // Never show an officer their own submission in the grading table
-          if (member.id === profile.id) {
-            continue;
-          }
-          const effectiveMemberCommId =
-            member.committeeId ??
-            (member.role === "hr_admin" ? hrCommitteeId : null);
+          const parentTask = taskById.get(sub.taskId);
+          if (!parentTask) continue;
+
+          const itemWorkType: WorkItemType =
+            parentTask.workType === "task" ? "task" : "assignment";
           if (
-            directorTrackCommitteeIds &&
-            (!effectiveMemberCommId ||
-              !directorTrackCommitteeIds.has(effectiveMemberCommId))
+            !canGradeWorkSubmission({
+              actor: actorPermCtx,
+              workType: itemWorkType,
+              taskCommitteeId: parentTask.committeeId,
+              submissionMembershipId: member.id,
+              memberRole: member.role as MembershipRole,
+              memberCommitteeId: member.committeeId,
+              directorTrackCommitteeIds,
+              hrCommitteeId,
+            })
           ) {
             continue;
           }
+
           const list = subsByTask.get(sub.taskId) ?? [];
           list.push({
             submissionId: sub.id,
@@ -340,18 +351,10 @@ export default async function HrTasksPage() {
           subsByTask.set(sub.taskId, list);
         }
 
-        const visibleTasks = directorTrackCommitteeIds
-          ? roleAuthorizedTasks.filter(
-              (t) =>
-                (t.committeeId !== null &&
-                  directorTrackCommitteeIds.has(t.committeeId)) ||
-                (subsByTask.get(t.id)?.length ?? 0) > 0
-            )
-          : roleAuthorizedTasks.filter(
-              (t) =>
-                profile.role !== "hr_admin" ||
-                (subsByTask.get(t.id)?.length ?? 0) > 0
-            );
+        // Only surface assignments/tasks that actually have gradeable submissions for this actor
+        const visibleTasks = roleAuthorizedTasks.filter(
+          (t) => (subsByTask.get(t.id)?.length ?? 0) > 0
+        );
 
         for (const t of visibleTasks) {
           bulkTasks.push({

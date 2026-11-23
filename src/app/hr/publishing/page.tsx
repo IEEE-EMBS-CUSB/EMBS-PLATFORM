@@ -34,16 +34,12 @@ export default async function HrPublishingPage() {
         status: draft.status,
         publishedAt: draft.publishedAt,
         publishedByName: draft.publishedByName,
-        overallEntries: draft.overallEntries,
         committeeEntries: draft.committeeEntries,
-        headsEntries: draft.headsEntries,
       }
     : {
         month: defaultMonth,
         status: "draft",
-        overallEntries: [],
         committeeEntries: {},
-        headsEntries: [],
       };
 
   return (

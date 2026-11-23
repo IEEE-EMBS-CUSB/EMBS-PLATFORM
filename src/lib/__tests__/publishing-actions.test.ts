@@ -7,9 +7,9 @@ import {
   getSnapshotForPublishingPage,
 } from "@/services/hr-ops/publishing.service";
 import {
+  getCommitteeLeaderboard,
   getCommitteeLeaders,
   getLeaderboardHistory,
-  getOverallLeaderboard,
 } from "@/services/leaderboard.service";
 
 describe("Monthly leaderboard publishing", () => {
@@ -82,11 +82,12 @@ describe("Monthly leaderboard publishing", () => {
     const draft = await getSnapshotForPublishingPage(testMonth);
     expect(draft).not.toBeNull();
     expect(draft?.status).toBe("draft");
-    expect(draft?.overallEntries.length).toBeGreaterThan(0);
+    const allDraftEntries = Object.values(draft!.committeeEntries).flat();
+    expect(allDraftEntries.length).toBeGreaterThan(0);
 
-    // Overall leaderboard must only include member and hr_member (excluding attendees, heads, and admins)
+    // Committee leaderboards must only include member and hr_member (excluding attendees, heads, and admins)
     const attendeeIds = new Set(attendees.map((a) => a.id));
-    for (const entry of draft!.overallEntries) {
+    for (const entry of allDraftEntries) {
       expect(attendeeIds.has(entry.memberId)).toBe(false);
       expect(["member", "hr_member"]).toContain(entry.role);
     }
@@ -96,13 +97,16 @@ describe("Monthly leaderboard publishing", () => {
     });
     expect(result.ok).toBe(true);
 
-    // Public leaderboard readers must immediately see non-empty entries from UI-published snapshot!
-    const overall = await getOverallLeaderboard(testMonth as never);
-    expect(overall).not.toBeNull();
-    expect(overall!.entries.length).toBeGreaterThan(0);
-    expect(overall!.entries[0].memberId).toBe(omar.id);
-    expect(overall!.entries[0].monthlyScore).toBe(75);
-    for (const entry of overall!.entries) {
+    // Public committee leaderboard readers must immediately see non-empty entries from UI-published snapshot!
+    const roboticsBoard = await getCommitteeLeaderboard(
+      "robotics-and-automation",
+      testMonth as never
+    );
+    expect(roboticsBoard).not.toBeNull();
+    expect(roboticsBoard!.entries.length).toBeGreaterThan(0);
+    expect(roboticsBoard!.entries[0].memberId).toBe(omar.id);
+    expect(roboticsBoard!.entries[0].monthlyScore).toBe(75);
+    for (const entry of roboticsBoard!.entries) {
       expect(["member", "hr_member"]).toContain(entry.role);
     }
 
@@ -110,9 +114,10 @@ describe("Monthly leaderboard publishing", () => {
     const historyEntry = history.find((h) => h.month === testMonth);
     expect(historyEntry).toBeDefined();
     expect(historyEntry!.totalRankedMembers).toBeGreaterThan(0);
-    expect(historyEntry!.topOverall?.memberName).toBe(omar.fullName);
 
     const leaders = await getCommitteeLeaders(testMonth as never);
-    expect(leaders.some((l) => l.leader !== null)).toBe(true);
+    expect(leaders.some((l) => l.leader?.memberName === omar.fullName)).toBe(
+      true
+    );
   });
 });

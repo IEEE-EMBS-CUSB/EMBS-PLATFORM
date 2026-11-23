@@ -1,19 +1,18 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Calendar, Trophy } from "lucide-react";
+import { Calendar, Crown } from "lucide-react";
+import { CommitteeLeadersShowcase } from "@/components/data-display/committee-leaders-showcase";
 import { LeaderboardNav } from "@/components/data-display/leaderboard-nav";
-import { RankingTable } from "@/components/data-display/ranking-table";
 import { EmptyState } from "@/components/states/empty-state";
 import { LeaderboardLoadingState } from "@/components/states/loading-state";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDisplayDate } from "@/lib/format";
-import { getServerSession } from "@/lib/session-cookie";
 import { cn } from "@/lib/utils";
 import {
+  getCommitteeLeaders,
   getCommittees,
-  getOverallLeaderboard,
   getPublishedMonths,
 } from "@/services/leaderboard.service";
 import type { MonthKey } from "@/types";
@@ -21,7 +20,7 @@ import type { MonthKey } from "@/types";
 export const metadata: Metadata = {
   title: "Leaderboard",
   description:
-    "Published top 10 overall and committee leaderboard standings for IEEE EMBS CUSB.",
+    "Published monthly committee leaders and per-committee leaderboard standings for IEEE EMBS CUSB.",
 };
 
 interface LeaderboardsPageProps {
@@ -33,28 +32,36 @@ async function LeaderboardsContent({
 }: LeaderboardsPageProps) {
   const { month: requestedMonth } = await searchParams;
 
-  const [committees, months, session] = await Promise.all([
+  const [committees, months] = await Promise.all([
     getCommittees(),
     getPublishedMonths(),
-    getServerSession(),
   ]);
 
   const activeMonth = (requestedMonth ?? months[0]?.month ?? "2026-10") as MonthKey;
-  const leaderboard = await getOverallLeaderboard(
+  const publishedOption = requestedMonth
+    ? months.find((m) => m.month === requestedMonth)
+    : months[0];
+  const spotlights = await getCommitteeLeaders(
     requestedMonth ? (requestedMonth as MonthKey) : undefined
   );
-
-  const highlightMemberId =
-    session?.participantType === "member" ? session.participantId : undefined;
+  const rankedCommitteeCount = spotlights.filter(
+    (item) => item.leader !== null
+  ).length;
 
   return (
     <>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5">
-        <h1 className="font-heading text-2xl font-bold text-[#002855] sm:text-3xl">
-          Leaderboard
-        </h1>
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#002855] sm:text-3xl">
+            Committee Leaders
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Top-ranked member in each committee. Select any committee to view
+            its full monthly standings.
+          </p>
+        </div>
 
-        {leaderboard && (
+        {publishedOption && spotlights.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             <Badge
               variant="secondary"
@@ -64,14 +71,14 @@ async function LeaderboardsContent({
                 className="h-3.5 w-3.5 text-[#00629b]"
                 aria-hidden="true"
               />
-              Published {formatDisplayDate(leaderboard.publishedAt)}
+              Published {formatDisplayDate(publishedOption.publishedAt)}
             </Badge>
             <Badge variant="outline" className="gap-1.5 font-medium">
-              <Trophy
+              <Crown
                 className="h-3.5 w-3.5 text-[#772583]"
                 aria-hidden="true"
               />
-              Top {leaderboard.entries.length}
+              {rankedCommitteeCount} committees ranked
             </Badge>
           </div>
         )}
@@ -82,36 +89,24 @@ async function LeaderboardsContent({
           <LeaderboardNav
             committees={committees}
             months={months}
-            activeMonth={leaderboard?.month ?? activeMonth}
+            activeMonth={publishedOption?.month ?? activeMonth}
           />
         </div>
 
         <div className="space-y-4 lg:col-span-8 xl:col-span-9">
-          {leaderboard ? (
-            <>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="font-heading text-lg font-bold text-[#002855]">
-                  {leaderboard.monthLabel} · Top {leaderboard.entries.length}{" "}
-                  overall
-                </h2>
-                <Link
-                  href="/leaderboards/history"
-                  className="text-sm font-medium text-[#00629b] hover:text-[#002855] hover:underline"
-                >
-                  Browse previous months
-                </Link>
-              </div>
-              <RankingTable
-                entries={leaderboard.entries}
-                month={leaderboard.month}
-                showCommittee={true}
-                highlightMemberId={highlightMemberId}
+          {publishedOption && spotlights.length > 0 ? (
+            <div className="rounded-lg border border-border bg-white p-5 sm:p-6">
+              <CommitteeLeadersShowcase
+                spotlights={spotlights}
+                monthLabel={publishedOption.monthLabel}
+                month={publishedOption.month}
+                embedded
               />
-            </>
+            </div>
           ) : (
             <EmptyState
               title="Leaderboard not published for this month"
-              description="Only published monthly leaderboards are publicly visible. Select a published month from the navigation panel to view standings."
+              description="Only published monthly leaderboards are publicly visible. Select a published month from the navigation panel to view committee standings."
               action={
                 <Link
                   href="/leaderboards"

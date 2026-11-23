@@ -8,7 +8,10 @@ import {
   type CalculatedSnapshotEntry,
   type MemberRef,
 } from "@/services/hr.service";
-import { isHeadRole, isOverallEligibleRole } from "@/services/scoring.service";
+import {
+  isCommitteeBoardEligibleRole,
+  isHrMemberEligibleForCommittee,
+} from "@/services/scoring.service";
 import {
   isValidMonthKey,
   resolveActiveSeason,
@@ -32,10 +35,32 @@ function formatMonthLabel(monthKey: string): string {
 
 interface StoredSnapshotPayload {
   monthLabel?: string;
-  entries?: CalculatedSnapshotEntry[];
-  overallEntries?: CalculatedSnapshotEntry[];
   committeeEntries?: Record<string, CalculatedSnapshotEntry[]>;
-  headsEntries?: CalculatedSnapshotEntry[];
+}
+
+function sanitizeStoredCommitteeEntries(
+  committeeEntries: Record<string, CalculatedSnapshotEntry[]> | undefined
+): Record<string, CalculatedSnapshotEntry[]> {
+  if (!committeeEntries) return {};
+  const result: Record<string, CalculatedSnapshotEntry[]> = {};
+  for (const [slug, entries] of Object.entries(committeeEntries)) {
+    const raw = entries ?? [];
+    const filtered = raw.filter(
+      (e) =>
+        isCommitteeBoardEligibleRole(e.role) &&
+        isHrMemberEligibleForCommittee(e.role, slug)
+    );
+    if (filtered.length === 0) continue;
+    const wasFiltered = filtered.length !== raw.length;
+    result[slug] = wasFiltered
+      ? filtered.map((e, idx) => ({
+          ...e,
+          rank: idx + 1,
+          previousRank: null,
+        }))
+      : filtered;
+  }
+  return result;
 }
 
 async function buildDraft(month: string, seasonId: string) {
@@ -118,47 +143,27 @@ async function buildDraft(month: string, seasonId: string) {
   const previous = prevRows.find((r) => r.month < month);
   let previousSnapshot:
     | {
-        overall?: { memberId: string; personId?: string; rank: number }[];
         committees?: Record<
           string,
           { memberId: string; personId?: string; rank: number }[]
         >;
-        heads?: { memberId: string; personId?: string; rank: number }[];
       }
     | undefined;
 
   if (previous) {
     const json = previous.snapshotJson as StoredSnapshotPayload;
-    const rawPrevOverall = json.overallEntries ?? json.entries ?? [];
-    const filteredPrevOverall = rawPrevOverall.filter((e) =>
-      isOverallEligibleRole(e.role)
-    );
-    const prevOverall =
-      filteredPrevOverall.length === rawPrevOverall.length
-        ? filteredPrevOverall
-        : filteredPrevOverall.map((e, idx) => ({ ...e, rank: idx + 1 }));
-    const prevHeads = json.headsEntries ?? [];
+    const prevCommittees = sanitizeStoredCommitteeEntries(json.committeeEntries);
     previousSnapshot = {
-      overall: prevOverall.map((e) => ({
-        memberId: e.memberId,
-        personId: e.personId,
-        rank: e.rank,
-      })),
       committees: Object.fromEntries(
-        Object.entries(json.committeeEntries ?? {}).map(([k, v]) => [
+        Object.entries(prevCommittees).map(([k, v]) => [
           k,
-          (v ?? []).map((e) => ({
+          v.map((e) => ({
             memberId: e.memberId,
             personId: e.personId,
             rank: e.rank,
           })),
         ])
       ),
-      heads: prevHeads.map((e) => ({
-        memberId: e.memberId,
-        personId: e.personId,
-        rank: e.rank,
-      })),
     };
   }
 
@@ -209,10 +214,7 @@ export async function publishMonthlySnapshotAsActor(
 
     const snapshotJson: StoredSnapshotPayload = {
       monthLabel: formatMonthLabel(month),
-      entries: draft.overallEntries,
-      overallEntries: draft.overallEntries,
       committeeEntries: draft.committeeEntries,
-      headsEntries: draft.headsEntries,
     };
 
     if (existing.length > 0) {
@@ -247,7 +249,7 @@ export async function publishMonthlySnapshotAsActor(
 
 /**
  * Server-side query for the HR Publishing page.
- * Returns frozen snapshot entries when already published, or live draft entries otherwise.
+ * Returns frozen snapshot committee entries when already published, or live draft entries otherwise.
  */
 export async function getSnapshotForPublishingPage(month: string) {
   if (!isValidMonthKey(month)) return null;
@@ -283,24 +285,9 @@ export async function getSnapshotForPublishingPage(month: string) {
     }
 
     const json = existing.snapshotJson as StoredSnapshotPayload;
-    const rawOverallEntries = json.overallEntries ?? json.entries ?? [];
-    const filteredOverall = rawOverallEntries.filter((e) =>
-      isOverallEligibleRole(e.role)
+    const committeeEntries = sanitizeStoredCommitteeEntries(
+      json.committeeEntries
     );
-    const overallEntries =
-      filteredOverall.length === rawOverallEntries.length
-        ? filteredOverall
-        : filteredOverall.map((e, idx) => ({
-            ...e,
-            rank: idx + 1,
-            previousRank: null,
-          }));
-    const committeeEntries = json.committeeEntries ?? {};
-    const headsEntries =
-      json.headsEntries ??
-      rawOverallEntries
-        .filter((e) => isHeadRole(e.role))
-        .map((e, idx) => ({ ...e, rank: idx + 1 }));
     return {
       month,
       status: "published" as const,
@@ -308,9 +295,7 @@ export async function getSnapshotForPublishingPage(month: string) {
         ? existing.publishedAt.toISOString().slice(0, 10)
         : undefined,
       publishedByName,
-      overallEntries,
       committeeEntries,
-      headsEntries,
     };
   }
 
@@ -320,9 +305,7 @@ export async function getSnapshotForPublishingPage(month: string) {
     status: "draft" as const,
     publishedAt: undefined,
     publishedByName: undefined,
-    overallEntries: draft.overallEntries,
     committeeEntries: draft.committeeEntries,
-    headsEntries: draft.headsEntries,
   };
 }
 

@@ -241,37 +241,6 @@ export function getPublishedMonths(): PublishedMonthOption[] {
   }));
 }
 
-export function getOverallLeaderboard(month?: MonthKey): MonthlyLeaderboard | null {
-  const published = getPublishedSnapshots();
-  if (published.length === 0) return null;
-
-  const target = month
-    ? published.find((snapshot) => snapshot.month === month)
-    : published[0];
-
-  if (!target) return null;
-
-  return {
-    month: target.month,
-    monthLabel: target.monthLabel,
-    status: target.status,
-    publishedAt: target.publishedAt,
-    scope: "overall",
-    entries: target.entries
-      .slice(0, LEADERBOARD_TOP_LIMIT)
-      .map((entry, index) => ({
-        rank: index + 1,
-        previousRank: entry.previousRank,
-        memberId: entry.memberId,
-        memberName: entry.memberName,
-        committeeSlug: entry.committeeSlug,
-        committeeName: entry.committeeName,
-        role: entry.role,
-        monthlyScore: entry.monthlyScore,
-      })),
-  };
-}
-
 export function getCommitteeLeaderboard(
   committeeSlug: string,
   month?: MonthKey
@@ -315,7 +284,6 @@ export function getCommitteeLeaderboard(
 
 export function getLeaderboardHistory(): LeaderboardHistorySummary[] {
   return getPublishedSnapshots().map((snapshot) => {
-    const top = snapshot.entries[0] ?? null;
     const committeeSlugs = new Set(
       snapshot.entries.map((entry) => entry.committeeSlug)
     );
@@ -325,13 +293,6 @@ export function getLeaderboardHistory(): LeaderboardHistorySummary[] {
       monthLabel: snapshot.monthLabel,
       publishedAt: snapshot.publishedAt,
       totalRankedMembers: snapshot.entries.length,
-      topOverall: top
-        ? {
-            memberName: top.memberName,
-            committeeName: top.committeeName,
-            monthlyScore: top.monthlyScore,
-          }
-        : null,
       committeeCount: committeeSlugs.size,
     };
   });

@@ -78,7 +78,7 @@ async function CommitteeLeaderboardContent({
           className="inline-flex items-center gap-1.5 text-sm font-medium text-[#00629b] hover:text-[#002855] hover:underline"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back to overall monthly leaderboard
+          Back to committee leaders
         </Link>
 
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -152,7 +152,7 @@ async function CommitteeLeaderboardContent({
                   href={`/leaderboards?month=${leaderboard.month}`}
                   className="text-sm font-medium text-[#00629b] hover:text-[#002855] hover:underline"
                 >
-                  Compare with overall ranking
+                  View all committee leaders
                 </Link>
               </div>
               <RankingTable

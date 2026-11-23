@@ -22,8 +22,8 @@ export interface MonthlyLeaderboard {
   monthLabel: string;
   status: LeaderboardStatus;
   publishedAt: string;
-  scope: "overall" | "committee" | "heads";
-  committee?: Committee;
+  scope: "committee";
+  committee: Committee;
   entries: LeaderboardEntry[];
 }
 
@@ -38,10 +38,6 @@ export interface LeaderboardHistorySummary {
   monthLabel: string;
   publishedAt: string;
   totalRankedMembers: number;
-  topOverall: Pick<
-    LeaderboardEntry,
-    "memberName" | "committeeName" | "monthlyScore"
-  > | null;
   committeeCount: number;
 }
 

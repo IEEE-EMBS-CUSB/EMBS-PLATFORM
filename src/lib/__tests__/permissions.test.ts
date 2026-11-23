@@ -21,6 +21,9 @@ import {
   canAssignTask,
   getAllowedWorkTypesForRole,
   canCreateWorkType,
+  canGradeWorkSubmission,
+  canTaskHaveGradeableSubmissions,
+  resolveWorkScopeCommitteeId,
   type UserPermissionContext,
 } from "@/lib/permissions";
 
@@ -357,6 +360,181 @@ describe("RBAC Permissions Engine", () => {
           email: "web@cu.edu.eg",
           role: "member",
           committeeId: commWeb,
+        })
+      ).toBe(false);
+    });
+  });
+
+  describe("Grading Visibility & Track Director Scoping", () => {
+    const commDesign = "comm-graphic-design";
+    const commMedia = "comm-media";
+    const commHr = "comm-hr";
+    const creativeTrackIds = new Set([commDesign, commMedia]);
+
+    const creativeDirector: UserPermissionContext = {
+      id: "usr-creative-dir",
+      email: "creative.dir@cu.edu.eg",
+      role: "director",
+      committeeId: null,
+    };
+
+    it("excludes out-of-track committee assignments from Creative Director even when an assignee belongs to a Creative committee", () => {
+      expect(
+        resolveWorkScopeCommitteeId({
+          taskCommitteeId: commAi,
+          memberCommitteeId: commDesign,
+          memberRole: "member",
+          hrCommitteeId: commHr,
+        })
+      ).toBe(commAi);
+
+      expect(
+        canTaskHaveGradeableSubmissions({
+          actor: creativeDirector,
+          workType: "assignment",
+          taskCommitteeId: commAi,
+          directorTrackCommitteeIds: creativeTrackIds,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(false);
+
+      expect(
+        canGradeWorkSubmission({
+          actor: creativeDirector,
+          workType: "assignment",
+          taskCommitteeId: commAi,
+          submissionMembershipId: "mem-design-1",
+          memberRole: "member",
+          memberCommitteeId: commDesign,
+          directorTrackCommitteeIds: creativeTrackIds,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(false);
+    });
+
+    it("allows Creative Director to see and grade assignments in Creative committees and Creative assignees on branch-wide assignments only", () => {
+      expect(
+        canTaskHaveGradeableSubmissions({
+          actor: creativeDirector,
+          workType: "assignment",
+          taskCommitteeId: commDesign,
+          directorTrackCommitteeIds: creativeTrackIds,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(true);
+      expect(
+        canGradeWorkSubmission({
+          actor: creativeDirector,
+          workType: "assignment",
+          taskCommitteeId: commDesign,
+          submissionMembershipId: "mem-design-1",
+          memberRole: "member",
+          memberCommitteeId: commDesign,
+          directorTrackCommitteeIds: creativeTrackIds,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(true);
+
+      // Branch-wide assignment (taskCommitteeId = null): only Creative assignees are gradeable
+      expect(
+        canTaskHaveGradeableSubmissions({
+          actor: creativeDirector,
+          workType: "assignment",
+          taskCommitteeId: null,
+          directorTrackCommitteeIds: creativeTrackIds,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(true);
+      expect(
+        canGradeWorkSubmission({
+          actor: creativeDirector,
+          workType: "assignment",
+          taskCommitteeId: null,
+          submissionMembershipId: "mem-media-head",
+          memberRole: "committee_head",
+          memberCommitteeId: commMedia,
+          directorTrackCommitteeIds: creativeTrackIds,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(true);
+      expect(
+        canGradeWorkSubmission({
+          actor: creativeDirector,
+          workType: "assignment",
+          taskCommitteeId: null,
+          submissionMembershipId: "mem-ai-head",
+          memberRole: "committee_head",
+          memberCommitteeId: commAi,
+          directorTrackCommitteeIds: creativeTrackIds,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(false);
+      expect(
+        canGradeWorkSubmission({
+          actor: creativeDirector,
+          workType: "assignment",
+          taskCommitteeId: null,
+          submissionMembershipId: "mem-hr-admin",
+          memberRole: "hr_admin",
+          memberCommitteeId: null,
+          directorTrackCommitteeIds: creativeTrackIds,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(false);
+
+      // Directors never grade HR tasks or their own submissions
+      expect(
+        canTaskHaveGradeableSubmissions({
+          actor: creativeDirector,
+          workType: "task",
+          taskCommitteeId: commDesign,
+          directorTrackCommitteeIds: creativeTrackIds,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(false);
+      expect(
+        canGradeWorkSubmission({
+          actor: creativeDirector,
+          workType: "assignment",
+          taskCommitteeId: commDesign,
+          submissionMembershipId: creativeDirector.id,
+          memberRole: "director",
+          memberCommitteeId: commDesign,
+          directorTrackCommitteeIds: creativeTrackIds,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(false);
+    });
+
+    it("allows HR Admin with null committeeId to grade HR assignments via hrCommitteeId fallback while excluding non-HR assignments", () => {
+      const hrAdminNoComm: UserPermissionContext = {
+        id: "usr-hr-admin-null",
+        email: "hr.lead@cu.edu.eg",
+        role: "hr_admin",
+        committeeId: null,
+      };
+
+      expect(
+        canGradeWorkSubmission({
+          actor: hrAdminNoComm,
+          workType: "assignment",
+          taskCommitteeId: null,
+          submissionMembershipId: "mem-hr-1",
+          memberRole: "hr_member",
+          memberCommitteeId: commHr,
+          hrCommitteeId: commHr,
+        })
+      ).toBe(true);
+
+      expect(
+        canGradeWorkSubmission({
+          actor: hrAdminNoComm,
+          workType: "assignment",
+          taskCommitteeId: commDesign,
+          submissionMembershipId: "mem-design-1",
+          memberRole: "member",
+          memberCommitteeId: commDesign,
+          hrCommitteeId: commHr,
         })
       ).toBe(false);
     });

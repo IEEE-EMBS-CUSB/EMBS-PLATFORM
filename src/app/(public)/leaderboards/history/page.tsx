@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Calendar, Trophy, Users } from "lucide-react";
+import { ArrowRight, Calendar, Users } from "lucide-react";
 import { LeaderboardNav } from "@/components/data-display/leaderboard-nav";
 import { EmptyState } from "@/components/states/empty-state";
 import { formatDisplayDate } from "@/lib/format";
@@ -76,36 +76,17 @@ export default async function LeaderboardHistoryPage() {
                       </span>
                       <span className="inline-flex items-center gap-1 tabular-nums">
                         <Users className="h-3.5 w-3.5" aria-hidden="true" />
-                        {item.committeeCount} committees represented
+                        {item.committeeCount} committees represented ·{" "}
+                        {item.totalRankedMembers} ranked members
                       </span>
                     </div>
-
-                    {item.topOverall && (
-                      <p className="flex flex-wrap items-center gap-1.5 text-sm text-foreground">
-                        <Trophy
-                          className="h-4 w-4 text-[#772583]"
-                          aria-hidden="true"
-                        />
-                        <span>Top overall:</span>
-                        <span className="font-semibold">
-                          {item.topOverall.memberName}
-                        </span>
-                        <span className="text-muted-foreground">
-                          ({item.topOverall.committeeName} ·{" "}
-                          <span className="font-semibold text-[#002855] tabular-nums">
-                            {item.topOverall.monthlyScore}
-                          </span>
-                          )
-                        </span>
-                      </p>
-                    )}
                   </div>
 
                   <Link
                     href={`/leaderboards?month=${item.month}`}
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#00629b]/30 bg-[#ebf3f8]/50 px-3.5 py-2 text-sm font-semibold text-[#002855] transition-colors hover:bg-[#ebf3f8]"
                   >
-                    Open top 10
+                    View committee leaders
                     <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </Link>
                 </div>

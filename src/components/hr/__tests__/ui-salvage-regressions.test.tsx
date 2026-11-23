@@ -139,7 +139,6 @@ describe("HR UI Salvage Regression Suite", () => {
         month: "2026-09",
         status: "published" as const,
         publishedAt: "2026-10-01",
-        overallEntries: [],
         committeeEntries: {},
       },
     });
@@ -150,7 +149,6 @@ describe("HR UI Salvage Regression Suite", () => {
         snapshot={{
           month: "2026-10",
           status: "draft",
-          overallEntries: [],
           committeeEntries: {},
         }}
         availableMonths={["2026-10", "2026-09"]}

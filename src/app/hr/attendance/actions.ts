@@ -8,7 +8,6 @@ import {
   extendSessionCheckinWindowAsActor,
   getSessionAttendanceRosterAsActor,
   recordMemberCheckin,
-  rotateSessionCheckinCodeAsActor,
   setSessionMemberAttendanceAsActor,
   toggleSessionCheckinAsActor,
   type CreateSessionInput,
@@ -67,27 +66,6 @@ export async function toggleSessionCheckinAction(
     actor
   );
   if (res.ok) safeRevalidateAttendance();
-  return res;
-}
-
-export async function rotateSessionCheckinCodeAction(
-  sessionId: string,
-  windowMinutes: number = 30
-): Promise<{
-  ok: boolean;
-  expired?: boolean;
-  error?: string;
-  checkinCode?: string | null;
-  checkinExpiresAt?: Date | null;
-}> {
-  const actor = await getActorContext();
-  if (!actor) return unauthorizedResult();
-  const res = await rotateSessionCheckinCodeAsActor(
-    sessionId,
-    windowMinutes,
-    actor
-  );
-  if (res.ok || res.expired) safeRevalidateAttendance();
   return res;
 }
 

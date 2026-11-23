@@ -31,9 +31,7 @@ export interface SnapshotDisplayData {
   status: "draft" | "published";
   publishedAt?: string;
   publishedByName?: string;
-  overallEntries: CalculatedSnapshotEntry[];
   committeeEntries: Record<string, CalculatedSnapshotEntry[]>;
-  headsEntries?: CalculatedSnapshotEntry[];
 }
 
 interface LeaderboardPublisherViewProps {
@@ -71,8 +69,8 @@ export function LeaderboardPublisherView({
     ...(initialMonthStatuses ?? {}),
     [initialSnapshot.month]: initialSnapshot.status,
   }));
-  const [activeTab, setActiveTab] = useState<"overall" | "committees" | "heads">(
-    "overall"
+  const [activeTab, setActiveTab] = useState<"leaders" | "committees">(
+    "leaders"
   );
   const [isLoadingMonth, setIsLoadingMonth] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -386,14 +384,14 @@ export function LeaderboardPublisherView({
       <div className="flex border-b border-border">
         <button
           type="button"
-          onClick={() => setActiveTab("overall")}
+          onClick={() => setActiveTab("leaders")}
           className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
-            activeTab === "overall"
+            activeTab === "leaders"
               ? "border-[#772583] text-[#772583]"
               : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          Overall Rankings
+          Committee Leaders
         </button>
         <button
           type="button"
@@ -406,126 +404,75 @@ export function LeaderboardPublisherView({
         >
           By Committee
         </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("heads")}
-          className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
-            activeTab === "heads"
-              ? "border-[#772583] text-[#772583]"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Committee Heads
-        </button>
       </div>
 
       {/* Tab Content */}
-      {activeTab === "overall" ? (
-        <Card className="border-border">
-          <CardHeader className="border-b bg-[#fafafa] px-6 py-4">
-            <CardTitle className="text-base font-semibold text-[#002855]">
-              Overall Chapter Rankings ({snapshot.overallEntries.length} Members)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[60px]">Rank</TableHead>
-                  <TableHead className="w-[80px]">Trend</TableHead>
-                  <TableHead>Member</TableHead>
-                  <TableHead>Committee</TableHead>
-                  <TableHead className="text-right">Monthly Score</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {snapshot.overallEntries.map((entry) => (
-                  <TableRow key={entry.memberId}>
-                    <TableCell>{getRankBadge(entry.rank)}</TableCell>
-                    <TableCell>
-                      {renderTrend(entry.rank, entry.previousRank)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-semibold text-foreground">
-                        {entry.memberName}
-                      </div>
-                      <div className="text-xs capitalize text-muted-foreground">
-                        {entry.role.replace("_", " ")}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs font-medium text-foreground">
-                      {entry.committeeName}
-                    </TableCell>
-                    <TableCell className="text-right font-mono font-bold text-[#00629b]">
-                      {entry.monthlyScore} pts
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {snapshot.overallEntries.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={5}
-                      className="py-8 text-center text-sm text-muted-foreground"
-                    >
-                      No scored members recorded for {monthLabel} yet.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      ) : activeTab === "heads" ? (
-        <Card className="border-border">
-          <CardHeader className="border-b bg-[#fafafa] px-6 py-4">
-            <CardTitle className="text-base font-semibold text-[#002855]">
-              Committee Heads Rankings ({(snapshot.headsEntries ?? []).length}{" "}
-              Heads)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[60px]">Rank</TableHead>
-                  <TableHead className="w-[80px]">Trend</TableHead>
-                  <TableHead>Committee Head</TableHead>
-                  <TableHead>Committee</TableHead>
-                  <TableHead className="text-right">Monthly Score</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(snapshot.headsEntries ?? []).map((entry) => (
-                  <TableRow key={entry.memberId}>
-                    <TableCell>{getRankBadge(entry.rank)}</TableCell>
-                    <TableCell>
-                      {renderTrend(entry.rank, entry.previousRank)}
-                    </TableCell>
-                    <TableCell className="font-semibold text-foreground">
-                      {entry.memberName}
-                    </TableCell>
-                    <TableCell className="text-xs font-medium text-foreground">
-                      {entry.committeeName}
-                    </TableCell>
-                    <TableCell className="text-right font-mono font-bold text-[#00629b]">
-                      {entry.monthlyScore} pts
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {(snapshot.headsEntries ?? []).length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={5}
-                      className="py-8 text-center text-sm text-muted-foreground"
-                    >
-                      No scored Committee Heads recorded for {monthLabel} yet.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+      {activeTab === "leaders" ? (
+        (() => {
+          const committeeLeaders = Object.entries(snapshot.committeeEntries)
+            .map(([slug, list]) => ({
+              slug,
+              leader: list[0] ?? null,
+            }))
+            .filter(
+              (item): item is { slug: string; leader: CalculatedSnapshotEntry } =>
+                item.leader !== null
+            );
+          return (
+            <Card className="border-border">
+              <CardHeader className="border-b bg-[#fafafa] px-6 py-4">
+                <CardTitle className="text-base font-semibold text-[#002855]">
+                  Committee Leaders ({committeeLeaders.length} Committees)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Committee</TableHead>
+                      <TableHead className="w-[80px]">Trend</TableHead>
+                      <TableHead>Top Member</TableHead>
+                      <TableHead className="text-right">Monthly Score</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {committeeLeaders.map(({ slug, leader }) => (
+                      <TableRow key={`${slug}-${leader.memberId}`}>
+                        <TableCell className="text-xs font-semibold text-[#002855]">
+                          {leader.committeeName || slug}
+                        </TableCell>
+                        <TableCell>
+                          {renderTrend(leader.rank, leader.previousRank)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-semibold text-foreground">
+                            {leader.memberName}
+                          </div>
+                          <div className="text-xs capitalize text-muted-foreground">
+                            {leader.role.replace("_", " ")}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-bold text-[#00629b]">
+                          {leader.monthlyScore} pts
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {committeeLeaders.length === 0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="py-8 text-center text-sm text-muted-foreground"
+                        >
+                          No scored members recorded for {monthLabel} yet.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          );
+        })()
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {Object.entries(snapshot.committeeEntries).map(
@@ -541,6 +488,7 @@ export function LeaderboardPublisherView({
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-[50px]">Rank</TableHead>
+                        <TableHead className="w-[70px]">Trend</TableHead>
                         <TableHead>Member</TableHead>
                         <TableHead className="text-right">Score</TableHead>
                       </TableRow>
@@ -549,6 +497,9 @@ export function LeaderboardPublisherView({
                       {committeeList.map((m) => (
                         <TableRow key={m.memberId}>
                           <TableCell>{getRankBadge(m.rank)}</TableCell>
+                          <TableCell>
+                            {renderTrend(m.rank, m.previousRank)}
+                          </TableCell>
                           <TableCell className="font-medium text-foreground">
                             {m.memberName}
                           </TableCell>
@@ -562,6 +513,13 @@ export function LeaderboardPublisherView({
                 </CardContent>
               </Card>
             )
+          )}
+          {Object.keys(snapshot.committeeEntries).length === 0 && (
+            <Card className="border-border md:col-span-2">
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                No scored committee members recorded for {monthLabel} yet.
+              </CardContent>
+            </Card>
           )}
         </div>
       )}
