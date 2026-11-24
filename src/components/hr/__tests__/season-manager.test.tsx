@@ -69,14 +69,44 @@ describe("SeasonManagerView Component", () => {
     },
   ];
 
-  it("renders active and archived seasons and triggers the clone modal", async () => {
+  it("renders active and archived seasons, hides Archive on active season, and allows master_admin to re-activate an archived season", async () => {
     const user = userEvent.setup();
-    render(<SeasonManagerView seasons={sampleSeasons} />);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onActivateSeason = vi.fn().mockResolvedValue({ ok: true });
+
+    render(
+      <SeasonManagerView
+        seasons={sampleSeasons}
+        currentUserRole="master_admin"
+        onActivateSeason={onActivateSeason}
+      />
+    );
 
     expect(screen.getAllByText("Fall 2026").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Active")).toBeInTheDocument();
     expect(screen.getByText("Spring 2026")).toBeInTheDocument();
     expect(screen.getByText("Archived")).toBeInTheDocument();
+
+    // Active season must NOT have an Archive button (avoid leaving no active season)
+    const activeCard = screen
+      .getByText("Fall 2026")
+      .closest("[data-season-card]") as HTMLElement;
+    expect(
+      within(activeCard).queryByRole("button", { name: /^archive$/i })
+    ).not.toBeInTheDocument();
+
+    // Archived season exposes Re-activate for master_admin
+    const archivedCard = screen
+      .getByText("Spring 2026")
+      .closest("[data-season-card]") as HTMLElement;
+    const reactivateBtn = within(archivedCard).getByRole("button", {
+      name: /re-activate/i,
+    });
+    await user.click(reactivateBtn);
+
+    expect(onActivateSeason).toHaveBeenCalledWith("s-0");
+    expect(within(archivedCard).getByText("Active")).toBeInTheDocument();
+    expect(within(activeCard).getByText("Archived")).toBeInTheDocument();
 
     const cloneButton = screen.getByRole("button", { name: /clone season/i });
     expect(cloneButton).toBeInTheDocument();
@@ -85,6 +115,8 @@ describe("SeasonManagerView Component", () => {
     expect(
       screen.getByText(/committees and scoring rubrics/i)
     ).toBeInTheDocument();
+
+    confirmSpy.mockRestore();
   });
 
   it("lets hr_admin edit season settings including task defaults and feedback bonus/deduction caps while hiding season lifecycle controls", async () => {

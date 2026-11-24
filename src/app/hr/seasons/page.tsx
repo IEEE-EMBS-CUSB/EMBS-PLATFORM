@@ -8,7 +8,6 @@ import { requireHrModule } from "@/lib/portal-guards";
 import { normalizeSeasonSettings } from "@/lib/season-settings";
 import {
   activateSeasonAction,
-  archiveSeasonAction,
   cloneSeasonAction,
   createSeasonAction,
   updateSeasonSettingsAction,
@@ -151,7 +150,6 @@ export default async function HrSeasonsPage() {
       onUpdateSettings={updateSeasonSettingsAction}
       onCloneSeason={cloneSeasonAction}
       onActivateSeason={activateSeasonAction}
-      onArchiveSeason={archiveSeasonAction}
       onAddTrack={addCommitteeTrackAction}
       onRenameTrack={renameCommitteeTrackAction}
       onDeleteTrack={deleteCommitteeTrackAction}

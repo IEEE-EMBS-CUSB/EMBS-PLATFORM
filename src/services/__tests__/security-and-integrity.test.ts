@@ -11,7 +11,10 @@ import {
   gradeTaskSubmissionAsActor,
   submitMemberTask,
 } from "@/services/hr-ops/tasks.service";
-import { activateSeasonAsActor } from "@/services/hr-ops/seasons.service";
+import {
+  activateSeasonAsActor,
+  archiveSeasonAsActor,
+} from "@/services/hr-ops/seasons.service";
 import { addCommitteeAsActor } from "@/services/hr-ops/committees.service";
 import { addManualLedgerEntryAsActor } from "@/services/hr-ops/ledger.service";
 import { addHrFeedbackAsActor } from "@/services/hr-ops/feedback.service";
@@ -172,11 +175,17 @@ describe("Server Action Attack Surface & Core Security Invariants", () => {
     expect(xssSubmit.error).toMatch(/http/i);
   });
 
-  it("enforces archived season immutability (no re-activation, no committee mutation)", async () => {
+  it("blocks mutating archived seasons while archived, refuses archiving the active season directly, and allows master_admin to re-activate an archived season", async () => {
+    const [originalActive] = await db
+      .select()
+      .from(schema.seasons)
+      .where(eq(schema.seasons.status, "active"))
+      .limit(1);
+
     const [archivedSeason] = await db
       .insert(schema.seasons)
       .values({
-        name: `Archived Immutable Test ${Date.now()}`,
+        name: `Archived Season Test ${Date.now()}`,
         status: "archived",
         startDate: new Date("2024-01-01"),
         endDate: new Date("2024-06-01"),
@@ -184,18 +193,36 @@ describe("Server Action Attack Surface & Core Security Invariants", () => {
       .returning();
     createdSeasonIds.push(archivedSeason.id);
 
-    const reactivate = await activateSeasonAsActor(archivedSeason.id, {
-      profile: { role: "master_admin" },
-    });
-    expect(reactivate.ok).toBe(false);
-    expect(reactivate.error).toMatch(/archived/i);
-
+    // Mutating an archived season while archived is still refused
     const addComm = await addCommitteeAsActor(
       { name: "Illegal Archived Committee", category: "technical", seasonId: archivedSeason.id },
       { profile: { role: "master_admin" } }
     );
     expect(addComm.ok).toBe(false);
     expect(addComm.error).toMatch(/archived/i);
+
+    // Standalone archiving of the currently active season is refused (prevents zero active seasons)
+    if (originalActive) {
+      const archiveActive = await archiveSeasonAsActor(originalActive.id, {
+        profile: { role: "master_admin" },
+      });
+      expect(archiveActive.ok).toBe(false);
+      expect(archiveActive.error).toMatch(/active season/i);
+    }
+
+    // Master Admin can re-activate an archived season (atomically archiving the previous active season)
+    const reactivate = await activateSeasonAsActor(archivedSeason.id, {
+      profile: { role: "master_admin" },
+    });
+    expect(reactivate.ok).toBe(true);
+
+    // Restore original active season so test DB stays clean
+    if (originalActive) {
+      const restore = await activateSeasonAsActor(originalActive.id, {
+        profile: { role: "master_admin" },
+      });
+      expect(restore.ok).toBe(true);
+    }
   });
 
   it("blocks self-awarding in ledger and private warnings from committee_head", async () => {

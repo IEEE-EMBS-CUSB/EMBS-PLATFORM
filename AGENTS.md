@@ -15,7 +15,7 @@ Read [`docs/PROJECT_INTENT.md`](./docs/PROJECT_INTENT.md) before modifying featu
 ### Non-negotiable invariants
 
 - **HR-first, zero direct database editing**: All operations (seasons, committees, rubrics, rosters, sessions, attendance, tasks, grading, point overrides, feedback, and leaderboard publishing) must be controllable through the `/hr` web UI.
-- **Multi-season scoping**: Every operational database record must be foreign-keyed to a `season_id`. Historical seasons are archived permanently and never mutated.
+- **Multi-season scoping**: Every operational database record must be foreign-keyed to a `season_id`. Archived seasons are read-only while archived; the active season cannot be archived without activating another season (preventing a zero-active-season state), and `master_admin` may re-activate an archived season (atomically archiving the previously active season while published `monthly_snapshots` remain permanently frozen).
 - **Whitelist-only authentication**: Access is guarded by email presence in `roster_memberships` for the active season. No open signups; members authenticate using credentials stored in `roster_memberships` (zero external email delivery dependencies).
 - **Data-layer privacy**: Hidden HR notes (`is_published === false`) must be filtered at the query layer and never returned to members, attendees, committee heads, or the target person across any of their hats. Member-visible Official Warnings (`category === "warning"`, `is_published === true`) are delivered to the warned member.
 - **Deterministic score derivation**: Member scores flow through `score_ledger` and are derived deterministically. Historical monthly rankings are permanently locked via `monthly_snapshots`.

@@ -86,7 +86,7 @@ describe("HR UI Salvage Regression Suite", () => {
     expect(screen.getByText("Nour Ali")).toBeInTheDocument();
   });
 
-  it("SeasonManagerView hides per-card Clone for non-master roles and exposes Create/Activate/Archive for master_admin", async () => {
+  it("SeasonManagerView hides per-card Clone/Activate/Re-activate for non-master roles, omits Archive on active season, and exposes Create/Activate/Re-activate for master_admin", async () => {
     const seasons = [
       {
         id: "s-active",
@@ -104,6 +104,14 @@ describe("HR UI Salvage Regression Suite", () => {
         committeeCount: 12,
         memberCount: 0,
       },
+      {
+        id: "s-archived",
+        name: "Spring 2026",
+        status: "archived" as const,
+        startDate: new Date("2026-02-01"),
+        committeeCount: 12,
+        memberCount: 35,
+      },
     ];
 
     const { rerender } = render(
@@ -113,7 +121,6 @@ describe("HR UI Salvage Regression Suite", () => {
     expect(screen.queryByRole("button", { name: /activate/i })).not.toBeInTheDocument();
 
     const onActivate = vi.fn().mockResolvedValue({ ok: true });
-    const onArchive = vi.fn().mockResolvedValue({ ok: true });
     const onCreate = vi.fn().mockResolvedValue({ ok: true, seasonId: "s-new" });
 
     rerender(
@@ -122,13 +129,13 @@ describe("HR UI Salvage Regression Suite", () => {
         currentUserRole="master_admin"
         onCreateSeason={onCreate}
         onActivateSeason={onActivate}
-        onArchiveSeason={onArchive}
       />
     );
 
     expect(screen.getByRole("button", { name: /new season/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /activate/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /archive/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^activate$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /re-activate/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^archive$/i })).not.toBeInTheDocument();
   });
 
   it("LeaderboardPublisherView fetches snapshot when month changes and refuses to mark published on error", async () => {

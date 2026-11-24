@@ -13,7 +13,7 @@ The platform is a database-backed management, recognition, and portal system for
    - No developer intervention or raw SQL scripts are required for standard operations.
 2. **Multi-season scoping**:
    - Every operational database record is foreign-keyed to a `season_id`.
-   - Past seasons are permanently archived and read-only. Modifying an active season never mutates or overwrites historical records.
+   - Archived seasons are read-only while archived; the active season cannot be archived directly (seasons transition to archived only when another season is activated, preventing a zero-active-season state). `master_admin` can re-activate an archived season, atomically archiving the previously active season while published `monthly_snapshots` remain permanently frozen.
 3. **Whitelist-only authentication**:
    - Access is strictly guarded by email presence in `roster_memberships` for the active season.
    - There are no public sign-ups or self-registrations.

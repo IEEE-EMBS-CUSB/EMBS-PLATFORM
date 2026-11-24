@@ -318,13 +318,6 @@ export async function activateSeasonAsActor(
     if (!target) {
       return { ok: false, error: "Season not found." };
     }
-    if (target.status === "archived") {
-      return {
-        ok: false,
-        error:
-          "Archived seasons are permanently frozen and cannot be re-activated.",
-      };
-    }
     if (target.status === "active") {
       return { ok: true };
     }
@@ -368,6 +361,13 @@ export async function archiveSeasonAsActor(
 
     if (!target) {
       return { ok: false, error: "Season not found." };
+    }
+    if (target.status === "active") {
+      return {
+        ok: false,
+        error:
+          "Cannot archive the active season directly. Activate another season to archive this one.",
+      };
     }
     if (target.status === "archived") {
       return { ok: true };

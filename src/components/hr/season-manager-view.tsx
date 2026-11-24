@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  Archive,
   Check,
   CheckCircle,
   CheckSquare,
@@ -90,9 +89,6 @@ interface SeasonManagerViewProps {
   onActivateSeason?: (
     seasonId: string
   ) => Promise<{ ok: boolean; error?: string } | void>;
-  onArchiveSeason?: (
-    seasonId: string
-  ) => Promise<{ ok: boolean; error?: string } | void>;
   onAddTrack?: (input: {
     name: string;
     description?: string;
@@ -133,7 +129,6 @@ export function SeasonManagerView({
   onUpdateSettings,
   onCloneSeason,
   onActivateSeason,
-  onArchiveSeason,
   onAddTrack,
   onRenameTrack,
   onDeleteTrack,
@@ -367,11 +362,11 @@ export function SeasonManagerView({
   };
 
   const handleActivate = async (season: SeasonItem) => {
-    if (
-      !window.confirm(
-        `Activate "${season.name}"? The current active season will be permanently archived.`
-      )
-    ) {
+    const confirmMessage =
+      season.status === "archived"
+        ? `Re-activate "${season.name}"? The current active season will be archived.`
+        : `Activate "${season.name}"? The current active season will be archived.`;
+    if (!window.confirm(confirmMessage)) {
       return;
     }
     setTransitioningId(season.id);
@@ -394,36 +389,6 @@ export function SeasonManagerView({
     } catch (err: unknown) {
       setActionError(
         err instanceof Error ? err.message : "Failed to activate season."
-      );
-    } finally {
-      setTransitioningId(null);
-    }
-  };
-
-  const handleArchive = async (season: SeasonItem) => {
-    if (
-      !window.confirm(
-        `Permanently archive "${season.name}"? Archived seasons are read-only and cannot be re-activated.`
-      )
-    ) {
-      return;
-    }
-    setTransitioningId(season.id);
-    setActionError(null);
-    try {
-      if (onArchiveSeason) {
-        const res = await onArchiveSeason(season.id);
-        if (res && !res.ok) {
-          setActionError(res.error ?? "Failed to archive season.");
-          return;
-        }
-      }
-      setSeasons((prev) =>
-        prev.map((s) => (s.id === season.id ? { ...s, status: "archived" } : s))
-      );
-    } catch (err: unknown) {
-      setActionError(
-        err instanceof Error ? err.message : "Failed to archive season."
       );
     } finally {
       setTransitioningId(null);
@@ -799,17 +764,17 @@ export function SeasonManagerView({
                       </Button>
                     )}
 
-                    {canManage && isActive && (
+                    {canManage && isArchived && (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         disabled={transitioningId === season.id}
-                        onClick={() => handleArchive(season)}
-                        className="h-8 gap-1 border-[#ba0c2f]/30 text-xs font-semibold text-[#ba0c2f] hover:bg-[#ba0c2f]/10"
+                        onClick={() => handleActivate(season)}
+                        className="h-8 gap-1 border-[#772583]/35 text-xs font-semibold text-[#772583] hover:bg-[#f5edf7]"
                       >
-                        <Archive className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>Archive</span>
+                        <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>Re-activate</span>
                       </Button>
                     )}
                   </div>
@@ -821,7 +786,7 @@ export function SeasonManagerView({
                     </span>
                   ) : (
                     <span className="text-xs text-muted-foreground">
-                      {isArchived ? "Permanently locked" : "Draft season"}
+                      {isArchived ? "Archived (read-only)" : "Draft season"}
                     </span>
                   )}
                 </div>
@@ -915,8 +880,8 @@ export function SeasonManagerView({
                 <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs text-muted-foreground">
                   <Lock className="h-3.5 w-3.5 shrink-0 text-[#002855]" aria-hidden="true" />
                   <span>
-                    <strong>Archived seasons are read-only.</strong> Clone this
-                    season into a new draft to adjust rules for a future term.
+                    <strong>Archived seasons are read-only.</strong> Re-activate
+                    this season or clone it into a new draft to make changes.
                   </span>
                 </div>
               )}
