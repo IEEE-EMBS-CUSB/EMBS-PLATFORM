@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeInitialSessionWindow,
   computePointsForAttendanceStatus,
   getSessionCheckinState,
+  hasPunctualityCutoffPassed,
+  isCheckinPunctual,
   isSessionCheckinLive,
 } from "@/services/hr-ops/attendance.service";
 
@@ -15,7 +18,7 @@ describe("CP7 Attendance Timer & Manual Status Scoring Helpers", () => {
         {
           checkinOpen: true,
           checkinStartsAt: new Date("2026-11-22T17:55:00Z"),
-          checkinExpiresAt: new Date("2026-11-22T18:15:00Z"),
+          checkinEndsAt: new Date("2026-11-22T18:15:00Z"),
         },
         now
       )
@@ -25,7 +28,7 @@ describe("CP7 Attendance Timer & Manual Status Scoring Helpers", () => {
         {
           checkinOpen: true,
           checkinStartsAt: new Date("2026-11-22T17:55:00Z"),
-          checkinExpiresAt: new Date("2026-11-22T18:15:00Z"),
+          checkinEndsAt: new Date("2026-11-22T18:15:00Z"),
         },
         now
       )
@@ -59,7 +62,7 @@ describe("CP7 Attendance Timer & Manual Status Scoring Helpers", () => {
         {
           checkinOpen: true,
           checkinStartsAt: new Date("2026-11-22T17:00:00Z"),
-          checkinExpiresAt: new Date("2026-11-22T17:59:59Z"),
+          checkinEndsAt: new Date("2026-11-22T17:59:59Z"),
         },
         now
       )
@@ -68,7 +71,7 @@ describe("CP7 Attendance Timer & Manual Status Scoring Helpers", () => {
       isSessionCheckinLive(
         {
           checkinOpen: true,
-          checkinExpiresAt: new Date("2026-11-22T17:59:59Z"),
+          checkinEndsAt: new Date("2026-11-22T17:59:59Z"),
         },
         now
       )
@@ -80,7 +83,7 @@ describe("CP7 Attendance Timer & Manual Status Scoring Helpers", () => {
         {
           checkinOpen: false,
           checkinStartsAt: new Date("2026-11-22T17:55:00Z"),
-          checkinExpiresAt: new Date("2026-11-22T19:00:00Z"),
+          checkinEndsAt: new Date("2026-11-22T19:00:00Z"),
         },
         now
       )
@@ -89,9 +92,98 @@ describe("CP7 Attendance Timer & Manual Status Scoring Helpers", () => {
       isSessionCheckinLive(
         {
           checkinOpen: false,
-          checkinExpiresAt: new Date("2026-11-22T19:00:00Z"),
+          checkinEndsAt: new Date("2026-11-22T19:00:00Z"),
         },
         now
+      )
+    ).toBe(false);
+  });
+
+  it("always schedules initial check-in window from startsAt until startsAt + windowMinutes", () => {
+    const now = new Date("2026-11-24T14:00:00Z");
+
+    // Future session -> armed / scheduled
+    const futureStart = new Date("2026-11-24T16:00:00Z");
+    const futureWindow = computeInitialSessionWindow(futureStart, 30, now);
+    expect(futureWindow).toEqual({
+      checkinOpen: true,
+      checkinStartsAt: futureStart,
+      checkinEndsAt: new Date("2026-11-24T16:30:00Z"),
+    });
+    expect(getSessionCheckinState(futureWindow, now)).toBe("scheduled");
+
+    // Recent past with remaining countdown -> live immediately for remaining time
+    const recentPast = new Date("2026-11-24T13:50:00Z");
+    const partialWindow = computeInitialSessionWindow(recentPast, 30, now);
+    expect(partialWindow).toEqual({
+      checkinOpen: true,
+      checkinStartsAt: recentPast,
+      checkinEndsAt: new Date("2026-11-24T14:20:00Z"),
+    });
+    expect(getSessionCheckinState(partialWindow, now)).toBe("live");
+
+    // Elapsed past window -> closed by default (can still be re-opened later)
+    const oldPast = new Date("2026-11-24T12:00:00Z");
+    const elapsedWindow = computeInitialSessionWindow(oldPast, 30, now);
+    expect(elapsedWindow).toEqual({
+      checkinOpen: false,
+      checkinStartsAt: oldPast,
+      checkinEndsAt: new Date("2026-11-24T12:30:00Z"),
+    });
+    expect(getSessionCheckinState(elapsedWindow, now)).toBe("closed");
+  });
+
+  it("evaluates punctuality against startsAt by default and respects punctualityStartsAt override on delayed re-opens", () => {
+    const startsAt = new Date("2026-11-24T16:00:00Z");
+
+    // Within 15m of original startsAt -> punctual
+    expect(
+      isCheckinPunctual(
+        { startsAt, punctualityStartsAt: null, punctualityCutoffMinutes: 15 },
+        new Date("2026-11-24T16:10:00Z")
+      )
+    ).toBe(true);
+    expect(
+      hasPunctualityCutoffPassed(
+        { startsAt, punctualityStartsAt: null, punctualityCutoffMinutes: 15 },
+        new Date("2026-11-24T16:10:00Z")
+      )
+    ).toBe(false);
+
+    // 25m after original startsAt without reset -> late, cutoff has passed
+    expect(
+      isCheckinPunctual(
+        { startsAt, punctualityStartsAt: null, punctualityCutoffMinutes: 15 },
+        new Date("2026-11-24T16:25:00Z")
+      )
+    ).toBe(false);
+    expect(
+      hasPunctualityCutoffPassed(
+        { startsAt, punctualityStartsAt: null, punctualityCutoffMinutes: 15 },
+        new Date("2026-11-24T16:25:00Z")
+      )
+    ).toBe(true);
+
+    // Delayed session re-opened at 16:20 with punctualityStartsAt reset to 16:20 -> punctual at 16:30, late at 16:36
+    const delayedAnchor = new Date("2026-11-24T16:20:00Z");
+    expect(
+      isCheckinPunctual(
+        {
+          startsAt,
+          punctualityStartsAt: delayedAnchor,
+          punctualityCutoffMinutes: 15,
+        },
+        new Date("2026-11-24T16:30:00Z")
+      )
+    ).toBe(true);
+    expect(
+      isCheckinPunctual(
+        {
+          startsAt,
+          punctualityStartsAt: delayedAnchor,
+          punctualityCutoffMinutes: 15,
+        },
+        new Date("2026-11-24T16:36:00Z")
       )
     ).toBe(false);
   });

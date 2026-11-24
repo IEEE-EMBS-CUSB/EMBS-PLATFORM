@@ -19,6 +19,8 @@ import {
   recordMemberCheckin,
   setSessionMemberAttendanceAsActor,
   toggleSessionCheckinAsActor,
+  type CheckinOpenOptions,
+  type CreatedSessionSummary,
   type CreateSessionInput,
   type CreateSessionResult,
   type SessionAttendanceStatus,
@@ -26,6 +28,8 @@ import {
 } from "@/services/hr-ops/attendance.service";
 
 export type {
+  CheckinOpenOptions,
+  CreatedSessionSummary,
   CreateSessionInput,
   CreateSessionResult,
   SessionAttendanceStatus,
@@ -64,7 +68,8 @@ export async function createSessionAction(
 export async function toggleSessionCheckinAction(
   sessionId: string,
   open: boolean,
-  windowMinutes: number = 30
+  windowMinutes: number = 30,
+  options?: CheckinOpenOptions
 ): Promise<CreateSessionResult> {
   const actor = await getActorContext();
   if (!actor) return unauthorizedResult() as CreateSessionResult;
@@ -72,7 +77,8 @@ export async function toggleSessionCheckinAction(
     sessionId,
     open,
     windowMinutes,
-    actor
+    actor,
+    options
   );
   if (res.ok) safeRevalidateAttendance();
   return res;
@@ -80,14 +86,16 @@ export async function toggleSessionCheckinAction(
 
 export async function extendSessionCheckinWindowAction(
   sessionId: string,
-  extraMinutes: number = 15
+  extraMinutes: number = 15,
+  options?: CheckinOpenOptions
 ): Promise<CreateSessionResult> {
   const actor = await getActorContext();
   if (!actor) return unauthorizedResult() as CreateSessionResult;
   const res = await extendSessionCheckinWindowAsActor(
     sessionId,
     extraMinutes,
-    actor
+    actor,
+    options
   );
   if (res.ok) safeRevalidateAttendance();
   return res;
@@ -115,6 +123,7 @@ export async function setSessionMemberAttendanceAction(input: {
   error?: string;
   pointsAwarded?: number;
   status?: SessionAttendanceStatus;
+  statusUpdatedAt?: string;
 }> {
   const actor = await getActorContext();
   if (!actor) return unauthorizedResult();

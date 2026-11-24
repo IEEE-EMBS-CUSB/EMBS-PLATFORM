@@ -58,16 +58,16 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         punctualityCutoffMinutes: 15,
         basePoints: 10,
         punctualityBonus: 5,
-        openCheckinImmediately: true,
       },
       { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
     );
 
     expect(result.ok).toBe(true);
     expect(result.sessionId).toBeDefined();
+    expect(result.session?.title).toBe(title);
     createdSessionIds.push(result.sessionId!);
     expect(result.checkinCode).toHaveLength(6);
-    expect(result.checkinExpiresAt).toBeDefined();
+    expect(result.checkinEndsAt).toBeDefined();
 
     const [session] = await db
       .select()
@@ -79,7 +79,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
     expect(session.committeeId).toBe(robotics.id);
     expect(session.checkinOpen).toBe(true);
     expect(session.checkinCode).toBe(result.checkinCode);
-    expect(new Date(session.checkinExpiresAt!).getTime()).toBeGreaterThan(Date.now());
+    expect(new Date(session.checkinEndsAt!).getTime()).toBeGreaterThan(Date.now());
   });
 
   it("rejects a committee head attempting to create a session for another committee", async () => {
@@ -159,7 +159,6 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         punctualityCutoffMinutes: 15,
         basePoints: 10,
         punctualityBonus: 5,
-        openCheckinImmediately: true,
       },
       { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
     );
@@ -231,7 +230,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         startsAt: new Date(Date.now() - 7200000),
         checkinOpen: true,
         checkinCode: "112233",
-        checkinExpiresAt: new Date(Date.now() - 3600000),
+        checkinEndsAt: new Date(Date.now() - 3600000),
       })
       .returning();
     createdSessionIds.push(expiredSession.id);
@@ -261,12 +260,21 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         title: "Toggle Checkin Test Session",
         startsAt: new Date().toISOString(),
         committeeId: robotics.id,
-        openCheckinImmediately: false,
       },
       { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
     );
     expect(createResult.ok).toBe(true);
     createdSessionIds.push(createResult.sessionId!);
+
+    const closeRes = await toggleSessionCheckinAsActor(
+      createResult.sessionId!,
+      false,
+      0,
+      { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
+    );
+    expect(closeRes.ok).toBe(true);
+    expect(closeRes.checkinOpen).toBe(false);
+    expect(closeRes.checkinEndsAt).toBeNull();
 
     const openRes = await toggleSessionCheckinAsActor(
       createResult.sessionId!,
@@ -277,16 +285,6 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
     expect(openRes.ok).toBe(true);
     expect(openRes.checkinOpen).toBe(true);
     expect(openRes.checkinCode).toHaveLength(6);
-
-    const closeRes = await toggleSessionCheckinAsActor(
-      createResult.sessionId!,
-      false,
-      0,
-      { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
-    );
-    expect(closeRes.ok).toBe(true);
-    expect(closeRes.checkinOpen).toBe(false);
-    expect(closeRes.checkinExpiresAt).toBeNull();
     // Persistent 1 code / 1 QR: code is created up front and preserved across open/close/re-open
     expect(createResult.checkinCode).toMatch(/^\d{6}$/);
     expect(openRes.checkinCode).toBe(createResult.checkinCode);
@@ -314,7 +312,6 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         startsAt: futureStart.toISOString(),
         committeeId: omar.committeeId,
         checkinWindowMinutes: 30,
-        openCheckinImmediately: true,
       },
       { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
     );
@@ -367,14 +364,13 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         startsAt: recentPastStart.toISOString(),
         committeeId: omar.committeeId,
         checkinWindowMinutes: 30,
-        openCheckinImmediately: true,
       },
       { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
     );
     expect(partialRes.ok).toBe(true);
     createdSessionIds.push(partialRes.sessionId!);
     expect(partialRes.checkinOpen).toBe(true);
-    expect(partialRes.checkinExpiresAt?.getTime()).toBe(
+    expect(partialRes.checkinEndsAt?.getTime()).toBe(
       recentPastStart.getTime() + 30 * 60_000
     );
 
@@ -386,7 +382,6 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         startsAt: oldPastStart.toISOString(),
         committeeId: omar.committeeId,
         checkinWindowMinutes: 30,
-        openCheckinImmediately: true,
       },
       { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
     );
@@ -395,16 +390,23 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
     expect(elapsedRes.checkinOpen).toBe(false);
     expect(elapsedRes.checkinCode).toMatch(/^\d{6}$/);
 
-    // Re-opening later keeps the exact same 6-digit code
+    // Re-opening later keeps the exact same 6-digit code and can reset punctuality grace period from now
     const reopenRes = await toggleSessionCheckinAsActor(
       elapsedRes.sessionId!,
       true,
       20,
-      { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
+      { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } },
+      { resetPunctualityFromNow: true }
     );
     expect(reopenRes.ok).toBe(true);
     expect(reopenRes.checkinOpen).toBe(true);
     expect(reopenRes.checkinCode).toBe(elapsedRes.checkinCode);
+    expect(reopenRes.punctualityStartsAt).toBeDefined();
+
+    // Member checking in immediately after delayed re-open receives punctual credit
+    const delayedCheckin = await recordMemberCheckin(elapsedRes.checkinCode!, omar.id);
+    expect(delayedCheckin.ok).toBe(true);
+    expect(delayedCheckin.isPunctual).toBe(true);
 
     // Lazy expiration must preserve checkinCode when closing an expired session
     const [row] = await db

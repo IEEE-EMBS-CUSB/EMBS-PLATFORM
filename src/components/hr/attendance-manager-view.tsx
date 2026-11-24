@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
+  AlertTriangle,
   CalendarClock,
+  CheckCircle2,
   ClipboardList,
   Clock,
   Download,
@@ -32,7 +34,9 @@ import {
   getSessionAttendanceRosterAction,
   setSessionMemberAttendanceAction,
   toggleSessionCheckinAction,
+  type CheckinOpenOptions,
   type CreateSessionInput,
+  type CreateSessionResult,
   type SessionAttendanceStatus,
   type SessionRosterRow,
 } from "@/app/hr/attendance/actions";
@@ -46,7 +50,8 @@ export interface SessionItem {
   checkinOpen: boolean;
   checkinCode: string | null;
   checkinStartsAt?: Date | null;
-  checkinExpiresAt?: Date | null;
+  checkinEndsAt?: Date | null;
+  punctualityStartsAt?: Date | null;
   punctualityCutoffMinutes?: number;
   basePoints: number;
   punctualityBonus: number;
@@ -65,21 +70,26 @@ interface AttendanceManagerViewProps {
   currentUserCommitteeName?: string | null;
   committees?: CommitteeRef[];
   attendanceDefaults?: SeasonAttendanceSettings;
-  onCreateSession?: (input: CreateSessionInput) => Promise<unknown>;
+  onCreateSession?: (
+    input: CreateSessionInput
+  ) => Promise<CreateSessionResult | unknown>;
   onToggleCheckin?: (
     sessionId: string,
     open: boolean,
-    windowMinutes?: number
-  ) => Promise<unknown>;
+    windowMinutes?: number,
+    options?: CheckinOpenOptions
+  ) => Promise<CreateSessionResult | unknown>;
   onExtendCheckin?: (
     sessionId: string,
-    extraMinutes?: number
+    extraMinutes?: number,
+    options?: CheckinOpenOptions
   ) => Promise<{
     ok: boolean;
     error?: string;
     checkinCode?: string | null;
     checkinStartsAt?: Date | null;
-    checkinExpiresAt?: Date | null;
+    checkinEndsAt?: Date | null;
+    punctualityStartsAt?: Date | null;
   }>;
   onLoadSessionRoster?: (sessionId: string) => Promise<{
     ok: boolean;
@@ -96,6 +106,7 @@ interface AttendanceManagerViewProps {
     error?: string;
     pointsAwarded?: number;
     status?: SessionAttendanceStatus;
+    statusUpdatedAt?: string;
   }>;
 }
 
@@ -107,8 +118,8 @@ function getSessionStateAt(
 ): SessionLifecycleState {
   if (!sess.checkinOpen) return "closed";
   if (
-    sess.checkinExpiresAt &&
-    new Date(sess.checkinExpiresAt).getTime() <= nowMs
+    sess.checkinEndsAt &&
+    new Date(sess.checkinEndsAt).getTime() <= nowMs
   ) {
     return "closed";
   }
@@ -152,6 +163,31 @@ function formatSessionDateTime(date: Date | null | undefined): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function formatExactTimestamp(iso: string | null | undefined): string {
+  if (!iso) return "Not recorded";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Not recorded";
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function isPastPunctualityCutoff(
+  sess: SessionItem,
+  nowMs: number,
+  defaultCutoffMinutes: number
+): boolean {
+  const cutoffMins = sess.punctualityCutoffMinutes ?? defaultCutoffMinutes;
+  const anchor = new Date(sess.punctualityStartsAt ?? sess.startsAt);
+  if (Number.isNaN(anchor.getTime())) return false;
+  return nowMs > anchor.getTime() + cutoffMins * 60_000;
 }
 
 function getLocalDatetimeInputValue(date: Date = new Date()): string {
@@ -243,6 +279,16 @@ export function AttendanceManagerView({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [createdBanner, setCreatedBanner] = useState<{
+    sessionId: string;
+    title: string;
+    state: SessionLifecycleState;
+  } | null>(null);
+  const [pendingReopenPrompt, setPendingReopenPrompt] = useState<{
+    session: SessionItem;
+    mode: "toggle" | "extend";
+    minutes: number;
+  } | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [extendingId, setExtendingId] = useState<string | null>(null);
 
@@ -260,7 +306,6 @@ export function AttendanceManagerView({
     null
   );
   const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
-  const autoClosedIdsRef = useRef<Set<string>>(new Set());
 
   // Form state
   const [newTitle, setNewTitle] = useState("");
@@ -282,7 +327,6 @@ export function AttendanceManagerView({
   const [newPunctualityBonus, setNewPunctualityBonus] = useState(
     attendanceDefaults.defaultPunctualityBonus
   );
-  const [newOpenImmediately, setNewOpenImmediately] = useState(true);
 
   const liveCheckinSession = useMemo(
     () =>
@@ -292,43 +336,26 @@ export function AttendanceManagerView({
     [liveCheckinSessionId, sessionList]
   );
 
-  // Tick every second while any session is scheduled or live with a timer
-  const hasTimedOpenSession = useMemo(
+  // Tick every second only while at least one session is actively scheduled or live
+  const hasPendingOrLiveTimer = useMemo(
     () =>
-      sessionList.some(
-        (s) =>
-          s.checkinOpen &&
-          (Boolean(s.checkinExpiresAt) || Boolean(s.checkinStartsAt))
-      ),
-    [sessionList]
+      sessionList.some((s) => {
+        const state = getSessionStateAt(s, nowMs);
+        return (
+          (state === "live" && Boolean(s.checkinEndsAt)) ||
+          (state === "scheduled" && Boolean(s.checkinStartsAt))
+        );
+      }),
+    [sessionList, nowMs]
   );
 
   useEffect(() => {
-    if (!hasTimedOpenSession) return;
+    if (!hasPendingOrLiveTimer) return;
     const timer = setInterval(() => {
       setNowMs(Date.now());
     }, 1000);
     return () => clearInterval(timer);
-  }, [hasTimedOpenSession]);
-
-  // Auto-close expired sessions on the server once they pass checkinExpiresAt
-  useEffect(() => {
-    for (const sess of sessionList) {
-      if (
-        sess.checkinOpen &&
-        sess.checkinExpiresAt &&
-        new Date(sess.checkinExpiresAt).getTime() <= nowMs &&
-        !autoClosedIdsRef.current.has(sess.id)
-      ) {
-        autoClosedIdsRef.current.add(sess.id);
-        if (!onToggleCheckin) {
-          void toggleSessionCheckinAction(sess.id, false).catch(() => {
-            // Server will also lazily close on next reload/check-in
-          });
-        }
-      }
-    }
-  }, [sessionList, nowMs, onToggleCheckin]);
+  }, [hasPendingOrLiveTimer]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -336,6 +363,7 @@ export function AttendanceManagerView({
         setShowCreateModal(false);
         setLiveCheckinSessionId(null);
         setSheetSession(null);
+        setPendingReopenPrompt(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -380,19 +408,50 @@ export function AttendanceManagerView({
 
   const isCommitteeScoped =
     currentUserRole === "committee_head" || currentUserRole === "hr_member";
+  const hasMissingCommitteeScope =
+    isCommitteeScoped && !currentUserCommitteeId;
   const canCreate =
-    currentUserRole === "master_admin" ||
-    currentUserRole === "hr_admin" ||
-    currentUserRole === "hr_member" ||
-    currentUserRole === "committee_head";
+    (currentUserRole === "master_admin" ||
+      currentUserRole === "hr_admin" ||
+      currentUserRole === "hr_member" ||
+      currentUserRole === "committee_head") &&
+    !hasMissingCommitteeScope;
 
   const canManageSession = useCallback(
     (sess: SessionItem) =>
       currentUserRole === "master_admin" ||
       currentUserRole === "hr_admin" ||
-      (isCommitteeScoped && sess.committeeId === currentUserCommitteeId),
+      (isCommitteeScoped &&
+        currentUserCommitteeId !== null &&
+        sess.committeeId === currentUserCommitteeId),
     [currentUserRole, isCommitteeScoped, currentUserCommitteeId]
   );
+
+  const createSchedulePreview = useMemo(() => {
+    const start = new Date(newStartsAt);
+    if (Number.isNaN(start.getTime())) return null;
+    const end = new Date(start.getTime() + newWindowMinutes * 60_000);
+    if (start.getTime() > nowMs) {
+      return {
+        tone: "info" as const,
+        message: `Auto-opens on ${formatSessionDateTime(start)} and closes on ${formatSessionDateTime(end)} (${newWindowMinutes}m). Persistent QR & code are ready immediately for slides.`,
+      };
+    }
+    if (end.getTime() > nowMs) {
+      const remainingMins = Math.max(
+        1,
+        Math.ceil((end.getTime() - nowMs) / 60_000)
+      );
+      return {
+        tone: "live" as const,
+        message: `Check-in opens immediately and stays open until ${formatSessionDateTime(end)} (~${remainingMins}m remaining).`,
+      };
+    }
+    return {
+      tone: "warning" as const,
+      message: `The ${newWindowMinutes}m check-in window from this start time has already elapsed. The session will be created Closed with its persistent QR & code — you can re-open check-in anytime.`,
+    };
+  }, [newStartsAt, newWindowMinutes, nowMs]);
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -411,18 +470,49 @@ export function AttendanceManagerView({
       punctualityCutoffMinutes: newPunctualityCutoff,
       basePoints: newBasePoints,
       punctualityBonus: newPunctualityBonus,
-      openCheckinImmediately: newOpenImmediately,
     };
 
     try {
-      if (onCreateSession) {
-        await onCreateSession(input);
-      } else {
-        const res = await createSessionAction(input);
-        if (!res.ok) {
-          setErrorMessage(res.error || "Failed to create session.");
-          return;
-        }
+      const rawRes = onCreateSession
+        ? await onCreateSession(input)
+        : await createSessionAction(input);
+      const res =
+        rawRes && typeof rawRes === "object"
+          ? (rawRes as CreateSessionResult)
+          : null;
+
+      if (res && res.ok === false) {
+        setErrorMessage(res.error || "Failed to create session.");
+        return;
+      }
+
+      if (res?.session) {
+        const createdItem: SessionItem = {
+          ...res.session,
+          startsAt: new Date(res.session.startsAt),
+          checkinStartsAt: res.session.checkinStartsAt
+            ? new Date(res.session.checkinStartsAt)
+            : null,
+          checkinEndsAt: res.session.checkinEndsAt
+            ? new Date(res.session.checkinEndsAt)
+            : null,
+          punctualityStartsAt: res.session.punctualityStartsAt
+            ? new Date(res.session.punctualityStartsAt)
+            : null,
+        };
+        setNowMs(Date.now());
+        setSessionList((prev) => {
+          const withoutDup = prev.filter((item) => item.id !== createdItem.id);
+          return [createdItem, ...withoutDup].sort(
+            (a, b) =>
+              new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()
+          );
+        });
+        setCreatedBanner({
+          sessionId: createdItem.id,
+          title: createdItem.title,
+          state: getSessionStateAt(createdItem, Date.now()),
+        });
       }
 
       setShowCreateModal(false);
@@ -439,48 +529,52 @@ export function AttendanceManagerView({
   const handleToggleCheckin = async (
     sessionId: string,
     open: boolean,
-    windowMinutes: number = attendanceDefaults.defaultCheckinWindowMinutes
+    windowMinutes: number = attendanceDefaults.defaultCheckinWindowMinutes,
+    options?: CheckinOpenOptions
   ) => {
     setTogglingId(sessionId);
     setActionError(null);
     try {
-      if (onToggleCheckin) {
-        await onToggleCheckin(sessionId, open, windowMinutes);
-        if (open) {
-          autoClosedIdsRef.current.delete(sessionId);
-        }
-      } else {
-        const res = await toggleSessionCheckinAction(
-          sessionId,
-          open,
-          windowMinutes
-        );
-        if (!res.ok) {
-          setActionError(res.error ?? "Failed to update check-in status.");
-          return;
-        }
-        if (open) {
-          autoClosedIdsRef.current.delete(sessionId);
-        }
-        setSessionList((prev) =>
-          prev.map((item) =>
-            item.id === sessionId
-              ? {
-                  ...item,
-                  checkinOpen: open,
-                  checkinCode: res.checkinCode ?? item.checkinCode,
-                  checkinStartsAt: open
-                    ? (res.checkinStartsAt ?? new Date())
-                    : null,
-                  checkinExpiresAt: open
-                    ? (res.checkinExpiresAt ??
-                      new Date(Date.now() + windowMinutes * 60_000))
-                    : null,
-                }
-              : item
-          )
-        );
+      const rawRes = onToggleCheckin
+        ? await onToggleCheckin(sessionId, open, windowMinutes, options)
+        : await toggleSessionCheckinAction(
+            sessionId,
+            open,
+            windowMinutes,
+            options
+          );
+      const res =
+        rawRes && typeof rawRes === "object"
+          ? (rawRes as CreateSessionResult)
+          : null;
+      if (res && res.ok === false) {
+        setActionError(res.error ?? "Failed to update check-in status.");
+        return;
       }
+      const now = new Date();
+      setNowMs(now.getTime());
+      setSessionList((prev) =>
+        prev.map((item) =>
+          item.id === sessionId
+            ? {
+                ...item,
+                checkinOpen: open,
+                checkinCode: res?.checkinCode ?? item.checkinCode,
+                checkinStartsAt: open ? (res?.checkinStartsAt ?? now) : null,
+                checkinEndsAt: open
+                  ? (res?.checkinEndsAt ??
+                    new Date(now.getTime() + windowMinutes * 60_000))
+                  : null,
+                punctualityStartsAt:
+                  res?.punctualityStartsAt !== undefined
+                    ? res.punctualityStartsAt
+                    : open && options?.resetPunctualityFromNow
+                      ? now
+                      : item.punctualityStartsAt,
+              }
+            : item
+        )
+      );
     } catch (err: unknown) {
       setActionError(
         err instanceof Error ? err.message : "Failed to update check-in status."
@@ -490,18 +584,27 @@ export function AttendanceManagerView({
     }
   };
 
-  const handleExtendWindow = async (sessionId: string, extraMinutes = 15) => {
+  const handleExtendWindow = async (
+    sessionId: string,
+    extraMinutes = 15,
+    options?: CheckinOpenOptions
+  ) => {
     setExtendingId(sessionId);
     setActionError(null);
     try {
       const res = onExtendCheckin
-        ? await onExtendCheckin(sessionId, extraMinutes)
-        : await extendSessionCheckinWindowAction(sessionId, extraMinutes);
+        ? await onExtendCheckin(sessionId, extraMinutes, options)
+        : await extendSessionCheckinWindowAction(
+            sessionId,
+            extraMinutes,
+            options
+          );
       if (!res.ok) {
         setActionError(res.error ?? "Failed to extend check-in window.");
         return;
       }
-      autoClosedIdsRef.current.delete(sessionId);
+      const now = new Date();
+      setNowMs(now.getTime());
       setSessionList((prev) =>
         prev.map((item) =>
           item.id === sessionId
@@ -512,12 +615,18 @@ export function AttendanceManagerView({
                 checkinStartsAt:
                   res.checkinStartsAt !== undefined
                     ? res.checkinStartsAt
-                    : getSessionStateAt(item, Date.now()) === "closed"
-                      ? new Date()
+                    : getSessionStateAt(item, now.getTime()) === "closed"
+                      ? now
                       : item.checkinStartsAt,
-                checkinExpiresAt:
-                  res.checkinExpiresAt ??
-                  new Date(Date.now() + extraMinutes * 60_000),
+                checkinEndsAt:
+                  res.checkinEndsAt ??
+                  new Date(now.getTime() + extraMinutes * 60_000),
+                punctualityStartsAt:
+                  res.punctualityStartsAt !== undefined
+                    ? res.punctualityStartsAt
+                    : options?.resetPunctualityFromNow
+                      ? now
+                      : item.punctualityStartsAt,
               }
             : item
         )
@@ -528,6 +637,41 @@ export function AttendanceManagerView({
       );
     } finally {
       setExtendingId(null);
+    }
+  };
+
+  const requestOpenOrReopen = (
+    sess: SessionItem,
+    mode: "toggle" | "extend",
+    minutes: number
+  ) => {
+    const nowMsCurrent = new Date().getTime();
+    if (
+      isPastPunctualityCutoff(
+        sess,
+        nowMsCurrent,
+        attendanceDefaults.punctualityCutoffMinutes
+      )
+    ) {
+      setPendingReopenPrompt({ session: sess, mode, minutes });
+      return;
+    }
+    if (mode === "extend") {
+      void handleExtendWindow(sess.id, minutes);
+    } else {
+      void handleToggleCheckin(sess.id, true, minutes);
+    }
+  };
+
+  const confirmPendingReopen = (resetPunctualityFromNow: boolean) => {
+    if (!pendingReopenPrompt) return;
+    const { session, mode, minutes } = pendingReopenPrompt;
+    setPendingReopenPrompt(null);
+    const opts: CheckinOpenOptions = { resetPunctualityFromNow };
+    if (mode === "extend") {
+      void handleExtendWindow(session.id, minutes, opts);
+    } else {
+      void handleToggleCheckin(session.id, true, minutes, opts);
     }
   };
 
@@ -604,12 +748,18 @@ export function AttendanceManagerView({
         Number(willBePresent) - Number(wasPresent);
 
       // Optimistic update
+      const optimisticUpdatedAt = new Date().toISOString();
       setRosterError(null);
       setSavingMembershipId(row.membershipId);
       setRosterRows((curr) =>
         curr.map((item) =>
           item.membershipId === row.membershipId
-            ? { ...item, status: nextStatus, pointsAwarded: estimatedPoints }
+            ? {
+                ...item,
+                status: nextStatus,
+                pointsAwarded: estimatedPoints,
+                statusUpdatedAt: optimisticUpdatedAt,
+              }
             : item
         )
       );
@@ -656,11 +806,18 @@ export function AttendanceManagerView({
             );
           }
           setRosterError(res.error ?? "Failed to save attendance update.");
-        } else if (typeof res.pointsAwarded === "number") {
+        } else {
           setRosterRows((curr) =>
             curr.map((item) =>
               item.membershipId === row.membershipId
-                ? { ...item, pointsAwarded: res.pointsAwarded! }
+                ? {
+                    ...item,
+                    pointsAwarded:
+                      typeof res.pointsAwarded === "number"
+                        ? res.pointsAwarded
+                        : item.pointsAwarded,
+                    statusUpdatedAt: res.statusUpdatedAt ?? optimisticUpdatedAt,
+                  }
                 : item
             )
           );
@@ -748,7 +905,7 @@ export function AttendanceManagerView({
 
   const liveCountdown =
     liveCheckinSession && liveSessionState === "live"
-      ? formatRemainingCountdown(liveCheckinSession.checkinExpiresAt, nowMs)
+      ? formatRemainingCountdown(liveCheckinSession.checkinEndsAt, nowMs)
       : null;
   const scheduledCountdown =
     liveCheckinSession && liveSessionState === "scheduled"
@@ -763,6 +920,44 @@ export function AttendanceManagerView({
           className="rounded-lg border border-[#ba0c2f]/30 bg-[#ba0c2f]/10 p-3 text-xs font-semibold text-[#ba0c2f]"
         >
           {actionError}
+        </div>
+      )}
+
+      {createdBanner && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#78be20]/40 bg-[#eaf5dd] px-4 py-3 text-xs text-[#1e6b0a]"
+        >
+          <div className="flex items-center gap-2 font-semibold">
+            <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>
+              Created session &ldquo;{createdBanner.title}&rdquo; (
+              {createdBanner.state === "live"
+                ? "Check-in Open"
+                : createdBanner.state === "scheduled"
+                  ? "Scheduled Auto-Open"
+                  : "Closed — ready to re-open"}
+              ).
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setLiveCheckinSessionId(createdBanner.sessionId)}
+              className="h-7 border-[#1e6b0a]/30 bg-white px-2.5 text-[11px] font-semibold text-[#1e6b0a] hover:bg-[#eaf5dd]"
+            >
+              View QR &amp; Code
+            </Button>
+            <button
+              type="button"
+              aria-label="Dismiss session created banner"
+              onClick={() => setCreatedBanner(null)}
+              className="rounded p-1 text-[#1e6b0a]/80 hover:bg-[#1e6b0a]/10 hover:text-[#1e6b0a]"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -781,8 +976,10 @@ export function AttendanceManagerView({
           <Button
             type="button"
             onClick={() => {
+              const now = new Date();
               setErrorMessage(null);
-              setNewStartsAt(getLocalDatetimeInputValue());
+              setNowMs(now.getTime());
+              setNewStartsAt(getLocalDatetimeInputValue(now));
               setShowCreateModal(true);
             }}
             className="h-10 shrink-0 gap-2 bg-[#772583] px-4 text-xs font-semibold text-white shadow-xs hover:bg-[#5a1b63]"
@@ -991,28 +1188,19 @@ export function AttendanceManagerView({
                 </div>
               </div>
 
-              <div className="space-y-1 pt-1">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="session-immediate-checkin"
-                    checked={newOpenImmediately}
-                    onChange={(e) => setNewOpenImmediately(e.target.checked)}
-                    className="h-4 w-4 rounded border-border text-[#772583] focus:ring-[#772583]"
-                  />
-                  <label
-                    htmlFor="session-immediate-checkin"
-                    className="text-xs font-medium text-foreground"
-                  >
-                    Auto-open check-in at session date &amp; time
-                  </label>
+              {createSchedulePreview && (
+                <div
+                  className={`rounded-lg border px-3 py-2 text-[11px] leading-relaxed ${
+                    createSchedulePreview.tone === "warning"
+                      ? "border-[#b45309]/30 bg-[#ffc627]/15 text-[#92400e]"
+                      : createSchedulePreview.tone === "live"
+                        ? "border-[#78be20]/40 bg-[#eaf5dd] text-[#1e6b0a]"
+                        : "border-[#00629b]/25 bg-[#f0f6fa] text-[#002855]"
+                  }`}
+                >
+                  {createSchedulePreview.message}
                 </div>
-                <p className="pl-6 text-[11px] text-muted-foreground">
-                  Assigns 1 persistent QR &amp; code immediately for slides.
-                  Future times open automatically at start; past times use the
-                  remaining window.
-                </p>
-              </div>
+              )}
 
               <div className="flex items-center justify-end gap-2 border-t border-border/70 pt-4">
                 <Button
@@ -1040,7 +1228,9 @@ export function AttendanceManagerView({
       {sessionList.length === 0 ? (
         <Card className="border-border bg-white shadow-xs">
           <CardContent className="p-8 text-center text-sm text-muted-foreground">
-            No sessions scheduled yet for this season.
+            {hasMissingCommitteeScope
+              ? "You are not assigned to a committee yet. Ask an HR Admin or Master Admin to assign your committee before managing sessions."
+              : "No sessions scheduled yet for this season."}
           </CardContent>
         </Card>
       ) : (
@@ -1052,7 +1242,7 @@ export function AttendanceManagerView({
             const canManageThis = canManageSession(sess);
             const hasCode = Boolean(sess.checkinCode);
             const countdown = isLive
-              ? formatRemainingCountdown(sess.checkinExpiresAt, nowMs)
+              ? formatRemainingCountdown(sess.checkinEndsAt, nowMs)
               : isScheduled
                 ? formatRemainingCountdown(sess.checkinStartsAt, nowMs)
                 : null;
@@ -1172,13 +1362,17 @@ export function AttendanceManagerView({
                         type="button"
                         variant="outline"
                         disabled={togglingId === sess.id}
-                        onClick={() =>
-                          handleToggleCheckin(
-                            sess.id,
-                            !isLive,
-                            attendanceDefaults.defaultCheckinWindowMinutes
-                          )
-                        }
+                        onClick={() => {
+                          if (isLive) {
+                            void handleToggleCheckin(sess.id, false);
+                          } else {
+                            requestOpenOrReopen(
+                              sess,
+                              "toggle",
+                              attendanceDefaults.defaultCheckinWindowMinutes
+                            );
+                          }
+                        }}
                         className={`h-9 text-xs font-semibold ${
                           isLive
                             ? "text-[#ba0c2f] hover:bg-[#ba0c2f]/10"
@@ -1199,7 +1393,7 @@ export function AttendanceManagerView({
                         ) : (
                           <>
                             <Radio className="mr-1.5 h-3.5 w-3.5" />
-                            Open Check-In (
+                            Re-open Check-In (
                             {attendanceDefaults.defaultCheckinWindowMinutes}m)
                           </>
                         )}
@@ -1375,6 +1569,9 @@ export function AttendanceManagerView({
                         Committee
                       </th>
                       <th className="px-3 py-2.5 text-center">Status</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">
+                        Status Updated
+                      </th>
                       <th className="px-4 py-2.5 text-right">Points</th>
                     </tr>
                   </thead>
@@ -1456,6 +1653,12 @@ export function AttendanceManagerView({
                                 );
                               })}
                             </div>
+                          </td>
+
+                          <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[11px] tabular-nums text-muted-foreground">
+                            {formatExactTimestamp(
+                              row.statusUpdatedAt ?? row.checkedInAt
+                            )}
                           </td>
 
                           <td className="px-4 py-2.5 text-right font-mono text-xs font-bold tabular-nums text-[#002855]">
@@ -1551,8 +1754,8 @@ export function AttendanceManagerView({
                     <span className="font-bold">
                       {formatSessionDateTime(liveCheckinSession.checkinStartsAt)}
                     </span>
-                    {liveCheckinSession.checkinExpiresAt
-                      ? ` and closes on ${formatSessionDateTime(liveCheckinSession.checkinExpiresAt)}`
+                    {liveCheckinSession.checkinEndsAt
+                      ? ` and closes on ${formatSessionDateTime(liveCheckinSession.checkinEndsAt)}`
                       : ""}
                     .
                   </p>
@@ -1652,9 +1855,9 @@ export function AttendanceManagerView({
                         type="button"
                         disabled={togglingId === liveCheckinSession.id}
                         onClick={() =>
-                          handleToggleCheckin(
-                            liveCheckinSession.id,
-                            true,
+                          requestOpenOrReopen(
+                            liveCheckinSession,
+                            "toggle",
                             attendanceDefaults.defaultCheckinWindowMinutes
                           )
                         }
@@ -1689,7 +1892,7 @@ export function AttendanceManagerView({
                         type="button"
                         disabled={extendingId === liveCheckinSession.id}
                         onClick={() =>
-                          handleExtendWindow(liveCheckinSession.id, 15)
+                          requestOpenOrReopen(liveCheckinSession, "extend", 15)
                         }
                         className="h-9 gap-1.5 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
                       >
@@ -1734,7 +1937,7 @@ export function AttendanceManagerView({
                     <Button
                       type="button"
                       onClick={() =>
-                        handleExtendWindow(liveCheckinSession.id, 15)
+                        requestOpenOrReopen(liveCheckinSession, "extend", 15)
                       }
                       className="h-9 gap-1.5 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
                     >
@@ -1758,6 +1961,79 @@ export function AttendanceManagerView({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Punctuality Cutoff Choice Modal when re-opening a delayed or past session */}
+      {pendingReopenPrompt && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Punctuality Cutoff Has Passed"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPendingReopenPrompt(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+        >
+          <div className="relative w-full max-w-md rounded-2xl border border-border bg-white p-6 shadow-2xl">
+            <button
+              type="button"
+              aria-label="Cancel re-open"
+              onClick={() => setPendingReopenPrompt(null)}
+              className="absolute right-4 top-4 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ffc627]/25 text-[#92400e]">
+                <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div>
+                <h2 className="font-heading text-lg font-extrabold text-[#002855]">
+                  Punctuality Cutoff Has Passed
+                </h2>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  The punctuality window for{" "}
+                  <span className="font-semibold text-foreground">
+                    {pendingReopenPrompt.session.title}
+                  </span>{" "}
+                  has already ended. Choose how attendees checking in during
+                  this {pendingReopenPrompt.minutes}-minute window should be
+                  scored:
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-2">
+              <Button
+                type="button"
+                onClick={() => confirmPendingReopen(true)}
+                className="h-10 w-full justify-center bg-[#772583] text-xs font-bold text-white hover:bg-[#5a1b63]"
+              >
+                Reset Grace Period from Now (
+                {pendingReopenPrompt.session.punctualityCutoffMinutes ??
+                  attendanceDefaults.punctualityCutoffMinutes}
+                m)
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => confirmPendingReopen(false)}
+                className="h-10 w-full justify-center text-xs font-semibold text-[#002855]"
+              >
+                Keep Original Start Time (Mark Late)
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setPendingReopenPrompt(null)}
+                className="h-9 w-full justify-center text-xs font-medium text-muted-foreground"
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
         </div>
       )}

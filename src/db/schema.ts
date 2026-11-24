@@ -295,11 +295,11 @@ export const branchSessions = pgTable(
       withTimezone: true,
       mode: "date",
     }),
-    checkinCode: text("checkin_code"), // 6-digit numeric check-in code for QR
-    checkinExpiresAt: timestamp("checkin_expires_at", {
+    punctualityStartsAt: timestamp("punctuality_starts_at", {
       withTimezone: true,
       mode: "date",
-    }),
+    }), // Nullable override when a delayed/past session is manually re-opened with a fresh grace period
+    checkinCode: text("checkin_code"), // 6-digit numeric check-in code for QR
     checkinOpen: boolean("checkin_open").notNull().default(false),
     punctualityCutoffMinutes: integer("punctuality_cutoff_minutes")
       .notNull()
@@ -333,6 +333,12 @@ export const attendanceRecords = pgTable(
       .notNull()
       .references(() => rosterMemberships.id, { onDelete: "cascade" }),
     checkedInAt: timestamp("checked_in_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    statusUpdatedAt: timestamp("status_updated_at", {
+      withTimezone: true,
+      mode: "date",
+    })
       .defaultNow()
       .notNull(),
     status: text("status").notNull().default("present"), // present | excused | absent

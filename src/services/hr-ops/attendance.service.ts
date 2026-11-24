@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { db, withTransaction } from "@/db";
 import * as schema from "@/db/schema";
-import { and, asc, eq, inArray, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, lt, ne } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canManageCommitteeSessions,
@@ -30,14 +30,19 @@ export interface SessionRosterRow {
   status: SessionAttendanceStatus;
   pointsAwarded: number;
   checkedInAt: string | null;
+  statusUpdatedAt: string | null;
   overrideReason: string | null;
 }
 
 export type SessionCheckinState = "scheduled" | "live" | "closed";
 
+export interface CheckinOpenOptions {
+  resetPunctualityFromNow?: boolean;
+}
+
 /**
  * Pure source-of-truth check for a session's check-in lifecycle state:
- * - "closed": `checkinOpen` is false, or `checkinEndsAt` / `checkinExpiresAt` has passed.
+ * - "closed": `checkinOpen` is false, or `checkinEndsAt` has passed.
  * - "scheduled": `checkinOpen` is armed, deadline is in the future, and `now < checkinStartsAt`.
  * - "live": `checkinOpen` is true and `now` is inside `[checkinStartsAt, checkinEndsAt]`.
  */
@@ -46,16 +51,16 @@ export function getSessionCheckinState(
     checkinOpen: boolean;
     checkinStartsAt?: Date | string | null;
     checkinEndsAt?: Date | string | null;
-    checkinExpiresAt?: Date | string | null;
   },
   now: Date = new Date()
 ): SessionCheckinState {
   if (!session.checkinOpen) return "closed";
   const nowMs = now.getTime();
-  const deadlineRaw = session.checkinEndsAt ?? session.checkinExpiresAt;
-  if (deadlineRaw) {
+  if (session.checkinEndsAt) {
     const deadline =
-      deadlineRaw instanceof Date ? deadlineRaw : new Date(deadlineRaw);
+      session.checkinEndsAt instanceof Date
+        ? session.checkinEndsAt
+        : new Date(session.checkinEndsAt);
     if (!Number.isNaN(deadline.getTime()) && nowMs > deadline.getTime()) {
       return "closed";
     }
@@ -74,18 +79,85 @@ export function getSessionCheckinState(
 
 /**
  * Pure source-of-truth check for whether a session's check-in window is currently live.
- * Returns false when scheduled for the future or once `checkinEndsAt` / `checkinExpiresAt` has passed.
+ * Returns false when scheduled for the future or once `checkinEndsAt` has passed.
  */
 export function isSessionCheckinLive(
   session: {
     checkinOpen: boolean;
     checkinStartsAt?: Date | string | null;
     checkinEndsAt?: Date | string | null;
-    checkinExpiresAt?: Date | string | null;
   },
   now: Date = new Date()
 ): boolean {
   return getSessionCheckinState(session, now) === "live";
+}
+
+/**
+ * Computes the default auto-scheduled check-in window for a newly created session.
+ * Sessions always auto-open at `startsAt` and remain open until `startsAt + windowMinutes`:
+ * - Future start -> armed/scheduled (`checkinOpen: true`, opens automatically at `startsAt`).
+ * - Recent past with countdown remaining -> live immediately for the remaining time.
+ * - Older past whose window already elapsed -> closed (`checkinOpen: false`, can be re-opened).
+ */
+export function computeInitialSessionWindow(
+  startsAt: Date,
+  windowMinutes: number,
+  now: Date = new Date()
+): {
+  checkinOpen: boolean;
+  checkinStartsAt: Date;
+  checkinEndsAt: Date;
+} {
+  const checkinEndsAt = new Date(startsAt.getTime() + windowMinutes * 60_000);
+  return {
+    checkinOpen: checkinEndsAt.getTime() > now.getTime(),
+    checkinStartsAt: startsAt,
+    checkinEndsAt,
+  };
+}
+
+/**
+ * Returns the effective timestamp from which punctuality cutoff is measured:
+ * `punctualityStartsAt` when a delayed session was manually re-opened with a fresh grace period,
+ * otherwise the session's original `startsAt`.
+ */
+export function getEffectivePunctualityAnchor(session: {
+  startsAt: Date | string;
+  punctualityStartsAt?: Date | string | null;
+}): Date {
+  const raw = session.punctualityStartsAt ?? session.startsAt;
+  return raw instanceof Date ? raw : new Date(raw);
+}
+
+/**
+ * Returns true if `now` is strictly after the session's effective punctuality cutoff.
+ */
+export function hasPunctualityCutoffPassed(
+  session: {
+    startsAt: Date | string;
+    punctualityStartsAt?: Date | string | null;
+    punctualityCutoffMinutes: number;
+  },
+  now: Date = new Date()
+): boolean {
+  const anchor = getEffectivePunctualityAnchor(session);
+  const cutoffMs =
+    anchor.getTime() + session.punctualityCutoffMinutes * 60_000;
+  return now.getTime() > cutoffMs;
+}
+
+/**
+ * Evaluates whether a check-in occurring at `now` qualifies as punctual.
+ */
+export function isCheckinPunctual(
+  session: {
+    startsAt: Date | string;
+    punctualityStartsAt?: Date | string | null;
+    punctualityCutoffMinutes: number;
+  },
+  now: Date = new Date()
+): boolean {
+  return !hasPunctualityCutoffPassed(session, now);
 }
 
 /**
@@ -150,17 +222,8 @@ export async function closeExpiredSessionsForSeason(
         and(
           eq(schema.branchSessions.seasonId, seasonId),
           eq(schema.branchSessions.checkinOpen, true),
-          or(
-            and(
-              isNotNull(schema.branchSessions.checkinEndsAt),
-              lt(schema.branchSessions.checkinEndsAt, now)
-            ),
-            and(
-              isNull(schema.branchSessions.checkinEndsAt),
-              isNotNull(schema.branchSessions.checkinExpiresAt),
-              lt(schema.branchSessions.checkinExpiresAt, now)
-            )
-          )
+          isNotNull(schema.branchSessions.checkinEndsAt),
+          lt(schema.branchSessions.checkinEndsAt, now)
         )
       );
   } catch {
@@ -190,13 +253,32 @@ async function generateUnique6DigitCode(seasonId: string): Promise<string> {
   return generate6DigitCode();
 }
 
+export interface CreatedSessionSummary {
+  id: string;
+  title: string;
+  committeeId: string | null;
+  committeeName: string;
+  startsAt: Date;
+  checkinOpen: boolean;
+  checkinCode: string | null;
+  checkinStartsAt: Date | null;
+  checkinEndsAt: Date | null;
+  punctualityStartsAt: Date | null;
+  punctualityCutoffMinutes: number;
+  basePoints: number;
+  punctualityBonus: number;
+  attendanceCount: number;
+}
+
 export interface CreateSessionResult {
   ok: boolean;
   error?: string;
   sessionId?: string;
+  session?: CreatedSessionSummary;
   checkinCode?: string | null;
   checkinStartsAt?: Date | null;
-  checkinExpiresAt?: Date | null;
+  checkinEndsAt?: Date | null;
+  punctualityStartsAt?: Date | null;
   checkinOpen?: boolean;
 }
 
@@ -208,7 +290,6 @@ export interface CreateSessionInput {
   punctualityCutoffMinutes?: number;
   basePoints?: number;
   punctualityBonus?: number;
-  openCheckinImmediately?: boolean;
   seasonId?: string;
 }
 
@@ -284,9 +365,10 @@ export async function createSessionAsActor(
       return { ok: false, error: "Punctuality bonus must be an integer between 0 and 500." };
     }
 
+    let committeeName = "Branch-wide";
     if (targetCommitteeId) {
       const [comm] = await db
-        .select({ id: schema.committees.id })
+        .select({ id: schema.committees.id, name: schema.committees.name })
         .from(schema.committees)
         .where(
           and(
@@ -299,28 +381,15 @@ export async function createSessionAsActor(
       if (!comm) {
         return { ok: false, error: "Selected committee does not exist in the active season." };
       }
+      committeeName = comm.name;
     }
 
     const startsAtDate = new Date(input.startsAt);
     const now = new Date();
-    const scheduleInitialWindow = input.openCheckinImmediately ?? false;
     // Always assign 1 persistent 6-digit code / QR at creation so presenters can add it to slides early
     const code = await generateUnique6DigitCode(seasonId);
-
-    let checkinOpen = false;
-    let checkinStartsAt: Date | null = null;
-    let checkinEndsAt: Date | null = null;
-
-    if (scheduleInitialWindow) {
-      const initialEndsAt = new Date(
-        startsAtDate.getTime() + windowMinutes * 60_000
-      );
-      checkinStartsAt = startsAtDate;
-      checkinEndsAt = initialEndsAt;
-      // Future start -> armed/scheduled; recent past with time left -> live for remaining window;
-      // older past whose full window already elapsed -> closed (can still be re-opened later).
-      checkinOpen = initialEndsAt.getTime() > now.getTime();
-    }
+    const { checkinOpen, checkinStartsAt, checkinEndsAt } =
+      computeInitialSessionWindow(startsAtDate, windowMinutes, now);
 
     const [session] = await db
       .insert(schema.branchSessions)
@@ -333,19 +402,38 @@ export async function createSessionAsActor(
         checkinCode: code,
         checkinStartsAt,
         checkinEndsAt,
-        checkinExpiresAt: checkinEndsAt,
+        punctualityStartsAt: null,
         punctualityCutoffMinutes: punctualityCutoff,
         basePoints,
         punctualityBonus,
       })
       .returning();
 
+    const createdSummary: CreatedSessionSummary = {
+      id: session.id,
+      title: session.title,
+      committeeId: session.committeeId,
+      committeeName,
+      startsAt: session.startsAt,
+      checkinOpen: session.checkinOpen,
+      checkinCode: session.checkinCode,
+      checkinStartsAt: session.checkinStartsAt,
+      checkinEndsAt: session.checkinEndsAt,
+      punctualityStartsAt: session.punctualityStartsAt,
+      punctualityCutoffMinutes: session.punctualityCutoffMinutes,
+      basePoints: session.basePoints,
+      punctualityBonus: session.punctualityBonus,
+      attendanceCount: 0,
+    };
+
     return {
       ok: true,
       sessionId: session.id,
+      session: createdSummary,
       checkinCode: session.checkinCode,
       checkinStartsAt: session.checkinStartsAt,
-      checkinExpiresAt: session.checkinEndsAt ?? session.checkinExpiresAt,
+      checkinEndsAt: session.checkinEndsAt,
+      punctualityStartsAt: session.punctualityStartsAt,
       checkinOpen: session.checkinOpen,
     };
   } catch (err: unknown) {
@@ -357,7 +445,8 @@ export async function toggleSessionCheckinAsActor(
   sessionId: string,
   open: boolean,
   windowMinutes: number,
-  actor: AttendanceActor
+  actor: AttendanceActor,
+  options?: CheckinOpenOptions
 ): Promise<CreateSessionResult> {
   if (open && (!Number.isFinite(windowMinutes) || windowMinutes < 1 || windowMinutes > 720)) {
     return { ok: false, error: "Check-in window must be between 1 and 720 minutes." };
@@ -392,9 +481,13 @@ export async function toggleSessionCheckinAsActor(
     const code =
       session.checkinCode ?? (await generateUnique6DigitCode(session.seasonId));
     const now = new Date();
-    const expiresAt = open
+    const endsAt = open
       ? new Date(now.getTime() + windowMinutes * 60_000)
       : null;
+    const nextPunctualityStartsAt =
+      open && options?.resetPunctualityFromNow
+        ? now
+        : session.punctualityStartsAt;
 
     const [updated] = await db
       .update(schema.branchSessions)
@@ -402,8 +495,8 @@ export async function toggleSessionCheckinAsActor(
         checkinOpen: open,
         checkinCode: code,
         checkinStartsAt: open ? now : null,
-        checkinEndsAt: expiresAt,
-        checkinExpiresAt: expiresAt,
+        checkinEndsAt: endsAt,
+        punctualityStartsAt: nextPunctualityStartsAt,
       })
       .where(eq(schema.branchSessions.id, sessionId))
       .returning();
@@ -413,7 +506,8 @@ export async function toggleSessionCheckinAsActor(
       checkinOpen: updated.checkinOpen,
       checkinCode: updated.checkinCode,
       checkinStartsAt: updated.checkinStartsAt,
-      checkinExpiresAt: updated.checkinEndsAt ?? updated.checkinExpiresAt,
+      checkinEndsAt: updated.checkinEndsAt,
+      punctualityStartsAt: updated.punctualityStartsAt,
     };
   } catch (err: unknown) {
     return {
@@ -426,7 +520,8 @@ export async function toggleSessionCheckinAsActor(
 export async function extendSessionCheckinWindowAsActor(
   sessionId: string,
   extraMinutes: number,
-  actor: AttendanceActor
+  actor: AttendanceActor,
+  options?: CheckinOpenOptions
 ): Promise<CreateSessionResult> {
   if (!Number.isFinite(extraMinutes) || extraMinutes < 1 || extraMinutes > 240) {
     return { ok: false, error: "Extension must be between 1 and 240 minutes." };
@@ -458,7 +553,7 @@ export async function extendSessionCheckinWindowAsActor(
     }
 
     const now = new Date();
-    const currentEnd = session.checkinEndsAt ?? session.checkinExpiresAt;
+    const currentEnd = session.checkinEndsAt;
     const isActiveOrScheduled =
       session.checkinOpen &&
       currentEnd !== null &&
@@ -468,6 +563,10 @@ export async function extendSessionCheckinWindowAsActor(
     const nextStart = isActiveOrScheduled
       ? (session.checkinStartsAt ?? now)
       : now;
+    const nextPunctualityStartsAt =
+      !isActiveOrScheduled && options?.resetPunctualityFromNow
+        ? now
+        : session.punctualityStartsAt;
     const code =
       session.checkinCode ?? (await generateUnique6DigitCode(session.seasonId));
 
@@ -478,7 +577,7 @@ export async function extendSessionCheckinWindowAsActor(
         checkinCode: code,
         checkinStartsAt: nextStart,
         checkinEndsAt: nextEnd,
-        checkinExpiresAt: nextEnd,
+        punctualityStartsAt: nextPunctualityStartsAt,
       })
       .where(eq(schema.branchSessions.id, sessionId))
       .returning();
@@ -488,7 +587,8 @@ export async function extendSessionCheckinWindowAsActor(
       checkinOpen: updated.checkinOpen,
       checkinCode: updated.checkinCode,
       checkinStartsAt: updated.checkinStartsAt,
-      checkinExpiresAt: updated.checkinEndsAt ?? updated.checkinExpiresAt,
+      checkinEndsAt: updated.checkinEndsAt,
+      punctualityStartsAt: updated.punctualityStartsAt,
     };
   } catch (err: unknown) {
     return {
@@ -615,6 +715,9 @@ export async function getSessionAttendanceRosterAsActor(
           status,
           pointsAwarded: rec?.pointsAwarded ?? 0,
           checkedInAt: rec?.checkedInAt ? rec.checkedInAt.toISOString() : null,
+          statusUpdatedAt: rec
+            ? (rec.statusUpdatedAt ?? rec.checkedInAt).toISOString()
+            : null,
           overrideReason: rec?.overrideReason ?? null,
         };
       });
@@ -641,6 +744,7 @@ export async function setSessionMemberAttendanceAsActor(
   error?: string;
   pointsAwarded?: number;
   status?: SessionAttendanceStatus;
+  statusUpdatedAt?: string;
 }> {
   try {
     const [session] = await db
@@ -702,6 +806,9 @@ export async function setSessionMemberAttendanceAsActor(
 
     const reasonText =
       input.overrideReason?.trim() || "Manual HR attendance update";
+    const statusChangedAt = new Date();
+
+    let persistedUpdatedAt = statusChangedAt;
 
     await withTransaction(async (tx) => {
       const [record] = await tx
@@ -709,7 +816,8 @@ export async function setSessionMemberAttendanceAsActor(
         .values({
           sessionId: session.id,
           membershipId: member.id,
-          checkedInAt: new Date(),
+          checkedInAt: statusChangedAt,
+          statusUpdatedAt: statusChangedAt,
           status: dbStatus,
           isPunctual,
           pointsAwarded,
@@ -725,9 +833,12 @@ export async function setSessionMemberAttendanceAsActor(
             isPunctual,
             pointsAwarded,
             overrideReason: reasonText,
+            statusUpdatedAt: statusChangedAt,
           },
         })
         .returning();
+
+      persistedUpdatedAt = record.statusUpdatedAt ?? statusChangedAt;
 
       if (!isAttendee) {
         const statusLabel =
@@ -754,7 +865,12 @@ export async function setSessionMemberAttendanceAsActor(
       }
     });
 
-    return { ok: true, pointsAwarded, status: input.status };
+    return {
+      ok: true,
+      pointsAwarded,
+      status: input.status,
+      statusUpdatedAt: persistedUpdatedAt.toISOString(),
+    };
   } catch (err: unknown) {
     return {
       ok: false,
@@ -850,7 +966,7 @@ export async function recordMemberCheckin(
 
     const now = new Date();
     const start = sessionRow.checkinStartsAt ?? sessionRow.startsAt;
-    const end = sessionRow.checkinEndsAt ?? sessionRow.checkinExpiresAt;
+    const end = sessionRow.checkinEndsAt;
     if (start && now.getTime() < start.getTime()) {
       return { ok: false, error: "Check-in has not started yet." };
     }
@@ -921,10 +1037,7 @@ export async function recordMemberCheckin(
       return { ok: false, error: "You have already checked in to this session." };
     }
 
-    const punctualityCutoff = new Date(
-      sessionRow.startsAt.getTime() + sessionRow.punctualityCutoffMinutes * 60_000
-    );
-    const isPunctual = now.getTime() <= punctualityCutoff.getTime();
+    const isPunctual = isCheckinPunctual(sessionRow, now);
     const isAttendee = member.role === "attendee";
     const pointsAwarded = isAttendee
       ? 0
@@ -945,6 +1058,7 @@ export async function recordMemberCheckin(
           sessionId: sessionRow.id,
           membershipId: member.id,
           checkedInAt: now,
+          statusUpdatedAt: now,
           isPunctual,
           pointsAwarded,
         })

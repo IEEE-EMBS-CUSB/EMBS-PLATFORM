@@ -193,7 +193,6 @@ export async function getMemberNavNotifications(
             checkinOpen: schema.branchSessions.checkinOpen,
             checkinStartsAt: schema.branchSessions.checkinStartsAt,
             checkinEndsAt: schema.branchSessions.checkinEndsAt,
-            checkinExpiresAt: schema.branchSessions.checkinExpiresAt,
           })
           .from(schema.branchSessions)
           .where(
@@ -330,7 +329,6 @@ export async function getAttendeeNavNotifications(
           checkinOpen: schema.branchSessions.checkinOpen,
           checkinStartsAt: schema.branchSessions.checkinStartsAt,
           checkinEndsAt: schema.branchSessions.checkinEndsAt,
-          checkinExpiresAt: schema.branchSessions.checkinExpiresAt,
         })
         .from(schema.branchSessions)
         .where(
@@ -487,7 +485,6 @@ export async function getHrNavNotifications(
               checkinOpen: schema.branchSessions.checkinOpen,
               checkinStartsAt: schema.branchSessions.checkinStartsAt,
               checkinEndsAt: schema.branchSessions.checkinEndsAt,
-              checkinExpiresAt: schema.branchSessions.checkinExpiresAt,
             })
             .from(schema.branchSessions)
             .where(

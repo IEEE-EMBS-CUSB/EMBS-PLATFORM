@@ -58,26 +58,30 @@ export default async function HrAttendancePage() {
             )
           : eq(schema.branchSessions.seasonId, seasonId);
 
+      const skipSessionQuery = isCommitteeScoped && !operationalCommitteeId;
+
       const [dbSessions, dbCommittees, attendanceCounts] = await Promise.all([
-        db
-          .select({
-            id: schema.branchSessions.id,
-            title: schema.branchSessions.title,
-            committeeId: schema.branchSessions.committeeId,
-            startsAt: schema.branchSessions.startsAt,
-            checkinOpen: schema.branchSessions.checkinOpen,
-            checkinCode: schema.branchSessions.checkinCode,
-            checkinStartsAt: schema.branchSessions.checkinStartsAt,
-            checkinEndsAt: schema.branchSessions.checkinEndsAt,
-            checkinExpiresAt: schema.branchSessions.checkinExpiresAt,
-            punctualityCutoffMinutes:
-              schema.branchSessions.punctualityCutoffMinutes,
-            basePoints: schema.branchSessions.basePoints,
-            punctualityBonus: schema.branchSessions.punctualityBonus,
-          })
-          .from(schema.branchSessions)
-          .where(sessionFilter)
-          .orderBy(desc(schema.branchSessions.startsAt)),
+        skipSessionQuery
+          ? Promise.resolve([])
+          : db
+              .select({
+                id: schema.branchSessions.id,
+                title: schema.branchSessions.title,
+                committeeId: schema.branchSessions.committeeId,
+                startsAt: schema.branchSessions.startsAt,
+                checkinOpen: schema.branchSessions.checkinOpen,
+                checkinCode: schema.branchSessions.checkinCode,
+                checkinStartsAt: schema.branchSessions.checkinStartsAt,
+                checkinEndsAt: schema.branchSessions.checkinEndsAt,
+                punctualityStartsAt: schema.branchSessions.punctualityStartsAt,
+                punctualityCutoffMinutes:
+                  schema.branchSessions.punctualityCutoffMinutes,
+                basePoints: schema.branchSessions.basePoints,
+                punctualityBonus: schema.branchSessions.punctualityBonus,
+              })
+              .from(schema.branchSessions)
+              .where(sessionFilter)
+              .orderBy(desc(schema.branchSessions.startsAt)),
         db
           .select()
           .from(schema.committees)
@@ -87,14 +91,16 @@ export default async function HrAttendancePage() {
               eq(schema.committees.isActive, true)
             )
           ),
-        db
-          .select({
-            sessionId: schema.attendanceRecords.sessionId,
-            count: count(schema.attendanceRecords.id),
-          })
-          .from(schema.attendanceRecords)
-          .where(eq(schema.attendanceRecords.status, "present"))
-          .groupBy(schema.attendanceRecords.sessionId),
+        skipSessionQuery
+          ? Promise.resolve([])
+          : db
+              .select({
+                sessionId: schema.attendanceRecords.sessionId,
+                count: count(schema.attendanceRecords.id),
+              })
+              .from(schema.attendanceRecords)
+              .where(eq(schema.attendanceRecords.status, "present"))
+              .groupBy(schema.attendanceRecords.sessionId),
       ]);
 
       const commMap = new Map(dbCommittees.map((c) => [c.id, c.name]));
@@ -111,9 +117,7 @@ export default async function HrAttendancePage() {
             .map((c) => ({ id: c.id, name: c.name }))
         : dbCommittees.map((c) => ({ id: c.id, name: c.name }));
 
-      dbSessionsList = (
-        isCommitteeScoped && !operationalCommitteeId ? [] : dbSessions
-      ).map((s) => {
+      dbSessionsList = dbSessions.map((s) => {
         const state = getSessionCheckinState(s, now);
         return {
           id: s.id,
@@ -126,7 +130,8 @@ export default async function HrAttendancePage() {
           checkinOpen: state !== "closed",
           checkinCode: s.checkinCode,
           checkinStartsAt: s.checkinStartsAt,
-          checkinExpiresAt: s.checkinEndsAt ?? s.checkinExpiresAt,
+          checkinEndsAt: s.checkinEndsAt,
+          punctualityStartsAt: s.punctualityStartsAt,
           punctualityCutoffMinutes: s.punctualityCutoffMinutes,
           basePoints: s.basePoints,
           punctualityBonus: s.punctualityBonus,

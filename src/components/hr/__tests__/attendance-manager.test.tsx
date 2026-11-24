@@ -47,9 +47,30 @@ describe("AttendanceManagerView Component", () => {
     expect(screen.getByText(/scan qr or enter code/i)).toBeInTheDocument();
   });
 
-  it("allows a Committee Head to create a new session with check-in window", async () => {
+  it("creates a session with auto-start as default (no checkbox), immediately inserts it into the list, and shows confirmation", async () => {
     const user = userEvent.setup();
-    const handleCreateSession = vi.fn().mockResolvedValue({ ok: true });
+    const createdStart = new Date(Date.now() + 60 * 60_000);
+    const createdEnd = new Date(createdStart.getTime() + 45 * 60_000);
+    const handleCreateSession = vi.fn().mockResolvedValue({
+      ok: true,
+      sessionId: "sess-new",
+      session: {
+        id: "sess-new",
+        title: "Deep Learning Lab 1",
+        committeeId: "comm-ai",
+        committeeName: "AI and Machine Learning",
+        startsAt: createdStart,
+        checkinOpen: true,
+        checkinCode: "901234",
+        checkinStartsAt: createdStart,
+        checkinEndsAt: createdEnd,
+        punctualityStartsAt: null,
+        punctualityCutoffMinutes: 15,
+        basePoints: 10,
+        punctualityBonus: 5,
+        attendanceCount: 0,
+      },
+    });
 
     render(
       <AttendanceManagerView
@@ -65,6 +86,8 @@ describe("AttendanceManagerView Component", () => {
     await user.click(createBtn);
 
     expect(screen.getByText(/create new session/i)).toBeInTheDocument();
+    // Auto-start is always default behavior — no checkbox should exist
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 
     const titleInput = screen.getByLabelText(/session title/i);
     await user.type(titleInput, "Deep Learning Lab 1");
@@ -82,9 +105,38 @@ describe("AttendanceManagerView Component", () => {
         committeeId: "comm-ai",
       })
     );
+    // Should not send removed openCheckinImmediately property
+    expect(handleCreateSession.mock.calls[0][0]).not.toHaveProperty(
+      "openCheckinImmediately"
+    );
+
+    // Newly created session immediately renders in the list with confirmation status banner
+    expect(await screen.findByText("Deep Learning Lab 1")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /deep learning lab 1/i
+    );
+    expect(screen.getByText("901234")).toBeInTheDocument();
   });
 
-  it("auto-marks sessions with an expired checkinExpiresAt as Closed while preserving their persistent QR and code", async () => {
+  it("hides Create Session and explains scope when an hr_member has no assigned committee", () => {
+    render(
+      <AttendanceManagerView
+        sessions={[]}
+        currentUserRole="hr_member"
+        currentUserCommitteeId={null}
+        currentUserCommitteeName={null}
+      />
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /create session/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/not assigned to a committee/i)
+    ).toBeInTheDocument();
+  });
+
+  it("auto-marks sessions with an expired checkinEndsAt as Closed while preserving their persistent QR and code", async () => {
     const user = userEvent.setup();
     const expiredSession = {
       id: "sess-expired",
@@ -94,7 +146,8 @@ describe("AttendanceManagerView Component", () => {
       checkinOpen: true,
       checkinCode: "112233",
       checkinStartsAt: new Date("2020-01-01T00:00:00Z"),
-      checkinExpiresAt: new Date("2020-01-01T00:30:00Z"),
+      checkinEndsAt: new Date("2020-01-01T00:30:00Z"),
+      punctualityCutoffMinutes: 15,
       basePoints: 10,
       punctualityBonus: 5,
       attendanceCount: 5,
@@ -117,6 +170,58 @@ describe("AttendanceManagerView Component", () => {
     ).toBeInTheDocument();
   });
 
+  it("prompts for punctuality grace period choice when re-opening a past/delayed session whose cutoff has passed", async () => {
+    const user = userEvent.setup();
+    const handleToggleCheckin = vi.fn().mockResolvedValue({
+      ok: true,
+      checkinOpen: true,
+      checkinCode: "112233",
+      checkinStartsAt: new Date(),
+      checkinEndsAt: new Date(Date.now() + 30 * 60_000),
+      punctualityStartsAt: new Date(),
+    });
+    const pastSession = {
+      id: "sess-past",
+      title: "Delayed Robotics Workshop",
+      committeeName: "Robotics",
+      startsAt: new Date(Date.now() - 60 * 60_000), // 1 hour ago
+      checkinOpen: false,
+      checkinCode: "112233",
+      checkinStartsAt: new Date(Date.now() - 60 * 60_000),
+      checkinEndsAt: new Date(Date.now() - 30 * 60_000),
+      punctualityCutoffMinutes: 15,
+      basePoints: 10,
+      punctualityBonus: 5,
+      attendanceCount: 0,
+    };
+
+    render(
+      <AttendanceManagerView
+        sessions={[pastSession]}
+        onToggleCheckin={handleToggleCheckin}
+      />
+    );
+
+    const reopenBtn = screen.getByRole("button", {
+      name: /re-open check-in/i,
+    });
+    await user.click(reopenBtn);
+
+    // Should prompt before firing toggle
+    expect(handleToggleCheckin).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/punctuality cutoff has passed/i)
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /reset grace period from now/i })
+    );
+
+    expect(handleToggleCheckin).toHaveBeenCalledWith("sess-past", true, 30, {
+      resetPunctualityFromNow: true,
+    });
+  });
+
   it("displays Scheduled badge and persistent QR & code before a future session starts", async () => {
     const user = userEvent.setup();
     const futureStart = new Date(Date.now() + 2 * 60 * 60_000);
@@ -130,7 +235,8 @@ describe("AttendanceManagerView Component", () => {
       checkinOpen: true,
       checkinCode: "554433",
       checkinStartsAt: futureStart,
-      checkinExpiresAt: futureEnd,
+      checkinEndsAt: futureEnd,
+      punctualityCutoffMinutes: 15,
       basePoints: 10,
       punctualityBonus: 5,
       attendanceCount: 0,
@@ -153,8 +259,9 @@ describe("AttendanceManagerView Component", () => {
     expect(screen.getAllByText("554433").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("opens the keyboard-friendly attendance roster for a session and allows manual On Time / Late / Excused / Absent toggles", async () => {
+  it("opens the attendance sheet, displays exact status-updated timestamps, and updates them on manual status change", async () => {
     const user = userEvent.setup();
+    const updatedIso = "2026-11-24T14:35:42.000Z";
     const onLoadRoster = vi.fn().mockResolvedValue({
       ok: true,
       roster: [
@@ -167,6 +274,7 @@ describe("AttendanceManagerView Component", () => {
           status: "absent",
           pointsAwarded: 0,
           checkedInAt: null,
+          statusUpdatedAt: null,
           overrideReason: null,
         },
         {
@@ -177,14 +285,17 @@ describe("AttendanceManagerView Component", () => {
           role: "member",
           status: "on_time",
           pointsAwarded: 15,
-          checkedInAt: "2026-09-12T16:02:00.000Z",
+          checkedInAt: "2026-09-12T16:02:15.000Z",
+          statusUpdatedAt: "2026-09-12T16:02:15.000Z",
           overrideReason: null,
         },
       ],
     });
-    const onSetAttendance = vi
-      .fn()
-      .mockResolvedValue({ ok: true, pointsAwarded: 10 });
+    const onSetAttendance = vi.fn().mockResolvedValue({
+      ok: true,
+      pointsAwarded: 10,
+      statusUpdatedAt: updatedIso,
+    });
 
     render(
       <AttendanceManagerView
@@ -203,7 +314,27 @@ describe("AttendanceManagerView Component", () => {
     expect(await screen.findByText("Salma El-Sayed")).toBeInTheDocument();
     expect(screen.getByText("Omar Tarek")).toBeInTheDocument();
 
-    // Click "Late" for Salma
+    // Status Updated column header and initial timestamp / Not recorded state
+    expect(screen.getByText(/status updated/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/not recorded/i).length).toBeGreaterThanOrEqual(
+      1
+    );
+    const omarExpectedTime = new Date("2026-09-12T16:02:15.000Z").toLocaleString(
+      "en-US",
+      {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
+      }
+    );
+    expect(screen.getAllByText(omarExpectedTime).length).toBeGreaterThanOrEqual(
+      1
+    );
+
+    // Click "Late" for Salma and verify exact timestamp updates from server response
     const lateBtn = screen.getByRole("button", {
       name: /mark salma el-sayed as late/i,
     });
@@ -216,6 +347,18 @@ describe("AttendanceManagerView Component", () => {
         status: "late",
       })
     );
+
+    const salmaUpdatedFormatted = new Date(updatedIso).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    expect(
+      (await screen.findAllByText(salmaUpdatedFormatted)).length
+    ).toBeGreaterThanOrEqual(1);
 
     // Keyboard navigation: ArrowDown to Omar (index 1) and press 'e' for Excused
     await user.keyboard("{ArrowDown}e");
