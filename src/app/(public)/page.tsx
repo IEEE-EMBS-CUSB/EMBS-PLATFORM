@@ -17,7 +17,7 @@ function DefaultPrimaryPortalCta() {
       href="/login"
       className={cn(
         buttonVariants({ size: "lg" }),
-        "h-11 gap-2 bg-[#772583] px-5 text-sm font-semibold text-white hover:bg-[#5a1b63]"
+        "h-11 gap-2 border border-white/70 bg-[#772583]/30 px-5 text-sm font-semibold text-white hover:bg-[#772583]/65"
       )}
     >
       <KeyRound className="h-4 w-4" aria-hidden="true" />
@@ -45,7 +45,7 @@ async function SessionAwarePrimaryPortalCta() {
       href={href}
       className={cn(
         buttonVariants({ size: "lg" }),
-        "h-11 gap-2 bg-[#772583] px-5 text-sm font-semibold text-white hover:bg-[#5a1b63]"
+        "h-11 gap-2 border border-white/70 bg-[#772583]/30 px-5 text-sm font-semibold text-white hover:bg-[#772583]/65"
       )}
     >
       <span>Open my dashboard</span>
