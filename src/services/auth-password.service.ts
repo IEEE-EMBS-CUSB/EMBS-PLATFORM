@@ -6,6 +6,7 @@ import {
   type MembershipRole,
   type SeasonStatus,
 } from "@/lib/auth-helpers";
+import { parseLoginIdentifier } from "@/lib/phone";
 import {
   hashPassword,
   verifyPassword,
@@ -121,17 +122,24 @@ export function pickPreferredLoginMembership(
 }
 
 /**
- * Resolves a person and their preferred login membership by normalized email.
+ * Resolves a person and their preferred login membership by email OR phone number.
  * Credentials live on `persons`; role/committee/season scoping lives on `roster_memberships`.
  */
-export async function resolveLoginMembershipByEmail(
-  normalizedEmail: string,
+export async function resolveLoginMembershipByIdentifier(
+  rawIdentifier: string,
   preferredMembershipId?: string | null
 ): Promise<RosterMemberLookupRecord | null> {
+  const parsed = parseLoginIdentifier(rawIdentifier);
+  if (!parsed) return null;
+
   const [person] = await db
     .select()
     .from(schema.persons)
-    .where(eq(schema.persons.email, normalizedEmail))
+    .where(
+      parsed.kind === "email"
+        ? eq(schema.persons.email, parsed.value)
+        : eq(schema.persons.phoneNumber, parsed.value)
+    )
     .limit(1);
 
   if (!person || !person.isActive) return null;
@@ -195,20 +203,36 @@ export async function resolveLoginMembershipByEmail(
 }
 
 /**
- * Authenticates a user using their whitelisted email and password.
+ * Resolves a person and their preferred login membership by normalized email.
+ */
+export async function resolveLoginMembershipByEmail(
+  normalizedEmail: string,
+  preferredMembershipId?: string | null
+): Promise<RosterMemberLookupRecord | null> {
+  return resolveLoginMembershipByIdentifier(
+    normalizeEmail(normalizedEmail),
+    preferredMembershipId
+  );
+}
+
+/**
+ * Authenticates a user using their whitelisted email or phone number and password.
  * Checks person + active roster whitelist, verifies scrypt hash, and reports if first-login reset is required.
  */
 export async function authenticateWithPassword(params: {
   email: string;
   password: string;
   preferredMembershipId?: string | null;
-  rosterLookup?: (email: string) => Promise<RosterMemberLookupRecord | null>;
+  rosterLookup?: (identifier: string) => Promise<RosterMemberLookupRecord | null>;
 }): Promise<PasswordAuthResult> {
   const { email, password, preferredMembershipId, rosterLookup } = params;
-  const normalized = normalizeEmail(email);
+  const parsed = parseLoginIdentifier(email);
 
-  if (!normalized || !normalized.includes("@")) {
-    return { ok: false, reason: "Please provide a valid email address." };
+  if (!parsed) {
+    return {
+      ok: false,
+      reason: "Please provide a valid email address or phone number.",
+    };
   }
 
   if (!password) {
@@ -218,11 +242,11 @@ export async function authenticateWithPassword(params: {
   let member: RosterMemberLookupRecord | null = null;
 
   if (rosterLookup) {
-    member = await rosterLookup(normalized);
+    member = await rosterLookup(parsed.value);
   } else {
     try {
-      member = await resolveLoginMembershipByEmail(
-        normalized,
+      member = await resolveLoginMembershipByIdentifier(
+        parsed.value,
         preferredMembershipId
       );
     } catch {

@@ -11,6 +11,7 @@ import {
   bulkImportRosterAsActor,
   removeRosterMemberAsActor,
   resetMemberPasswordAsActor,
+  updatePersonPhoneNumberAsActor,
   type AddRosterMemberInput,
 } from "@/services/hr-ops/roster.service";
 
@@ -77,6 +78,24 @@ export async function assignMemberCommitteeAction(
   if (!actor) return unauthorizedResult();
   const res = await assignMemberCommitteeAsActor(memberId, committeeId, actor);
   if (res.ok) safeRevalidateRoster();
+  return res;
+}
+
+export async function updatePersonPhoneAction(
+  memberId: string,
+  phoneNumber: string | null
+) {
+  const actor = await getActorContext();
+  if (!actor) return unauthorizedResult();
+  const res = await updatePersonPhoneNumberAsActor(memberId, phoneNumber, actor);
+  if (res.ok) {
+    safeRevalidateRoster();
+    try {
+      revalidatePath("/hr/statistics");
+    } catch {
+      // Outside Next.js request context
+    }
+  }
   return res;
 }
 

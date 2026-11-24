@@ -1,9 +1,10 @@
 import { db, withTransaction } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { resetPersonPassword } from "@/services/auth-password.service";
 import { hashPassword, getDefaultMemberPassword } from "@/lib/password";
 import { normalizeEmail, type MembershipRole } from "@/lib/auth-helpers";
+import { normalizePhoneNumber } from "@/lib/phone";
 import { canAssignRoles, canAssignHrCommittees } from "@/lib/permissions";
 import { parseRosterCsv } from "@/services/hr.service";
 import { ensureHrCommitteeForSeason } from "./committees.service";
@@ -16,6 +17,7 @@ import {
 export interface AddRosterMemberInput {
   fullName: string;
   email: string;
+  phoneNumber?: string | null;
   role: MembershipRole;
   committeeId?: string | null;
   trackedCommitteeId?: string | null;
@@ -62,6 +64,7 @@ export interface AddRosterMemberResult {
   ok: boolean;
   memberId?: string;
   personId?: string;
+  phoneNumber?: string | null;
   existingPerson?: boolean;
   tempPassword?: string;
   error?: string;
@@ -89,6 +92,19 @@ export async function addRosterMemberAsActor(
     }
     if (!VALID_ROLES.has(input.role)) {
       return { ok: false, error: "Invalid membership role." };
+    }
+
+    const rawPhone = input.phoneNumber?.trim() ?? "";
+    let normalizedPhone: string | null = null;
+    if (rawPhone.length > 0) {
+      normalizedPhone = normalizePhoneNumber(rawPhone);
+      if (!normalizedPhone) {
+        return {
+          ok: false,
+          error:
+            "Invalid phone number. Enter an Egyptian mobile (e.g. 01012345678) or international E.164 number (+20...).",
+        };
+      }
     }
 
     const seasonRes = await resolveMutableSeason(input.seasonId);
@@ -173,8 +189,27 @@ export async function addRosterMemberAsActor(
       managedTrackId = track.id;
     }
 
-    const { inserted, personId, existingPersonFlag, tempPassword } =
-      await withTransaction(async (tx) => {
+    if (normalizedPhone) {
+      const [phoneOwner] = await db
+        .select({ id: schema.persons.id, email: schema.persons.email })
+        .from(schema.persons)
+        .where(eq(schema.persons.phoneNumber, normalizedPhone))
+        .limit(1);
+      if (phoneOwner && phoneOwner.email !== normalizedEmail) {
+        return {
+          ok: false,
+          error: "This phone number is already assigned to another member.",
+        };
+      }
+    }
+
+    const {
+      inserted,
+      personId,
+      resolvedPhoneNumber,
+      existingPersonFlag,
+      tempPassword,
+    } = await withTransaction(async (tx) => {
         // Reuse existing person identity & password if this email already exists across any season
         const [existingPerson] = await tx
           .select()
@@ -183,12 +218,20 @@ export async function addRosterMemberAsActor(
           .limit(1);
 
         let resolvedPersonId: string;
+        let resolvedPhone: string | null = normalizedPhone;
         let resolvedTempPassword: string | undefined;
         let isExistingPerson = false;
 
         if (existingPerson) {
           resolvedPersonId = existingPerson.id;
           isExistingPerson = true;
+          resolvedPhone = existingPerson.phoneNumber ?? normalizedPhone;
+          if (!existingPerson.phoneNumber && normalizedPhone) {
+            await tx
+              .update(schema.persons)
+              .set({ phoneNumber: normalizedPhone, updatedAt: new Date() })
+              .where(eq(schema.persons.id, existingPerson.id));
+          }
         } else {
           resolvedTempPassword = getDefaultMemberPassword();
           const passwordHash = hashPassword(resolvedTempPassword);
@@ -196,6 +239,7 @@ export async function addRosterMemberAsActor(
             .insert(schema.persons)
             .values({
               email: normalizedEmail,
+              phoneNumber: normalizedPhone,
               fullName: trimmedName,
               passwordHash,
               mustChangePassword: true,
@@ -203,6 +247,7 @@ export async function addRosterMemberAsActor(
             })
             .returning();
           resolvedPersonId = createdPerson.id;
+          resolvedPhone = createdPerson.phoneNumber;
         }
 
         const [membership] = await tx
@@ -221,6 +266,7 @@ export async function addRosterMemberAsActor(
         return {
           inserted: membership,
           personId: resolvedPersonId,
+          resolvedPhoneNumber: resolvedPhone,
           existingPersonFlag: isExistingPerson,
           tempPassword: resolvedTempPassword,
         };
@@ -230,6 +276,7 @@ export async function addRosterMemberAsActor(
       ok: true,
       memberId: inserted.id,
       personId,
+      phoneNumber: resolvedPhoneNumber,
       existingPerson: existingPersonFlag,
       ...(tempPassword ? { tempPassword } : {}),
     };
@@ -253,6 +300,7 @@ export async function bulkImportRosterAsActor(
     personId: string;
     fullName: string;
     email: string;
+    phoneNumber?: string | null;
     role: MembershipRole;
     committeeId: string | null;
     tempPassword?: string;
@@ -301,6 +349,7 @@ export async function bulkImportRosterAsActor(
     personId: string;
     fullName: string;
     email: string;
+    phoneNumber?: string | null;
     role: MembershipRole;
     committeeId: string | null;
     tempPassword?: string;
@@ -331,17 +380,31 @@ export async function bulkImportRosterAsActor(
 
         let personId: string;
         let personFullName: string;
+        let personPhoneNumber: string | null = null;
         let tempPassword: string | undefined;
+
+        const normalizedCsvPhone = rec.phoneNumber
+          ? normalizePhoneNumber(rec.phoneNumber)
+          : null;
 
         if (existingPerson) {
           personId = existingPerson.id;
           personFullName = existingPerson.fullName;
+          personPhoneNumber = existingPerson.phoneNumber ?? null;
+          if (!existingPerson.phoneNumber && normalizedCsvPhone) {
+            await tx
+              .update(schema.persons)
+              .set({ phoneNumber: normalizedCsvPhone, updatedAt: new Date() })
+              .where(eq(schema.persons.id, existingPerson.id));
+            personPhoneNumber = normalizedCsvPhone;
+          }
         } else {
           tempPassword = getDefaultMemberPassword();
           const [createdPerson] = await tx
             .insert(schema.persons)
             .values({
               email: rec.email,
+              phoneNumber: normalizedCsvPhone,
               fullName: rec.fullName,
               passwordHash: hashPassword(tempPassword),
               mustChangePassword: true,
@@ -350,6 +413,7 @@ export async function bulkImportRosterAsActor(
             .returning();
           personId = createdPerson.id;
           personFullName = createdPerson.fullName;
+          personPhoneNumber = createdPerson.phoneNumber ?? null;
         }
 
         let membershipCommitteeId = rec.role === "director" ? null : committeeId;
@@ -378,6 +442,7 @@ export async function bulkImportRosterAsActor(
           personId,
           fullName: personFullName,
           email: rec.email,
+          phoneNumber: personPhoneNumber,
           role: inserted.role as MembershipRole,
           committeeId: inserted.committeeId,
           ...(tempPassword ? { tempPassword } : {}),
@@ -725,6 +790,86 @@ export async function assignDirectorTrackAsActor(
     return {
       ok: false,
       error: sanitizeDbError(err, "Failed to assign director track."),
+    };
+  }
+}
+
+export async function updatePersonPhoneNumberAsActor(
+  memberId: string,
+  rawPhoneNumber: string | null,
+  actor: RosterActor
+): Promise<{ ok: boolean; phoneNumber?: string | null; error?: string }> {
+  if (!canAssignHrCommittees(actor.profile.role)) {
+    return {
+      ok: false,
+      error:
+        "Unauthorized: only Master Admin and HR Admin can update member phone numbers.",
+    };
+  }
+
+  const trimmed = rawPhoneNumber?.trim() ?? "";
+  let normalizedPhone: string | null = null;
+  if (trimmed.length > 0) {
+    normalizedPhone = normalizePhoneNumber(trimmed);
+    if (!normalizedPhone) {
+      return {
+        ok: false,
+        error:
+          "Invalid phone number. Enter an Egyptian mobile (e.g. 01012345678) or international E.164 number (+20...).",
+      };
+    }
+  }
+
+  try {
+    const [target] = await db
+      .select({
+        id: schema.rosterMemberships.id,
+        personId: schema.rosterMemberships.personId,
+        seasonId: schema.rosterMemberships.seasonId,
+      })
+      .from(schema.rosterMemberships)
+      .where(eq(schema.rosterMemberships.id, memberId))
+      .limit(1);
+
+    if (!target) {
+      return { ok: false, error: "Member not found." };
+    }
+
+    const seasonRes = await resolveMutableSeason(target.seasonId);
+    if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
+
+    if (normalizedPhone) {
+      const [conflict] = await db
+        .select({ id: schema.persons.id })
+        .from(schema.persons)
+        .where(
+          and(
+            eq(schema.persons.phoneNumber, normalizedPhone),
+            ne(schema.persons.id, target.personId)
+          )
+        )
+        .limit(1);
+      if (conflict) {
+        return {
+          ok: false,
+          error: "This phone number is already assigned to another member.",
+        };
+      }
+    }
+
+    await db
+      .update(schema.persons)
+      .set({
+        phoneNumber: normalizedPhone,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.persons.id, target.personId));
+
+    return { ok: true, phoneNumber: normalizedPhone };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to update phone number."),
     };
   }
 }

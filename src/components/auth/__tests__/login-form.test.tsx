@@ -152,4 +152,21 @@ describe("LoginForm (Pre-assigned Password & First-Login Reset)", () => {
       "/checkin?code=847291"
     );
   });
+
+  it("allows signing in with a phone number in addition to email", async () => {
+    const user = userEvent.setup();
+    const handleLogin = vi.fn().mockResolvedValue({
+      ok: true,
+      mustChangePassword: false,
+      redirectTo: "/member",
+    });
+
+    render(<LoginForm onLogin={handleLogin} />);
+
+    await user.type(screen.getByLabelText(/email address/i), "01012345678");
+    await user.type(screen.getByLabelText(/^password/i), "MyPassword123!");
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+
+    expect(handleLogin).toHaveBeenCalledWith("01012345678", "MyPassword123!");
+  });
 });

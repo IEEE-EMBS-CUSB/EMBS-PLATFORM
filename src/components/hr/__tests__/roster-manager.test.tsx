@@ -412,4 +412,54 @@ describe("RosterManagerView Component", () => {
     expect(screen.getByLabelText(/full name/i)).toHaveValue("Nour Eldin");
     expect(screen.getByLabelText(/email address/i)).toHaveValue("nour.eldin@cu.edu.eg");
   });
+
+  it("renders clickable WhatsApp phone links and keeps a disabled greyed-out Remove button on Master Admin rows for alignment", () => {
+    render(
+      <RosterManagerView
+        currentUserRole="master_admin"
+        members={[
+          {
+            id: "m-master",
+            personId: "p-master",
+            fullName: "Sheref Master",
+            email: "master@embs.test",
+            phoneNumber: "+201012345678",
+            committeeName: "Unassigned",
+            role: "master_admin",
+            isActive: true,
+          },
+          {
+            id: "m-head",
+            personId: "p-head",
+            fullName: "Salma AI Head",
+            email: "head.ai@embs.test",
+            phoneNumber: "+201123456789",
+            committeeName: "AI and Machine Learning",
+            role: "committee_head",
+            isActive: true,
+          },
+        ]}
+      />
+    );
+
+    const waLink = screen.getByRole("link", {
+      name: /message sheref master on whatsapp/i,
+    });
+    expect(waLink).toHaveAttribute("href", "https://wa.me/201012345678");
+    expect(waLink).toHaveAttribute("target", "_blank");
+
+    // Both rows have a Remove button so columns stay aligned; master_admin's is disabled
+    const masterRow = screen.getByText("Sheref Master").closest("tr")!;
+    const headRow = screen.getByText("Salma AI Head").closest("tr")!;
+
+    const masterRemoveBtn = within(masterRow).getByRole("button", {
+      name: /remove/i,
+    });
+    expect(masterRemoveBtn).toBeDisabled();
+
+    const headRemoveBtn = within(headRow).getByRole("button", {
+      name: /remove/i,
+    });
+    expect(headRemoveBtn).not.toBeDisabled();
+  });
 });

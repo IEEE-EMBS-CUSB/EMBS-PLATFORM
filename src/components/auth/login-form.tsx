@@ -9,6 +9,7 @@ import {
   loginWithPasswordAction,
   changePasswordOnFirstLoginAction,
 } from "@/app/login/actions";
+import { parseLoginIdentifier } from "@/lib/phone";
 
 export interface LoginFormProps {
   nextPath?: string | null;
@@ -69,8 +70,10 @@ export function LoginForm({
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !email.includes("@")) {
-      setErrorMessage("Please enter a valid chapter or university email address.");
+    if (!parseLoginIdentifier(email)) {
+      setErrorMessage(
+        "Please enter a valid chapter email address or phone number."
+      );
       return;
     }
     if (!password) {
@@ -183,7 +186,7 @@ export function LoginForm({
           </h1>
           <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
             {step === "credentials"
-              ? "Sign in with your chapter email and password."
+              ? "Sign in with your chapter email or phone number and password."
               : "Welcome to IEEE EMBS CUSB! Please choose your permanent password to complete your account activation."}
           </p>
         </div>
@@ -215,16 +218,17 @@ export function LoginForm({
                   htmlFor="emailAddress"
                   className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                 >
-                  Email Address
+                  Email Address or Phone Number
                 </label>
                 <div className="relative mt-1">
                   <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="emailAddress"
-                    type="email"
+                    type="text"
+                    autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@cu.edu.eg"
+                    placeholder="name@cu.edu.eg or 01012345678"
                     className="h-11 pl-9"
                     required
                   />

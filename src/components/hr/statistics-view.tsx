@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/states/empty-state";
 import { SeasonLeaderboardPanel } from "@/components/hr/season-leaderboard-panel";
+import { WhatsAppPhoneLink } from "@/components/ui/whatsapp-phone-link";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   computeAdminStatistics,
@@ -1821,6 +1822,14 @@ export function StatisticsView({ dataset }: StatisticsViewProps) {
                                       .join(" · ")}{" "}
                                     · {p.committeeNames.join(", ")}
                                   </p>
+                                  {p.phoneNumber && (
+                                    <div className="mt-0.5">
+                                      <WhatsAppPhoneLink
+                                        phoneNumber={p.phoneNumber}
+                                        personName={p.fullName}
+                                      />
+                                    </div>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell>
@@ -1979,6 +1988,14 @@ export function StatisticsView({ dataset }: StatisticsViewProps) {
                                 {p.roles.map((r) => ROLE_LABELS[r]).join(" · ")}{" "}
                                 · {p.committeeNames.join(", ")}
                               </p>
+                              {p.phoneNumber && (
+                                <div className="mt-0.5">
+                                  <WhatsAppPhoneLink
+                                    phoneNumber={p.phoneNumber}
+                                    personName={p.fullName}
+                                  />
+                                </div>
+                              )}
                             </div>
                             <div className="flex shrink-0 items-center gap-1.5">
                               <span className="font-mono text-xs font-bold text-[#772583] tabular-nums">

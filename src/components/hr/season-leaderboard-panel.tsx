@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { WhatsAppPhoneLink } from "@/components/ui/whatsapp-phone-link";
 import {
   computeSeasonLeaderboard,
   DEFAULT_SEASON_LEADERBOARD_FILTERS,
@@ -406,6 +407,14 @@ export function SeasonLeaderboardPanel({
                                   ? ` · ${e.trackNames.join(", ")}`
                                   : ""}
                               </p>
+                              {e.phoneNumber && (
+                                <div className="mt-0.5">
+                                  <WhatsAppPhoneLink
+                                    phoneNumber={e.phoneNumber}
+                                    personName={e.fullName}
+                                  />
+                                </div>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell className="w-44">
@@ -509,6 +518,14 @@ export function SeasonLeaderboardPanel({
                               ? ` · Overall #${e.overallRank}`
                               : ""}
                           </p>
+                          {e.phoneNumber && (
+                            <div className="mt-0.5">
+                              <WhatsAppPhoneLink
+                                phoneNumber={e.phoneNumber}
+                                personName={e.fullName}
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">

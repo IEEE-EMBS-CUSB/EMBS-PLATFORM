@@ -161,6 +161,7 @@ export const persons = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     email: text("email").notNull(), // Normalized lowercased & trimmed email
+    phoneNumber: text("phone_number"), // Nullable normalized E.164 phone number (e.g. "+201012345678")
     fullName: text("full_name").notNull(),
     passwordHash: text("password_hash"),
     mustChangePassword: boolean("must_change_password").notNull().default(true),
@@ -178,6 +179,9 @@ export const persons = pgTable(
   },
   (table) => [
     uniqueIndex("persons_email_idx").on(table.email),
+    uniqueIndex("persons_phone_number_idx")
+      .on(table.phoneNumber)
+      .where(sql`${table.phoneNumber} IS NOT NULL`),
     index("persons_is_active_idx").on(table.isActive),
   ]
 );

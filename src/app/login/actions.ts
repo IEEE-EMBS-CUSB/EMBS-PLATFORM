@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers";
 import {
   authenticateWithPassword,
   changeFirstLoginPassword,
-  resolveLoginMembershipByEmail,
+  resolveLoginMembershipByIdentifier,
 } from "@/services/auth-password.service";
 import {
   createSessionForMember,
@@ -16,7 +16,8 @@ import {
   buildLastContextCookieOptions,
   buildSessionCookieOptions,
 } from "@/lib/session-cookie";
-import { getRoleLandingPath, normalizeEmail } from "@/lib/auth-helpers";
+import { getRoleLandingPath } from "@/lib/auth-helpers";
+import { parseLoginIdentifier } from "@/lib/phone";
 import { sanitizeNextPath } from "@/lib/checkin-url";
 import {
   checkRateLimit,
@@ -48,15 +49,15 @@ export async function loginWithPasswordAction(
   password: string,
   nextPath?: string | null
 ): Promise<LoginActionResult> {
-  const normalized = normalizeEmail(email);
+  const parsed = parseLoginIdentifier(email);
   const clientIp = await getSafeRequestIp();
   const ipKey = `login:ip:${clientIp}`;
-  const emailKey = normalized ? `login:email:${normalized}` : null;
+  const identifierKey = parsed ? `login:email:${parsed.value}` : null;
 
   const [ipLimit, emailLimit] = await Promise.all([
     checkRateLimit(ipKey, RATE_LIMIT_POLICIES.loginIp),
-    emailKey
-      ? checkRateLimit(emailKey, RATE_LIMIT_POLICIES.loginEmail)
+    identifierKey
+      ? checkRateLimit(identifierKey, RATE_LIMIT_POLICIES.loginEmail)
       : Promise.resolve({ allowed: true, retryAfterSeconds: 0 }),
   ]);
 
@@ -84,15 +85,15 @@ export async function loginWithPasswordAction(
   if (!result.ok) {
     await Promise.all([
       recordRateLimitFailure(ipKey, RATE_LIMIT_POLICIES.loginIp),
-      emailKey
-        ? recordRateLimitFailure(emailKey, RATE_LIMIT_POLICIES.loginEmail)
+      identifierKey
+        ? recordRateLimitFailure(identifierKey, RATE_LIMIT_POLICIES.loginEmail)
         : Promise.resolve(),
     ]);
     return { ok: false, error: result.reason };
   }
 
-  if (emailKey) {
-    await clearRateLimit(emailKey);
+  if (identifierKey) {
+    await clearRateLimit(identifierKey);
   }
 
   if (result.mustChangePassword) {
@@ -146,14 +147,17 @@ export async function changePasswordOnFirstLoginAction(
   newPassword: string,
   nextPath?: string | null
 ): Promise<LoginActionResult> {
-  const normalized = normalizeEmail(email);
-  if (!normalized || !normalized.includes("@")) {
-    return { ok: false, error: "Please provide a valid email address." };
+  const parsed = parseLoginIdentifier(email);
+  if (!parsed) {
+    return {
+      ok: false,
+      error: "Please provide a valid email address or phone number.",
+    };
   }
 
   const clientIp = await getSafeRequestIp();
   const ipKey = `login:ip:${clientIp}`;
-  const emailKey = `login:email:${normalized}`;
+  const emailKey = `login:email:${parsed.value}`;
   const [ipLimit, emailLimit] = await Promise.all([
     checkRateLimit(ipKey, RATE_LIMIT_POLICIES.loginIp),
     checkRateLimit(emailKey, RATE_LIMIT_POLICIES.loginEmail),
@@ -173,8 +177,8 @@ export async function changePasswordOnFirstLoginAction(
   const preferredMembershipId =
     cookieStore.get(LAST_CONTEXT_COOKIE_NAME)?.value ?? null;
 
-  const member = await resolveLoginMembershipByEmail(
-    normalized,
+  const member = await resolveLoginMembershipByIdentifier(
+    parsed.value,
     preferredMembershipId
   );
   if (!member || !member.isActive || !member.passwordHash) {

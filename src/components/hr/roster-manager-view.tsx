@@ -6,6 +6,8 @@ import {
   Copy,
   FileSpreadsheet,
   KeyRound,
+  Pencil,
+  Phone,
   Plus,
   Search,
   Trash2,
@@ -28,6 +30,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { WhatsAppPhoneLink } from "@/components/ui/whatsapp-phone-link";
+import { normalizePhoneNumber } from "@/lib/phone";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import { canAssignRoles, canAssignHrCommittees } from "@/lib/permissions";
 import {
@@ -40,6 +44,7 @@ export interface RosterMemberItem {
   personId?: string;
   fullName: string;
   email: string;
+  phoneNumber?: string | null;
   committeeId?: string | null;
   committeeName: string;
   trackId?: string | null;
@@ -65,6 +70,7 @@ export interface PersonDirectoryEntry {
   id: string;
   fullName: string;
   email: string;
+  phoneNumber?: string | null;
 }
 
 interface BulkImportResult {
@@ -76,6 +82,7 @@ interface BulkImportResult {
     personId?: string;
     fullName: string;
     email: string;
+    phoneNumber?: string | null;
     role: MembershipRole;
     committeeId: string | null;
     tempPassword?: string;
@@ -109,6 +116,7 @@ interface RosterManagerViewProps {
   onAddMember?: (data: {
     fullName: string;
     email: string;
+    phoneNumber?: string | null;
     role: MembershipRole;
     committeeId?: string | null;
     managedTrackId?: string | null;
@@ -117,6 +125,7 @@ interface RosterManagerViewProps {
       ok: boolean;
       memberId?: string;
       personId?: string;
+      phoneNumber?: string | null;
       existingPerson?: boolean;
       tempPassword?: string;
       error?: string;
@@ -126,6 +135,10 @@ interface RosterManagerViewProps {
   onRemoveMember?: (
     memberId: string
   ) => Promise<{ ok: boolean; error?: string } | void>;
+  onUpdatePhone?: (
+    memberId: string,
+    phoneNumber: string | null
+  ) => Promise<{ ok: boolean; phoneNumber?: string | null; error?: string } | void>;
 }
 
 const PROTECTED_RESET_ROLES = new Set<MembershipRole>([
@@ -191,6 +204,7 @@ export function RosterManagerView({
   onAddMember,
   onBulkImport,
   onRemoveMember,
+  onUpdatePhone,
 }: RosterManagerViewProps) {
   const [members, setMembers] = useState(initialMembers);
   const [prevInitialMembers, setPrevInitialMembers] = useState(initialMembers);
@@ -214,6 +228,7 @@ export function RosterManagerView({
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addFullName, setAddFullName] = useState("");
   const [addEmail, setAddEmail] = useState("");
+  const [addPhoneNumber, setAddPhoneNumber] = useState("");
   const [addRole, setAddRole] = useState<MembershipRole>("member");
   const [addCommitteeId, setAddCommitteeId] = useState("");
   const [addManagedTrackId, setAddManagedTrackId] = useState("");
@@ -222,6 +237,13 @@ export function RosterManagerView({
   const [addAutofillSource, setAddAutofillSource] = useState<string | null>(
     null
   );
+
+  // Inline Phone Number Editing
+  const [editingPhoneMemberId, setEditingPhoneMemberId] = useState<string | null>(
+    null
+  );
+  const [editingPhoneValue, setEditingPhoneValue] = useState("");
+  const [savingPhoneId, setSavingPhoneId] = useState<string | null>(null);
 
   // Bulk CSV Modal
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -461,9 +483,12 @@ export function RosterManagerView({
       }
 
       if (!q) return true;
+      const digitsQuery = q.replace(/\D/g, "");
+      const phoneDigits = (m.phoneNumber ?? "").replace(/\D/g, "");
       return (
         m.fullName.toLowerCase().includes(q) ||
         m.email.toLowerCase().includes(q) ||
+        (digitsQuery.length >= 3 && phoneDigits.includes(digitsQuery)) ||
         m.committeeName.toLowerCase().includes(q) ||
         (m.managedTrackName ?? "").toLowerCase().includes(q) ||
         (ROLE_LABELS[m.role] ?? m.role).toLowerCase().includes(q)
@@ -489,11 +514,13 @@ export function RosterManagerView({
   const openAddModalPrefilled = (prefill?: {
     fullName?: string;
     email?: string;
+    phoneNumber?: string | null;
     fromDirectory?: boolean;
   }) => {
     setAddError("");
     setAddFullName(prefill?.fullName ?? "");
     setAddEmail(prefill?.email ?? "");
+    setAddPhoneNumber(prefill?.phoneNumber ?? "");
     setAddRole("member");
     setAddCommitteeId("");
     setAddManagedTrackId("");
@@ -505,7 +532,7 @@ export function RosterManagerView({
     setAddModalOpen(true);
   };
 
-  // Autofill name/email inside the modal if typed email matches someone in peopleDirectory
+  // Autofill name/email/phone inside the modal if typed email matches someone in peopleDirectory
   const handleEmailChangeInModal = (val: string) => {
     setAddEmail(val);
     const normalized = val.trim().toLowerCase();
@@ -518,9 +545,54 @@ export function RosterManagerView({
     );
     if (found) {
       setAddFullName(found.fullName);
+      if (found.phoneNumber) setAddPhoneNumber(found.phoneNumber);
       setAddAutofillSource(
         `Matched existing person "${found.fullName}" in people database.`
       );
+    }
+  };
+
+  const handleSavePhoneNumber = async (member: RosterMemberItem) => {
+    setActionError(null);
+    setActionNotice(null);
+    const trimmed = editingPhoneValue.trim();
+    const normalized = trimmed.length > 0 ? normalizePhoneNumber(trimmed) : null;
+    if (trimmed.length > 0 && !normalized) {
+      setActionError(
+        "Invalid phone number. Use an Egyptian mobile (e.g. 01012345678) or international format (+20...)."
+      );
+      return;
+    }
+
+    setSavingPhoneId(member.id);
+    try {
+      let savedPhone = normalized;
+      if (onUpdatePhone) {
+        const res = await onUpdatePhone(member.id, normalized);
+        if (res && !res.ok) {
+          setActionError(res.error ?? "Failed to update phone number.");
+          return;
+        }
+        if (res && "phoneNumber" in res) {
+          savedPhone = res.phoneNumber ?? null;
+        }
+      }
+      const targetKey = member.personId ?? member.email.toLowerCase();
+      setMembers((prev) =>
+        prev.map((m) =>
+          (m.personId ?? m.email.toLowerCase()) === targetKey
+            ? { ...m, phoneNumber: savedPhone }
+            : m
+        )
+      );
+      setEditingPhoneMemberId(null);
+      setEditingPhoneValue("");
+    } catch (err: unknown) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to update phone number."
+      );
+    } finally {
+      setSavingPhoneId(null);
     }
   };
 
@@ -551,6 +623,7 @@ export function RosterManagerView({
               personId: item.personId,
               fullName: item.fullName,
               email: item.email,
+              phoneNumber: item.phoneNumber ?? null,
               role: item.role,
               committeeId: item.committeeId,
               committeeName: comm?.name ?? "Unassigned",
@@ -777,10 +850,23 @@ export function RosterManagerView({
         ? addManagedTrackId || null
         : null;
 
+      const trimmedPhone = addPhoneNumber.trim();
+      const normalizedModalPhone =
+        trimmedPhone.length > 0 ? normalizePhoneNumber(trimmedPhone) : null;
+      if (trimmedPhone.length > 0 && !normalizedModalPhone) {
+        setAddError(
+          "Invalid phone number. Enter an Egyptian mobile (e.g. 01012345678) or international E.164 number (+20...)."
+        );
+        return;
+      }
+
+      let resolvedPhone: string | null = normalizedModalPhone;
+
       if (onAddMember) {
         const res = await onAddMember({
           fullName: addFullName.trim(),
           email: addEmail.trim(),
+          phoneNumber: normalizedModalPhone,
           role: addRole,
           committeeId: submittedCommitteeId,
           ...(isDirectorRole ? { managedTrackId: submittedTrackId } : {}),
@@ -791,6 +877,9 @@ export function RosterManagerView({
         }
         if (res && res.memberId) createdId = res.memberId;
         if (res && res.personId) createdPersonId = res.personId;
+        if (res && "phoneNumber" in res) {
+          resolvedPhone = res.phoneNumber ?? null;
+        }
         if (res && res.existingPerson) {
           setActionNotice(
             `Added ${ROLE_LABELS[addRole]} role to existing person ${addFullName.trim()} (existing password preserved).`
@@ -814,6 +903,7 @@ export function RosterManagerView({
         personId: createdPersonId,
         fullName: addFullName.trim(),
         email: addEmail.trim().toLowerCase(),
+        phoneNumber: resolvedPhone,
         role: addRole,
         committeeId: submittedCommitteeId,
         committeeName: isHrMember
@@ -830,6 +920,7 @@ export function RosterManagerView({
       setAddModalOpen(false);
       setAddFullName("");
       setAddEmail("");
+      setAddPhoneNumber("");
       setAddRole("member");
       setAddCommitteeId("");
       setAddManagedTrackId("");
@@ -1408,6 +1499,89 @@ export function RosterManagerView({
                       <div className="font-mono text-xs text-muted-foreground">
                         {m.email}
                       </div>
+                      {editingPhoneMemberId === m.id ? (
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <Input
+                            type="tel"
+                            aria-label={`Phone number for ${m.fullName}`}
+                            placeholder="01012345678 or +20..."
+                            value={editingPhoneValue}
+                            onChange={(e) =>
+                              setEditingPhoneValue(e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                void handleSavePhoneNumber(m);
+                              } else if (e.key === "Escape") {
+                                setEditingPhoneMemberId(null);
+                                setEditingPhoneValue("");
+                              }
+                            }}
+                            className="h-7 w-44 font-mono text-xs"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={savingPhoneId === m.id}
+                            onClick={() => handleSavePhoneNumber(m)}
+                            className="h-7 bg-[#772583] px-2.5 text-[11px] font-semibold text-white hover:bg-[#5a1b63]"
+                          >
+                            {savingPhoneId === m.id ? "Saving..." : "Save"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEditingPhoneMemberId(null);
+                              setEditingPhoneValue("");
+                            }}
+                            className="h-7 px-2 text-[11px]"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                          {m.phoneNumber ? (
+                            <WhatsAppPhoneLink
+                              phoneNumber={m.phoneNumber}
+                              personName={m.fullName}
+                            />
+                          ) : null}
+                          {(isMaster || canAssignHr) && (
+                            <button
+                              type="button"
+                              aria-label={
+                                m.phoneNumber
+                                  ? `Edit phone number for ${m.fullName}`
+                                  : `Add phone number for ${m.fullName}`
+                              }
+                              onClick={() => {
+                                setEditingPhoneMemberId(m.id);
+                                setEditingPhoneValue(m.phoneNumber ?? "");
+                              }}
+                              className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-[#002855]"
+                            >
+                              {m.phoneNumber ? (
+                                <Pencil
+                                  className="h-2.5 w-2.5"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <>
+                                  <Phone
+                                    className="h-2.5 w-2.5"
+                                    aria-hidden="true"
+                                  />
+                                  <span>Add phone</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      )}
                       {isMultiRole && (
                         <div className="mt-0.5 text-[11px] text-muted-foreground">
                           Also:{" "}
@@ -1527,6 +1701,7 @@ export function RosterManagerView({
                                 openAddModalPrefilled({
                                   fullName: m.fullName,
                                   email: m.email,
+                                  phoneNumber: m.phoneNumber ?? null,
                                   fromDirectory: true,
                                 })
                               }
@@ -1554,15 +1729,30 @@ export function RosterManagerView({
                               <span>Reset Password</span>
                             </Button>
                           )}
-                          {isMaster && m.role !== "master_admin" && (
+                          {isMaster && (
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => handleRemoveMember(m)}
-                              disabled={removingId === m.id}
+                              onClick={() =>
+                                m.role !== "master_admin" &&
+                                handleRemoveMember(m)
+                              }
+                              disabled={
+                                removingId === m.id ||
+                                m.role === "master_admin"
+                              }
+                              title={
+                                m.role === "master_admin"
+                                  ? "Master Admin cannot be removed"
+                                  : undefined
+                              }
                               aria-label={`Remove ${m.fullName} from roster`}
-                              className="h-8 gap-1.5 border-[#ba0c2f]/30 text-xs font-semibold text-[#ba0c2f] hover:bg-[#ba0c2f]/10"
+                              className={
+                                m.role === "master_admin"
+                                  ? "h-8 gap-1.5 border-border text-xs font-semibold text-muted-foreground"
+                                  : "h-8 gap-1.5 border-[#ba0c2f]/30 text-xs font-semibold text-[#ba0c2f] hover:bg-[#ba0c2f]/10"
+                              }
                             >
                               <Trash2
                                 className="h-3.5 w-3.5"
@@ -1687,6 +1877,26 @@ export function RosterManagerView({
                   value={addEmail}
                   onChange={(e) => handleEmailChangeInModal(e.target.value)}
                   className="mt-1 h-10 text-sm"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="add-member-phone"
+                  className="block font-heading text-xs font-bold text-[#002855]"
+                >
+                  Phone Number{" "}
+                  <span className="font-normal text-muted-foreground">
+                    (Optional · WhatsApp &amp; Login)
+                  </span>
+                </label>
+                <Input
+                  id="add-member-phone"
+                  type="tel"
+                  placeholder="e.g. 01012345678 or +201012345678"
+                  value={addPhoneNumber}
+                  onChange={(e) => setAddPhoneNumber(e.target.value)}
+                  className="mt-1 h-10 font-mono text-sm"
                 />
               </div>
 
@@ -1820,7 +2030,7 @@ export function RosterManagerView({
             <p className="mt-1 text-xs text-muted-foreground">
               Paste CSV content with headers:{" "}
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
-                full_name, email, committee_slug, role
+                full_name, email, committee_slug, role[, phone_number]
               </code>
               . New accounts are initialized with the configured default
               password.

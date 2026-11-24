@@ -18,6 +18,7 @@ import {
   addRosterMemberAction,
   bulkImportRosterAction,
   removeRosterMemberAction,
+  updatePersonPhoneAction,
 } from "./actions";
 
 export default async function HrRosterPage() {
@@ -45,6 +46,7 @@ export default async function HrRosterPage() {
             personId: schema.persons.id,
             fullName: schema.persons.fullName,
             email: schema.persons.email,
+            phoneNumber: schema.persons.phoneNumber,
             committeeId: schema.rosterMemberships.committeeId,
             trackedCommitteeId: schema.rosterMemberships.trackedCommitteeId,
             managedTrackId: schema.rosterMemberships.managedTrackId,
@@ -72,6 +74,7 @@ export default async function HrRosterPage() {
                 id: schema.persons.id,
                 fullName: schema.persons.fullName,
                 email: schema.persons.email,
+                phoneNumber: schema.persons.phoneNumber,
               })
               .from(schema.persons)
               .where(eq(schema.persons.isActive, true))
@@ -139,6 +142,7 @@ export default async function HrRosterPage() {
             personId: m.personId,
             fullName: m.fullName,
             email: m.email,
+            phoneNumber: m.phoneNumber ?? null,
             committeeId: displayCommitteeId,
             committeeName: displayCommitteeName,
             trackId,
@@ -174,6 +178,7 @@ export default async function HrRosterPage() {
       onAddMember={addRosterMemberAction}
       onBulkImport={bulkImportRosterAction}
       onRemoveMember={removeRosterMemberAction}
+      onUpdatePhone={updatePersonPhoneAction}
     />
   );
 }

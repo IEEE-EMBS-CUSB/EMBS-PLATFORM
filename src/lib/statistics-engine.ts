@@ -31,6 +31,7 @@ export interface StatisticsMemberRecord {
   personId: string;
   fullName: string;
   email: string;
+  phoneNumber?: string | null;
   role: MembershipRole;
   committeeId: string | null;
   trackedCommitteeId: string | null;
@@ -292,6 +293,7 @@ export interface PersonStatRow {
   personId: string;
   fullName: string;
   email: string;
+  phoneNumber: string | null;
   roles: MembershipRole[];
   committeeNames: string[];
   isActive: boolean;
@@ -353,6 +355,7 @@ export interface SeasonLeaderboardEntry {
   personId: string;
   fullName: string;
   email: string;
+  phoneNumber: string | null;
   roles: MembershipRole[];
   committeeNames: string[];
   trackNames: string[];
@@ -506,7 +509,11 @@ function matchesMemberFilters(
   if (q.length > 0) {
     const nameMatch = m.fullName.toLowerCase().includes(q);
     const emailMatch = m.email.toLowerCase().includes(q);
-    if (!nameMatch && !emailMatch) return false;
+    const digitsQ = q.replace(/\D/g, "");
+    const phoneMatch =
+      digitsQ.length >= 3 &&
+      (m.phoneNumber ?? "").replace(/\D/g, "").includes(digitsQ);
+    if (!nameMatch && !emailMatch && !phoneMatch) return false;
   }
 
   return true;
@@ -1316,6 +1323,7 @@ export function computeAdminStatistics(
       personId,
       fullName: first.fullName,
       email: first.email,
+      phoneNumber: first.phoneNumber ?? null,
       roles,
       committeeNames,
       isActive,
@@ -1774,10 +1782,15 @@ export function computeSeasonLeaderboard(
 
   for (const [personId, hats] of hatsByPerson.entries()) {
     const first = hats[0];
+    const digitsQ = q.replace(/\D/g, "");
+    const phoneMatch =
+      digitsQ.length >= 3 &&
+      (first.phoneNumber ?? "").replace(/\D/g, "").includes(digitsQ);
     if (
       q.length > 0 &&
       !first.fullName.toLowerCase().includes(q) &&
-      !first.email.toLowerCase().includes(q)
+      !first.email.toLowerCase().includes(q) &&
+      !phoneMatch
     ) {
       continue;
     }
@@ -1822,6 +1835,7 @@ export function computeSeasonLeaderboard(
       personId,
       fullName: first.fullName,
       email: first.email,
+      phoneNumber: first.phoneNumber ?? null,
       roles: Array.from(new Set(hats.map((h) => h.role))),
       committeeNames,
       trackNames,

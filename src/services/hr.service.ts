@@ -10,6 +10,7 @@ export interface ParsedCsvRosterRecord {
   email: string;
   committeeSlug: string | null;
   role: MembershipRole;
+  phoneNumber?: string | null;
 }
 
 export interface CsvLineError {
@@ -89,7 +90,7 @@ export function parseRosterCsv(csvContent: string): CsvRosterParseResult {
       return;
     }
 
-    const [fullName, rawEmail, rawSlug, rawRole] = parts;
+    const [fullName, rawEmail, rawSlug, rawRole, rawPhone] = parts;
 
     if (!fullName) {
       errors.push({ line: lineNum, message: "Missing full_name." });
@@ -115,6 +116,9 @@ export function parseRosterCsv(csvContent: string): CsvRosterParseResult {
       email: normalizeEmail(rawEmail),
       committeeSlug: rawSlug && rawSlug.length > 0 ? rawSlug.toLowerCase() : null,
       role,
+      ...(rawPhone && rawPhone.trim().length > 0
+        ? { phoneNumber: rawPhone.trim() }
+        : {}),
     });
   });
 
