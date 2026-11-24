@@ -6,6 +6,7 @@ import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canManageCommitteeSessions,
   getOperationalCommitteeScope,
+  isSlideDeckRequiredForRole,
 } from "@/lib/permissions";
 import { normalizeSeasonSettings } from "@/lib/season-settings";
 import { upsertScoreLedgerEntry } from "@/db/ledger";
@@ -15,6 +16,7 @@ import {
   formatMonthInCairo,
   getPostgresErrorCode,
   isValidDateString,
+  isValidHttpUrl,
   resolveActiveSeason,
   sanitizeDbError,
 } from "./helpers";
@@ -267,6 +269,8 @@ export interface CreatedSessionSummary {
   punctualityCutoffMinutes: number;
   basePoints: number;
   punctualityBonus: number;
+  slideDeckUrl: string | null;
+  webConferencingUrl: string | null;
   attendanceCount: number;
 }
 
@@ -286,6 +290,8 @@ export interface CreateSessionInput {
   title: string;
   startsAt: string;
   committeeId?: string | null;
+  slideDeckUrl?: string | null;
+  webConferencingUrl?: string | null;
   checkinWindowMinutes?: number;
   punctualityCutoffMinutes?: number;
   basePoints?: number;
@@ -335,6 +341,31 @@ export async function createSessionAsActor(
   if (!isValidDateString(input.startsAt)) {
     return { ok: false, error: "A valid session start date/time is required." };
   }
+
+  const trimmedSlideDeckUrl = input.slideDeckUrl?.trim() ?? "";
+  if (isSlideDeckRequiredForRole(actor.profile.role) && !trimmedSlideDeckUrl) {
+    return { ok: false, error: "Slide deck URL is required." };
+  }
+  if (trimmedSlideDeckUrl && !isValidHttpUrl(trimmedSlideDeckUrl)) {
+    return {
+      ok: false,
+      error: "Slide deck must be a valid http:// or https:// URL.",
+    };
+  }
+
+  const trimmedWebConferencingUrl = input.webConferencingUrl?.trim() ?? "";
+  if (
+    trimmedWebConferencingUrl &&
+    !isValidHttpUrl(trimmedWebConferencingUrl)
+  ) {
+    return {
+      ok: false,
+      error: "Web conferencing link must be a valid http:// or https:// URL.",
+    };
+  }
+
+  const slideDeckUrl = trimmedSlideDeckUrl || null;
+  const webConferencingUrl = trimmedWebConferencingUrl || null;
 
   try {
     const seasonRes = await resolveActiveSeason(input.seasonId);
@@ -406,6 +437,8 @@ export async function createSessionAsActor(
         punctualityCutoffMinutes: punctualityCutoff,
         basePoints,
         punctualityBonus,
+        slideDeckUrl,
+        webConferencingUrl,
       })
       .returning();
 
@@ -423,6 +456,8 @@ export async function createSessionAsActor(
       punctualityCutoffMinutes: session.punctualityCutoffMinutes,
       basePoints: session.basePoints,
       punctualityBonus: session.punctualityBonus,
+      slideDeckUrl: session.slideDeckUrl,
+      webConferencingUrl: session.webConferencingUrl,
       attendanceCount: 0,
     };
 

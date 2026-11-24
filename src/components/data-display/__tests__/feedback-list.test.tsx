@@ -10,7 +10,7 @@ describe("FeedbackList", () => {
         id: "fb-warn",
         month: "2026-11",
         publishedAt: "2026-11-18",
-        authorRole: "HR Officer",
+        authorRole: "HR Member",
         reviewType: "warning",
         message: "Official warning for missing two committee meetings.",
         pointsDelta: -10,

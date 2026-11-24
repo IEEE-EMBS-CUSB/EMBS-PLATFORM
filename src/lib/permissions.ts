@@ -164,6 +164,16 @@ export function canManageCommitteeSessions(
 }
 
 /**
+ * Slide deck URLs are required when creating attendance sessions for committee heads
+ * and HR members, and optional for HR Admin, Director, and Master Admin.
+ */
+export function isSlideDeckRequiredForRole(role: MembershipRole): boolean {
+  return (
+    role !== "hr_admin" && role !== "director" && role !== "master_admin"
+  );
+}
+
+/**
  * Manage attendance & live QR check-ins for a committee session.
  * Master and HR Admin can manage for all committees.
  * HR Member can manage only for their assigned tracked committee.

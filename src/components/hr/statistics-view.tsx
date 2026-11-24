@@ -711,7 +711,7 @@ export function StatisticsView({ dataset }: StatisticsViewProps) {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-[#002855]">
-                      Committee HR Officer Coverage
+                      Committee HR Member Coverage
                     </span>
                     <span className="font-mono font-bold text-[#007377] tabular-nums">
                       {stats.hrHealth.coveredCommittees} /{" "}
@@ -730,7 +730,7 @@ export function StatisticsView({ dataset }: StatisticsViewProps) {
                     </p>
                   ) : (
                     <p className="text-[11px] text-[#1e6b0a]">
-                      Every committee has an assigned HR officer.
+                      Every committee has an assigned HR member.
                     </p>
                   )}
                 </div>

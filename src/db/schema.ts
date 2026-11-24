@@ -310,6 +310,8 @@ export const branchSessions = pgTable(
       .default(15),
     basePoints: integer("base_points").notNull().default(10),
     punctualityBonus: integer("punctuality_bonus").notNull().default(5),
+    slideDeckUrl: text("slide_deck_url"),
+    webConferencingUrl: text("web_conferencing_url"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),

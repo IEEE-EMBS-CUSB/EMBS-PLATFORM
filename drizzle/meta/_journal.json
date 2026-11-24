@@ -120,6 +120,13 @@
       "when": 1795641600000,
       "tag": "0016_persons_phone_number",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795728000000,
+      "tag": "0017_branch_sessions_links",
+      "breakpoints": true
     }
   ]
 }

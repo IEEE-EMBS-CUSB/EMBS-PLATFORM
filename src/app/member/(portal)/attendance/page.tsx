@@ -1,10 +1,12 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { CalendarCheck, CheckCircle2 } from "lucide-react";
+import { CalendarCheck, CalendarClock, CheckCircle2 } from "lucide-react";
 import { MetricCard } from "@/components/data-display/metric-card";
+import { SessionResourceLinks } from "@/components/data-display/session-resource-links";
 import { AttendanceStatusBadge } from "@/components/data-display/status-badge";
 import { EmptyState } from "@/components/states/empty-state";
 import { MemberAttendanceLoadingState } from "@/components/states/loading-state";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -15,7 +17,10 @@ import {
 } from "@/components/ui/table";
 import { formatDisplayDate } from "@/lib/format";
 import { requireMemberSession } from "@/lib/portal-guards";
-import { getMemberAttendance } from "@/services/member.service";
+import {
+  getMemberAttendance,
+  getMemberUpcomingSessions,
+} from "@/services/member.service";
 import { LiveCheckinCard } from "@/components/member/live-checkin-card";
 import type { SessionType } from "@/types";
 
@@ -49,7 +54,10 @@ async function MemberAttendanceContent({
     searchParams,
     requireMemberSession(),
   ]);
-  const records = await getMemberAttendance(session.participantId);
+  const [records, upcomingSessions] = await Promise.all([
+    getMemberAttendance(session.participantId),
+    getMemberUpcomingSessions(session.participantId),
+  ]);
   const awardedPoints = points ? Number(points) : 0;
 
   const attendedCount = records.filter((r) => r.status === "attended").length;
@@ -88,6 +96,77 @@ async function MemberAttendanceContent({
       )}
 
       <LiveCheckinCard membershipId={session.participantId} />
+
+      {upcomingSessions.length > 0 && (
+        <section
+          aria-label="Upcoming and live sessions"
+          className="overflow-hidden rounded-lg border border-border bg-white"
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/45 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <CalendarClock
+                className="h-4 w-4 text-[#772583]"
+                aria-hidden="true"
+              />
+              <h2 className="font-heading text-sm font-bold text-[#002855]">
+                Upcoming &amp; Live Sessions
+              </h2>
+            </div>
+            <span className="text-xs font-medium text-muted-foreground tabular-nums">
+              {upcomingSessions.length} session
+              {upcomingSessions.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <ul className="divide-y divide-border">
+            {upcomingSessions.map((upcoming) => {
+              const startDate = new Date(upcoming.startsAt);
+              const formattedStart = Number.isNaN(startDate.getTime())
+                ? formatDisplayDate(upcoming.startsAt)
+                : startDate.toLocaleString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    timeZone: "Africa/Cairo",
+                  });
+
+              return (
+                <li
+                  key={upcoming.id}
+                  className="flex flex-col gap-2.5 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-foreground">
+                        {upcoming.title}
+                      </p>
+                      <Badge
+                        className={
+                          upcoming.checkinState === "live"
+                            ? "bg-[#78be20] text-[10px] font-semibold text-white"
+                            : "bg-[#00629b] text-[10px] font-semibold text-white"
+                        }
+                      >
+                        {upcoming.checkinState === "live"
+                          ? "Check-in Open"
+                          : "Scheduled"}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      {upcoming.committeeName} · {formattedStart}
+                    </p>
+                  </div>
+                  <SessionResourceLinks
+                    slideDeckUrl={upcoming.slideDeckUrl}
+                    webConferencingUrl={upcoming.webConferencingUrl}
+                    className="shrink-0"
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         <MetricCard label="Attended" value={attendedCount} accent="teal" />
@@ -132,6 +211,11 @@ async function MemberAttendanceContent({
                     {record.bonusReason ? ` · ${record.bonusReason}` : ""}
                   </p>
                 )}
+                <SessionResourceLinks
+                  slideDeckUrl={record.slideDeckUrl}
+                  webConferencingUrl={record.webConferencingUrl}
+                  className="pt-0.5"
+                />
               </li>
             ))}
           </ul>
@@ -179,6 +263,11 @@ async function MemberAttendanceContent({
                               : ""}
                           </p>
                         )}
+                      <SessionResourceLinks
+                        slideDeckUrl={record.slideDeckUrl}
+                        webConferencingUrl={record.webConferencingUrl}
+                        className="mt-1.5"
+                      />
                     </TableCell>
                     <TableCell className="py-3.5 text-sm text-muted-foreground">
                       {SESSION_TYPE_LABELS[record.sessionType]}

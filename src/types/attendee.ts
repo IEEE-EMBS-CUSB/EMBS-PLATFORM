@@ -20,6 +20,8 @@ export interface AttendeeSessionRecord {
   deliveredBy: string;
   status: AttendanceStatus;
   arrival?: ArrivalStatus;
+  slideDeckUrl?: string | null;
+  webConferencingUrl?: string | null;
 }
 
 export interface AttendeeAssignment {

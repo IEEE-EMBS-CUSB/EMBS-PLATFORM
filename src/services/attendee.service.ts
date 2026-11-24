@@ -93,6 +93,8 @@ export async function getAttendeeAttendance(
         deliveredBy: "EMBS Chapter Lead",
         status: "attended" as const,
         arrival: record.isPunctual ? ("on_time" as const) : ("late" as const),
+        slideDeckUrl: session.slideDeckUrl ?? null,
+        webConferencingUrl: session.webConferencingUrl ?? null,
       }));
     }
   } catch {

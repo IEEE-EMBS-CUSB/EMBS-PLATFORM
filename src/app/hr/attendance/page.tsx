@@ -78,6 +78,8 @@ export default async function HrAttendancePage() {
                   schema.branchSessions.punctualityCutoffMinutes,
                 basePoints: schema.branchSessions.basePoints,
                 punctualityBonus: schema.branchSessions.punctualityBonus,
+                slideDeckUrl: schema.branchSessions.slideDeckUrl,
+                webConferencingUrl: schema.branchSessions.webConferencingUrl,
               })
               .from(schema.branchSessions)
               .where(sessionFilter)
@@ -135,6 +137,8 @@ export default async function HrAttendancePage() {
           punctualityCutoffMinutes: s.punctualityCutoffMinutes,
           basePoints: s.basePoints,
           punctualityBonus: s.punctualityBonus,
+          slideDeckUrl: s.slideDeckUrl ?? null,
+          webConferencingUrl: s.webConferencingUrl ?? null,
           attendanceCount: countMap.get(s.id) ?? 0,
         };
       });

@@ -22,7 +22,7 @@ import type { AssignedTaskItem } from "@/components/hr/task-delegation-view";
 export interface DashboardKpis {
   activeMembers: number;
   committeeCount: number;
-  hrOfficers: number;
+  hrMembers: number;
   assignedTasksCount: number;
   pendingGradingCount: number;
   avgMemberPoints: number;
@@ -41,7 +41,7 @@ interface RoleOperationalDashboardProps {
 const DEFAULT_KPIS: DashboardKpis = {
   activeMembers: 0,
   committeeCount: 0,
-  hrOfficers: 0,
+  hrMembers: 0,
   assignedTasksCount: 0,
   pendingGradingCount: 0,
   avgMemberPoints: 0,
@@ -430,9 +430,9 @@ export function RoleOperationalDashboard({
             </Card>
             <Card className="border-border bg-white shadow-xs">
               <CardContent className="p-4 sm:p-5">
-                <p className="text-xs font-semibold text-muted-foreground">HR Officers</p>
+                <p className="text-xs font-semibold text-muted-foreground">HR Members</p>
                 <p className="mt-1 font-heading text-2xl font-bold text-[#007377] tabular-nums">
-                  {kpis.hrOfficers}
+                  {kpis.hrMembers}
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">Assigned to committees</p>
               </CardContent>
@@ -467,7 +467,7 @@ export function RoleOperationalDashboard({
                   Roster &amp; Committee HR Assignments
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Assign HR officers to specific committees and manage active roster membership.
+                  Assign HR members to specific committees and manage active roster membership.
                 </p>
                 <div className="mt-auto pt-2">
                   <Link

@@ -16,7 +16,7 @@ export default async function HrOverviewPage() {
   const kpis: DashboardKpis = {
     activeMembers: 0,
     committeeCount: 0,
-    hrOfficers: 0,
+    hrMembers: 0,
     assignedTasksCount: 0,
     pendingGradingCount: 0,
     avgMemberPoints: 0,
@@ -234,7 +234,7 @@ export default async function HrOverviewPage() {
       kpis.committeeCount = directorTrackCommitteeIds
         ? directorTrackCommitteeIds.size
         : dbCommittees.length;
-      kpis.hrOfficers = dbMembers.filter(
+      kpis.hrMembers = dbMembers.filter(
         (m) => m.role === "hr_member" || m.role === "hr_admin"
       ).length;
       kpis.assignedTasksCount = scopedTasks.length;

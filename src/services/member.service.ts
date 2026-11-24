@@ -1,12 +1,13 @@
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { eq, and, desc, inArray, ne } from "drizzle-orm";
+import { eq, and, asc, desc, gte, inArray, isNull, ne, or } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   DEFAULT_SEASON_SETTINGS,
   deriveActivityTier,
   normalizeSeasonSettings,
 } from "@/lib/season-settings";
+import { getSessionCheckinState } from "@/services/hr-ops/attendance.service";
 import type {
   MemberAttendanceRecord,
   MemberDashboardData,
@@ -14,6 +15,7 @@ import type {
   MemberProfile,
   MemberRole,
   MemberTask,
+  MemberUpcomingSession,
   MonthKey,
   MonthlyScoreRecord,
   PublishedFeedback,
@@ -39,7 +41,7 @@ function formatAuthorRoleLabel(role?: string | null): string {
     case "hr_admin":
       return "HR Lead";
     case "hr_member":
-      return "HR Officer";
+      return "HR Member";
     case "committee_head":
       return "Committee Head";
     default:
@@ -225,6 +227,7 @@ async function resolvePersonSeasonScope(memberId: string): Promise<{
   personId: string;
   seasonId: string;
   committeeId: string | null;
+  committeeIds: string[];
   membershipIds: string[];
 } | null> {
   const [member] = await db
@@ -245,7 +248,12 @@ async function resolvePersonSeasonScope(memberId: string): Promise<{
   if (!member) return null;
 
   const seasonHats = await db
-    .select({ id: schema.rosterMemberships.id })
+    .select({
+      id: schema.rosterMemberships.id,
+      committeeId: schema.rosterMemberships.committeeId,
+      trackedCommitteeId: schema.rosterMemberships.trackedCommitteeId,
+      isActive: schema.rosterMemberships.isActive,
+    })
     .from(schema.rosterMemberships)
     .where(
       and(
@@ -258,11 +266,22 @@ async function resolvePersonSeasonScope(memberId: string): Promise<{
   const membershipIds = Array.from(
     new Set([memberId, ...seasonHats.map((h) => h.id)])
   );
+  const committeeIds = Array.from(
+    new Set(
+      [
+        member.committeeId,
+        ...seasonHats
+          .filter((h) => h.isActive)
+          .flatMap((h) => [h.committeeId, h.trackedCommitteeId]),
+      ].filter((id): id is string => Boolean(id))
+    )
+  );
 
   return {
     personId: member.personId,
     seasonId: member.seasonId,
     committeeId: member.committeeId,
+    committeeIds,
     membershipIds,
   };
 }
@@ -540,9 +559,80 @@ export async function getMemberAttendance(
               ? (record.overrideReason ?? undefined)
               : undefined,
           bonusPoints: record.pointsAwarded,
+          slideDeckUrl: session.slideDeckUrl ?? null,
+          webConferencingUrl: session.webConferencingUrl ?? null,
         };
       });
     }
+  } catch {
+    // Graceful fallback
+  }
+  return [];
+}
+
+/**
+ * Returns upcoming and currently-live sessions in the member's active season
+ * scoped strictly to their committee(s) plus branch-wide sessions (committeeId IS NULL),
+ * so members can access session slide decks and web conferencing links before or during a session.
+ */
+export async function getMemberUpcomingSessions(
+  memberId: string
+): Promise<MemberUpcomingSession[]> {
+  try {
+    const scope = await resolvePersonSeasonScope(memberId);
+    if (!scope) return [];
+
+    const now = new Date();
+    const committeeScopeCondition =
+      scope.committeeIds.length > 0
+        ? or(
+            isNull(schema.branchSessions.committeeId),
+            inArray(schema.branchSessions.committeeId, scope.committeeIds)
+          )
+        : isNull(schema.branchSessions.committeeId);
+
+    const rows = await db
+      .select({
+        session: schema.branchSessions,
+        committeeName: schema.committees.name,
+      })
+      .from(schema.branchSessions)
+      .leftJoin(
+        schema.committees,
+        eq(schema.branchSessions.committeeId, schema.committees.id)
+      )
+      .where(
+        and(
+          eq(schema.branchSessions.seasonId, scope.seasonId),
+          committeeScopeCondition,
+          or(
+            gte(schema.branchSessions.startsAt, now),
+            gte(schema.branchSessions.checkinEndsAt, now),
+            eq(schema.branchSessions.checkinOpen, true)
+          )
+        )
+      )
+      .orderBy(asc(schema.branchSessions.startsAt));
+
+    return rows
+      .map(({ session, committeeName }) => {
+        const checkinState = getSessionCheckinState(session, now);
+        return {
+          id: session.id,
+          title: session.title,
+          committeeName: committeeName ?? "Branch-wide",
+          startsAt: session.startsAt.toISOString(),
+          checkinState,
+          slideDeckUrl: session.slideDeckUrl ?? null,
+          webConferencingUrl: session.webConferencingUrl ?? null,
+        };
+      })
+      .filter(
+        (s) =>
+          s.checkinState === "live" ||
+          s.checkinState === "scheduled" ||
+          new Date(s.startsAt).getTime() >= now.getTime()
+      );
   } catch {
     // Graceful fallback
   }

@@ -1,4 +1,5 @@
 import { CalendarCheck } from "lucide-react";
+import { SessionResourceLinks } from "@/components/data-display/session-resource-links";
 import { AttendanceStatusBadge } from "@/components/data-display/status-badge";
 import { EmptyState } from "@/components/states/empty-state";
 import {
@@ -48,6 +49,11 @@ export function AttendeeSessionTable({ sessions }: AttendeeSessionTableProps) {
             <p className="text-xs text-muted-foreground tabular-nums">
               {formatDisplayDate(session.date)}
             </p>
+            <SessionResourceLinks
+              slideDeckUrl={session.slideDeckUrl}
+              webConferencingUrl={session.webConferencingUrl}
+              className="pt-0.5"
+            />
           </li>
         ))}
       </ul>
@@ -84,6 +90,11 @@ export function AttendeeSessionTable({ sessions }: AttendeeSessionTableProps) {
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {session.committeeName}
                   </p>
+                  <SessionResourceLinks
+                    slideDeckUrl={session.slideDeckUrl}
+                    webConferencingUrl={session.webConferencingUrl}
+                    className="mt-1.5"
+                  />
                 </TableCell>
                 <TableCell className="py-3.5 text-sm text-muted-foreground">
                   {session.deliveredBy}

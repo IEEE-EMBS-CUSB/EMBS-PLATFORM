@@ -329,8 +329,8 @@ describe("RosterManagerView Component", () => {
     // Multi-role indicator visible for Laila MultiHat
     expect(screen.getAllByText("2 roles").length).toBe(2);
 
-    // Highlighted HR Officer Committee Assignments section visible
-    expect(screen.getByText(/HR Officer Committee Assignments/i)).toBeInTheDocument();
+    // Highlighted HR Member Committee Assignments section visible
+    expect(screen.getByText(/HR Member Committee Assignments/i)).toBeInTheDocument();
 
     // Filter by role = director
     await user.selectOptions(screen.getByLabelText("Filter by role"), "director");

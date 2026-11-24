@@ -54,6 +54,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         title,
         startsAt: new Date(Date.now() + 3600000).toISOString(),
         committeeId: robotics.id,
+        slideDeckUrl: "https://docs.google.com/presentation/d/robotics-workshop",
         checkinWindowMinutes: 30,
         punctualityCutoffMinutes: 15,
         basePoints: 10,
@@ -155,6 +156,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         title: `Live Testing Session ${Date.now()}`,
         startsAt: new Date(Date.now() - 300000).toISOString(),
         committeeId: omar.committeeId,
+        slideDeckUrl: "https://docs.google.com/presentation/d/live-testing",
         checkinWindowMinutes: 30,
         punctualityCutoffMinutes: 15,
         basePoints: 10,
@@ -260,6 +262,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         title: "Toggle Checkin Test Session",
         startsAt: new Date().toISOString(),
         committeeId: robotics.id,
+        slideDeckUrl: "https://docs.google.com/presentation/d/toggle-test",
       },
       { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
     );
@@ -311,6 +314,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         title: `Future Slide QR Session ${Date.now()}`,
         startsAt: futureStart.toISOString(),
         committeeId: omar.committeeId,
+        slideDeckUrl: "https://docs.google.com/presentation/d/future-qr",
         checkinWindowMinutes: 30,
       },
       { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
@@ -363,6 +367,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         title: `Recent Past Window Session ${Date.now()}`,
         startsAt: recentPastStart.toISOString(),
         committeeId: omar.committeeId,
+        slideDeckUrl: "https://docs.google.com/presentation/d/recent-past",
         checkinWindowMinutes: 30,
       },
       { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
@@ -381,6 +386,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         title: `Elapsed Past Window Session ${Date.now()}`,
         startsAt: oldPastStart.toISOString(),
         committeeId: omar.committeeId,
+        slideDeckUrl: "https://docs.google.com/presentation/d/elapsed-past",
         checkinWindowMinutes: 30,
       },
       { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }

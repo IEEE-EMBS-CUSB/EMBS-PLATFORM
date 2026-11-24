@@ -676,7 +676,7 @@ export function computeAdminStatistics(
       : null;
 
   // Determine eligible members (member & hr_member hats in the filtered set)
-  // When focused on a specific committee C, an HR officer tracking C (whose home committee is HR)
+  // When focused on a specific committee C, an HR member tracking C (whose home committee is HR)
   // is not counted in C's member score average unless C IS their home committee.
   const eligibleMemberships = primaryMemberships.filter((m) => {
     if (!isLeaderboardRole(m.role)) return false;

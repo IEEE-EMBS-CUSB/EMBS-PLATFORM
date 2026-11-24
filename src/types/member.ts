@@ -70,6 +70,18 @@ export interface MemberAttendanceRecord {
   excuseReason?: string;
   bonusPoints?: number;
   bonusReason?: string;
+  slideDeckUrl?: string | null;
+  webConferencingUrl?: string | null;
+}
+
+export interface MemberUpcomingSession {
+  id: string;
+  title: string;
+  committeeName: string;
+  startsAt: string;
+  checkinState: "scheduled" | "live" | "closed";
+  slideDeckUrl: string | null;
+  webConferencingUrl: string | null;
 }
 
 export interface MemberTask {

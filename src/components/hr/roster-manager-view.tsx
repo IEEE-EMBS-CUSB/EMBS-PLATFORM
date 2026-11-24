@@ -974,9 +974,9 @@ export function RosterManagerView({
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isMaster
-              ? "Manage chapter members, assign roles, and assign HR officers to committees."
+              ? "Manage chapter members, assign roles, and assign HR members to committees."
               : currentUserRole === "hr_admin"
-                ? "View the chapter roster and assign HR officers to committees."
+                ? "View the chapter roster and assign HR members to committees."
                 : "View active members and leadership across your assigned committees."}
           </p>
         </div>
@@ -1009,7 +1009,7 @@ export function RosterManagerView({
         </div>
       </div>
 
-      {/* Highlighted HR Officer -> Committee Assignment Panel for HR Admin & Master */}
+      {/* Highlighted HR Member -> Committee Assignment Panel for HR Admin & Master */}
       {canAssignHr && activeHrMembers.length > 0 && (
         <Card className="border-[#007377]/30 bg-white shadow-xs">
           <CardHeader className="border-b border-border/70 bg-[#e3f5f6]/50 px-5 py-3.5">
@@ -1017,14 +1017,14 @@ export function RosterManagerView({
               <div className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-[#007377]" aria-hidden="true" />
                 <CardTitle className="font-heading text-sm font-bold text-[#002855]">
-                  HR Officer Committee Assignments ({activeHrMembers.length})
+                  HR Member Committee Assignments ({activeHrMembers.length})
                 </CardTitle>
               </div>
               {uncoveredCommittees.length > 0 ? (
                 <span className="text-xs font-semibold text-[#92400e]">
                   {uncoveredCommittees.length} committee
                   {uncoveredCommittees.length === 1 ? "" : "s"} need an HR
-                  officer
+                  member
                 </span>
               ) : (
                 <span className="text-xs font-semibold text-[#1e6b0a]">
@@ -1049,7 +1049,7 @@ export function RosterManagerView({
                     </p>
                   </div>
                   <select
-                    aria-label={`Assign tracked committee for HR officer ${hr.fullName}`}
+                    aria-label={`Assign tracked committee for HR member ${hr.fullName}`}
                     value={hr.committeeId ?? ""}
                     onChange={(e) =>
                       handleCommitteeChange(hr.id, e.target.value)

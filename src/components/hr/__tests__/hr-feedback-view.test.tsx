@@ -63,7 +63,7 @@ const mockFeedback: FeedbackItem[] = [
     content: "Internal HR follow-up note scheduled for next week.",
     isPublished: false,
     isWarning: true,
-    createdByName: "HR Officer",
+    createdByName: "HR Member",
     createdAt: "2026-10-19T12:00:00Z",
   },
 ];

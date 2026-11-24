@@ -24,6 +24,9 @@ import { Input } from "@/components/ui/input";
 import QRCode from "qrcode";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import { buildCheckinQrUrl } from "@/lib/checkin-url";
+import { isSlideDeckRequiredForRole } from "@/lib/permissions";
+import { isSafeHttpUrl } from "@/lib/url";
+import { SessionResourceLinks } from "@/components/data-display/session-resource-links";
 import {
   DEFAULT_SEASON_SETTINGS,
   type SeasonAttendanceSettings,
@@ -55,6 +58,8 @@ export interface SessionItem {
   punctualityCutoffMinutes?: number;
   basePoints: number;
   punctualityBonus: number;
+  slideDeckUrl?: string | null;
+  webConferencingUrl?: string | null;
   attendanceCount: number;
 }
 
@@ -315,6 +320,8 @@ export function AttendanceManagerView({
   const [newCommitteeId, setNewCommitteeId] = useState<string>(
     currentUserCommitteeId ?? ""
   );
+  const [newSlideDeckUrl, setNewSlideDeckUrl] = useState("");
+  const [newWebConferencingUrl, setNewWebConferencingUrl] = useState("");
   const [newWindowMinutes, setNewWindowMinutes] = useState(
     attendanceDefaults.defaultCheckinWindowMinutes
   );
@@ -453,9 +460,29 @@ export function AttendanceManagerView({
     };
   }, [newStartsAt, newWindowMinutes, nowMs]);
 
+  const isSlideDeckRequired = isSlideDeckRequiredForRole(currentUserRole);
+
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
+
+    const trimmedSlideDeck = newSlideDeckUrl.trim();
+    const trimmedMeeting = newWebConferencingUrl.trim();
+
+    if (isSlideDeckRequired && !trimmedSlideDeck) {
+      setErrorMessage("Slide deck URL is required.");
+      return;
+    }
+    if (trimmedSlideDeck && !isSafeHttpUrl(trimmedSlideDeck)) {
+      setErrorMessage("Slide deck must be a valid http:// or https:// URL.");
+      return;
+    }
+    if (trimmedMeeting && !isSafeHttpUrl(trimmedMeeting)) {
+      setErrorMessage(
+        "Web conferencing link must be a valid http:// or https:// URL."
+      );
+      return;
+    }
 
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -466,6 +493,8 @@ export function AttendanceManagerView({
       committeeId: isCommitteeScoped
         ? currentUserCommitteeId
         : newCommitteeId || null,
+      slideDeckUrl: trimmedSlideDeck || null,
+      webConferencingUrl: trimmedMeeting || null,
       checkinWindowMinutes: newWindowMinutes,
       punctualityCutoffMinutes: newPunctualityCutoff,
       basePoints: newBasePoints,
@@ -517,6 +546,8 @@ export function AttendanceManagerView({
 
       setShowCreateModal(false);
       setNewTitle("");
+      setNewSlideDeckUrl("");
+      setNewWebConferencingUrl("");
     } catch (err: unknown) {
       setErrorMessage(
         err instanceof Error ? err.message : "Error creating session."
@@ -987,6 +1018,8 @@ export function AttendanceManagerView({
               setErrorMessage(null);
               setNowMs(now.getTime());
               setNewStartsAt(getLocalDatetimeInputValue(now));
+              setNewSlideDeckUrl("");
+              setNewWebConferencingUrl("");
               setShowCreateModal(true);
             }}
             className="h-10 shrink-0 gap-2 bg-[#772583] px-4 text-xs font-semibold text-white shadow-xs hover:bg-[#5a1b63]"
@@ -1008,7 +1041,7 @@ export function AttendanceManagerView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
-          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-white p-6 shadow-2xl">
+          <div className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-white p-6 shadow-2xl">
             <button
               type="button"
               aria-label="Close create session modal"
@@ -1105,6 +1138,47 @@ export function AttendanceManagerView({
                   )}
                 </div>
               </div>
+
+                <div>
+                  <label
+                    htmlFor="session-slide-deck-input"
+                    className="block font-heading text-xs font-bold text-[#002855]"
+                  >
+                    Slide Deck URL{" "}
+                    <span className="font-normal text-muted-foreground">
+                      {isSlideDeckRequired ? "(Required)" : "(Optional)"}
+                    </span>
+                  </label>
+                  <Input
+                    id="session-slide-deck-input"
+                    type="url"
+                    required={isSlideDeckRequired}
+                    placeholder="https://docs.google.com/presentation/d/..."
+                    value={newSlideDeckUrl}
+                    onChange={(e) => setNewSlideDeckUrl(e.target.value)}
+                    className="mt-1 h-10 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="session-web-conf-input"
+                    className="block font-heading text-xs font-bold text-[#002855]"
+                  >
+                    Web Conferencing Link{" "}
+                    <span className="font-normal text-muted-foreground">
+                      (Optional)
+                    </span>
+                  </label>
+                  <Input
+                    id="session-web-conf-input"
+                    type="url"
+                    placeholder="https://meet.google.com/... or Zoom/Teams URL"
+                    value={newWebConferencingUrl}
+                    onChange={(e) => setNewWebConferencingUrl(e.target.value)}
+                    className="mt-1 h-10 text-sm"
+                  />
+                </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>
@@ -1331,6 +1405,11 @@ export function AttendanceManagerView({
                         </span>
                       </div>
                     )}
+
+                    <SessionResourceLinks
+                      slideDeckUrl={sess.slideDeckUrl}
+                      webConferencingUrl={sess.webConferencingUrl}
+                    />
                   </div>
 
                   <div className="mt-auto flex flex-col gap-2 pt-1">
@@ -1447,6 +1526,11 @@ export function AttendanceManagerView({
                   · On Time = +{sheetSession.basePoints + sheetSession.punctualityBonus} pts ·
                   Late = +{sheetSession.basePoints} pts · Excused / Absent = 0 pts
                 </p>
+                <SessionResourceLinks
+                  slideDeckUrl={sheetSession.slideDeckUrl}
+                  webConferencingUrl={sheetSession.webConferencingUrl}
+                  className="mt-2"
+                />
               </div>
               <button
                 type="button"

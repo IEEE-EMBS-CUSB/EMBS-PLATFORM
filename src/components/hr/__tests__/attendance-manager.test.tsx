@@ -68,6 +68,8 @@ describe("AttendanceManagerView Component", () => {
         punctualityCutoffMinutes: 15,
         basePoints: 10,
         punctualityBonus: 5,
+        slideDeckUrl: "https://docs.google.com/presentation/d/dl-lab-1",
+        webConferencingUrl: "https://meet.google.com/lab-one-meet",
         attendanceCount: 0,
       },
     });
@@ -92,6 +94,17 @@ describe("AttendanceManagerView Component", () => {
     const titleInput = screen.getByLabelText(/session title/i);
     await user.type(titleInput, "Deep Learning Lab 1");
 
+    const slideDeckInput = screen.getByLabelText(/slide deck url/i);
+    expect(slideDeckInput).toBeRequired();
+    await user.type(
+      slideDeckInput,
+      "https://docs.google.com/presentation/d/dl-lab-1"
+    );
+
+    const meetingInput = screen.getByLabelText(/web conferencing link/i);
+    expect(meetingInput).not.toBeRequired();
+    await user.type(meetingInput, "https://meet.google.com/lab-one-meet");
+
     const windowSelect = screen.getByLabelText(/check-in window/i);
     await user.selectOptions(windowSelect, "45");
 
@@ -101,6 +114,8 @@ describe("AttendanceManagerView Component", () => {
     expect(handleCreateSession).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Deep Learning Lab 1",
+        slideDeckUrl: "https://docs.google.com/presentation/d/dl-lab-1",
+        webConferencingUrl: "https://meet.google.com/lab-one-meet",
         checkinWindowMinutes: 45,
         committeeId: "comm-ai",
       })
@@ -110,12 +125,71 @@ describe("AttendanceManagerView Component", () => {
       "openCheckinImmediately"
     );
 
-    // Newly created session immediately renders in the list with confirmation status banner
+    // Newly created session immediately renders in the list with confirmation status banner and links
     expect(await screen.findByText("Deep Learning Lab 1")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
       /deep learning lab 1/i
     );
     expect(screen.getByText("901234")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /slide deck/i })
+    ).toHaveAttribute(
+      "href",
+      "https://docs.google.com/presentation/d/dl-lab-1"
+    );
+    expect(
+      screen.getByRole("link", { name: /join meeting/i })
+    ).toHaveAttribute("href", "https://meet.google.com/lab-one-meet");
+  });
+
+  it("makes slide deck URL optional for hr_admin and master_admin", async () => {
+    const user = userEvent.setup();
+    const handleCreateSession = vi.fn().mockResolvedValue({
+      ok: true,
+      sessionId: "sess-admin-opt",
+      session: {
+        id: "sess-admin-opt",
+        title: "Branch Town Hall",
+        committeeId: null,
+        committeeName: "Branch-wide",
+        startsAt: new Date(Date.now() + 60 * 60_000),
+        checkinOpen: true,
+        checkinCode: "555111",
+        checkinStartsAt: new Date(Date.now() + 60 * 60_000),
+        checkinEndsAt: new Date(Date.now() + 90 * 60_000),
+        punctualityStartsAt: null,
+        punctualityCutoffMinutes: 15,
+        basePoints: 10,
+        punctualityBonus: 5,
+        slideDeckUrl: null,
+        webConferencingUrl: null,
+        attendanceCount: 0,
+      },
+    });
+
+    render(
+      <AttendanceManagerView
+        sessions={sampleSessions}
+        currentUserRole="hr_admin"
+        onCreateSession={handleCreateSession}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /create session/i }));
+
+    const slideDeckInput = screen.getByLabelText(/slide deck url/i);
+    expect(slideDeckInput).not.toBeRequired();
+
+    await user.type(screen.getByLabelText(/session title/i), "Branch Town Hall");
+    await user.click(screen.getByRole("button", { name: /save session/i }));
+
+    expect(handleCreateSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Branch Town Hall",
+        slideDeckUrl: null,
+        webConferencingUrl: null,
+      })
+    );
   });
 
   it("hides Create Session and explains scope when an hr_member has no assigned committee", () => {

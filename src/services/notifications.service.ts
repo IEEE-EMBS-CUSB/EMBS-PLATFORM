@@ -609,7 +609,7 @@ export async function getHrNavNotifications(
       }
     }
 
-    // 4. /hr/roster — uncovered committees missing an HR officer (for Master & HR Admin)
+    // 4. /hr/roster — uncovered committees missing an HR member (for Master & HR Admin)
     if (profile.role === "master_admin" || profile.role === "hr_admin") {
       const coveredCommitteeIds = new Set(
         activeHrMembers
@@ -626,7 +626,7 @@ export async function getHrNavNotifications(
         badges["/hr/roster"] = {
           count: uncoveredCount,
           tone: "amber",
-          label: `${uncoveredCount} committee${uncoveredCount === 1 ? "" : "s"} missing an HR officer`,
+          label: `${uncoveredCount} committee${uncoveredCount === 1 ? "" : "s"} missing an HR member`,
         };
       }
     }

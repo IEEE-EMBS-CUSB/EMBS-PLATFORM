@@ -303,7 +303,7 @@ export async function getAdminStatisticsDatasetForActor(input: {
     if (isCommitteeScoped) {
       return m.committeeId !== null && allowedCommitteeSet.has(m.committeeId);
     }
-    // Track Director sees members of committees in their track + HR officers tracking those committees
+    // Track Director sees members of committees in their track + HR members tracking those committees
     if (m.role === "hr_member" && m.trackedCommitteeId) {
       return allowedCommitteeSet.has(m.trackedCommitteeId);
     }

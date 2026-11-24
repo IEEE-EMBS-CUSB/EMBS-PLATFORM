@@ -347,7 +347,7 @@ export function HrFeedbackView({
           </p>
           <p>
             <strong>Hidden HR Notes</strong> are visible only to Master Admin,
-            Track Director, HR Admin, and the committee&apos;s HR Officer —{" "}
+            Track Director, HR Admin, and the committee&apos;s HR Member —{" "}
             <strong>
               never visible to the member, attendees, or committee heads
             </strong>

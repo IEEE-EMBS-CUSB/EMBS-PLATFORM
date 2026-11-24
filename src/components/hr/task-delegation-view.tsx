@@ -103,7 +103,7 @@ function getTargetGroupOptions(
       { value: "everyone", label: "Everyone (All Chapter Members)" },
       { value: "all_heads", label: "All Committee Heads" },
       { value: "all_members", label: "All Regular Members" },
-      { value: "all_hr_members", label: "HR Committee (All HR Officers)" },
+      { value: "all_hr_members", label: "HR Committee (All HR Members)" },
       { value: "committee_all", label: "Committee: All (Heads & Members)" },
       { value: "committee_heads", label: "Committee: Heads Only" },
       { value: "committee_members", label: "Committee: Members Only" },
@@ -124,14 +124,14 @@ function getTargetGroupOptions(
   if (role === "hr_admin") {
     if (workType === "assignment") {
       return [
-        { value: "all_hr_members", label: "HR Committee (All HR Officers)" },
+        { value: "all_hr_members", label: "HR Committee (All HR Members)" },
       ];
     }
     return [
       { value: "everyone", label: "Everyone (All Chapter Members)" },
       { value: "all_heads", label: "All Committee Heads" },
       { value: "all_members", label: "All Regular Members" },
-      { value: "all_hr_members", label: "HR Committee (All HR Officers)" },
+      { value: "all_hr_members", label: "HR Committee (All HR Members)" },
       { value: "committee_all", label: "Committee: All (Heads & Members)" },
       { value: "committee_heads", label: "Committee: Heads Only" },
       { value: "committee_members", label: "Committee: Members Only" },
@@ -530,7 +530,7 @@ export function TaskDelegationView({
                 </CardTitle>
                 {currentUserRole === "hr_admin" && isAssignment && (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    HR Admin assignments go to HR committee officers. Switch to
+                    HR Admin assignments go to HR committee members. Switch to
                     Task to assign chapter-wide tasks.
                   </p>
                 )}
