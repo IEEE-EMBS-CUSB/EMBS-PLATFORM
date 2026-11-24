@@ -61,7 +61,7 @@ export function ContextSwitcher({
       return (
         <span
           className={cn(
-            "inline-flex max-w-[200px] items-center truncate rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/95 sm:max-w-[280px]",
+            "inline-flex min-w-0 max-w-[140px] items-center truncate rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/95 sm:max-w-[280px]",
             className
           )}
         >
@@ -233,7 +233,7 @@ export function ContextSwitcher({
               title={model.activeTriggerLabel}
               aria-label={`Switch role or view: ${model.activeTriggerLabel}`}
               className={cn(
-                "inline-flex h-9 max-w-[190px] items-center gap-2 rounded-lg border border-white/25 bg-white/12 px-2.5 text-left text-white transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:max-w-[280px] sm:px-3",
+                "inline-flex h-9 min-w-0 max-w-[140px] items-center gap-1.5 rounded-lg border border-white/25 bg-white/12 px-2 text-left text-white transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:max-w-[280px] sm:gap-2 sm:px-3",
                 className
               )}
             />

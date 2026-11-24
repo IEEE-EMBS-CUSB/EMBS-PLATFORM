@@ -6,23 +6,28 @@ Authoritative record of the product architecture, operational workflows, data la
 
 ## 1. Product Purpose and Operational Invariants
 
-The platform is a database-backed management, recognition, and portal system for IEEE EMBS CUSB. It unifies member tracking, committee deliverables, attendance logging, and monthly leaderboards into a single database-driven application with five non-negotiable operational invariants:
+The platform is a database-backed management, recognition, and portal system for IEEE EMBS CUSB. It unifies member tracking, committee deliverables, attendance logging, and monthly leaderboards into a single database-driven application with six non-negotiable operational invariants:
 
-1. **HR-first, zero direct database editing**:
-   - All chapter administration (seasons, committees, scoring rubrics, roster memberships, sessions, attendance, tasks, grading, point overrides, member feedback, and monthly leaderboard publishing) is controllable through the `/hr` web UI.
+1. **Live production data safety (forward-only schema evolution)**:
+   - The Neon PostgreSQL database holds **real live chapter data** starting with the `2026/2027` season (real members, emails, phone numbers, credentials, attendance, tasks, and scores).
+   - Never wipe, truncate, reset, or run `pnpm db:seed` against Neon or any remote database.
+   - All database migrations must be forward-only (additive/nullable columns and indexes; expand -> migrate -> contract). Never drop columns/tables or destructively rewrite live user records.
+   - Automated tests (`pnpm test`) run exclusively against local Docker Postgres (`embs_portal_test`), and local manual testing uses local Docker Postgres (`embs_portal`).
+2. **HR-first, zero direct database editing**:
+   - All chapter administration (seasons, committees, scoring rubrics, roster memberships, sessions, attendance, tasks, grading, point overrides, member feedback, statistics, and monthly leaderboard publishing) is controllable through the `/hr` web UI.
    - No developer intervention or raw SQL scripts are required for standard operations.
-2. **Multi-season scoping**:
+3. **Multi-season scoping**:
    - Every operational database record is foreign-keyed to a `season_id`.
    - Archived seasons are read-only while archived; the active season cannot be archived directly (seasons transition to archived only when another season is activated, preventing a zero-active-season state). `master_admin` can re-activate an archived season, atomically archiving the previously active season while published `monthly_snapshots` remain permanently frozen.
-3. **Whitelist-only authentication**:
-   - Access is strictly guarded by email presence in `roster_memberships` for the active season.
+4. **Whitelist-only authentication**:
+   - Access is strictly guarded by active presence in `roster_memberships` for the active season.
    - There are no public sign-ups or self-registrations.
-   - Authentication uses email and password (stored with scrypt hashing and enforced password changes on first login), eliminating reliance on external email delivery services.
-4. **Data-layer privacy**:
+   - Authentication uses email address or E.164 phone number plus password (stored on `persons` with scrypt hashing and enforced password changes on first login), eliminating reliance on external email delivery services.
+5. **Data-layer privacy**:
    - Hidden HR notes (`is_published === false`, `category === "internal_note"`) are filtered at the database query layer and are never returned to members, attendees, committee heads, or the subject person across any of their hats.
    - Official Warnings (`category === "warning"`, `is_published === true`) are delivered directly to the warned member's portal alongside Public Recognitions, Excused Absences, and General Notes.
    - Feedback entries may optionally carry a signed `points_delta` bonus/deduction (default `0`, capped by `seasons.settings_json.feedback`), which posts atomically to `score_ledger`.
-5. **Deterministic score derivation**:
+6. **Deterministic score derivation**:
    - Member scores flow through `score_ledger` and are derived deterministically.
    - Published monthly rankings are permanently frozen into immutable records in `monthly_snapshots`.
 
@@ -125,4 +130,5 @@ Access is enforced server-side via `src/proxy.ts` and portal layout guards:
   - CUBES Gold: `#ffc627`
 - **Discipline**: Solid fills, clean geometric cards, and high-contrast typography. No CSS gradients or decorative ECG waveforms.
 - **Header Geometry**: Solid `#772583` header bar with flush-left white `EmbsMark` (`h-9`) from `public/ieee-embs-logo.png`.
+- **Mobile-First Responsiveness**: All portals, cards, filter controls, and modal dialogs must remain usable without horizontal clipping down to `360px` mobile viewports (`min-w-0` on grid/flex containers holding truncated text or `<select>` elements, stacked full-width `<select>` inputs in narrow cards, and `max-h-[90vh] overflow-y-auto` on dialogs).
 - **Component Architecture**: Built on Next.js 16 and `@base-ui/react` with `buttonVariants` and `render` props (no `asChild`).

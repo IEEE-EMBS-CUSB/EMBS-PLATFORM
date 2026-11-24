@@ -733,7 +733,7 @@ export function SeasonManagerView({
                   </div>
                 </div>
 
-                <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
                   <div className="flex items-center gap-1.5">
                     <Button
                       type="button"
@@ -1734,7 +1734,7 @@ export function SeasonManagerView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
-          <div className="relative w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl">
+          <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-white p-6 shadow-xl">
             <button
               type="button"
               aria-label="Close create season modal"
@@ -1783,7 +1783,7 @@ export function SeasonManagerView({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label
                     htmlFor="create-season-start"
@@ -1850,7 +1850,7 @@ export function SeasonManagerView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
-          <div className="w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-white p-6 shadow-xl">
             <div className="flex items-center gap-3 text-[#772583]">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#f5edf7]">
                 <Sparkles className="h-5 w-5" aria-hidden="true" />

@@ -2,16 +2,18 @@
 
 Operations, member recognition, and portal system for the IEEE Engineering in Medicine and Biology Society (EMBS) Cairo University Student Branch (CUSB).
 
-The platform is a database-backed Next.js 16 application running on PostgreSQL via Drizzle ORM. All chapter management (seasons, committee tracks, committees, scoring rubrics, roster memberships, live attendance check-ins, task and assignment delegation, grading, ledger overrides, member feedback, and monthly leaderboard publishing) runs through the `/hr` web UI without manual database edits.
+The platform is a database-backed Next.js 16 application running on PostgreSQL via Drizzle ORM. All chapter management (seasons, committee tracks, committees, scoring rubrics, roster memberships, live attendance check-ins, task and assignment delegation, grading, ledger overrides, member feedback, statistics, and monthly leaderboard publishing) runs through the `/hr` web UI without manual database edits.
+
+> **Live production database notice**: The Neon PostgreSQL instance now holds **real live chapter data** (`2026/2027` season onward). Never wipe, truncate, reset, or run `pnpm db:seed` against Neon. Point local development to Docker Postgres (`embs_portal`), keep tests on `embs_portal_test`, and treat all Neon schema changes as strictly forward-only migrations.
 
 ---
 
 ## Tech stack
 
 - **Framework**: Next.js 16 (App Router, Turbopack, Server Actions, `src/proxy.ts`)
-- **Database**: PostgreSQL 16 (Neon serverless WebSocket Pool in production, Postgres.js for local Docker) with Drizzle ORM
-- **UI**: Base UI (`@base-ui/react`), Lucide React, Tailwind CSS v4, Recharts
-- **Auth & security**: Whitelist-only email + scrypt password login, HMAC-SHA256 signed `HttpOnly` cookies, live DB session revocation, Postgres-backed brute-force rate limiting, HTTP security headers, and SQL-layer privacy filtering for hidden HR notes
+- **Database**: PostgreSQL (Neon serverless WebSocket Pool in production, Postgres.js for local Docker) with Drizzle ORM
+- **UI**: Base UI (`@base-ui/react`), Lucide React, Tailwind CSS v4, Recharts (mobile-first down to 360px viewports)
+- **Auth & security**: Whitelist-only email or phone number + scrypt password login, HMAC-SHA256 signed `HttpOnly` cookies, live DB session revocation, Postgres-backed brute-force rate limiting, HTTP security headers, and SQL-layer privacy filtering for hidden HR notes
 - **Testing**: Vitest, React Testing Library, jsdom against an isolated local Postgres test database (`embs_portal_test`)
 
 ---

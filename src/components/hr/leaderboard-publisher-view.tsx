@@ -252,7 +252,7 @@ export function LeaderboardPublisherView({
             value={selectedMonth}
             disabled={isLoadingMonth}
             onChange={(e) => handleMonthChange(e.target.value)}
-            className="h-10 rounded-md border border-input bg-white px-3 py-1 text-sm font-medium text-[#002855] shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b]"
+            className="h-10 w-full min-w-0 max-w-full rounded-md border border-input bg-white px-3 py-1 text-sm font-medium text-[#002855] shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b] sm:w-auto"
           >
             {availableMonths.map((m) => (
               <option key={m} value={m}>

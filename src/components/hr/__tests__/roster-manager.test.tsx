@@ -462,4 +462,47 @@ describe("RosterManagerView Component", () => {
     });
     expect(headRemoveBtn).not.toBeDisabled();
   });
+
+  it("stacks HR Member Committee Assignment cards and constrains selects and modals for mobile viewports", async () => {
+    const user = userEvent.setup();
+    render(
+      <RosterManagerView
+        currentUserRole="master_admin"
+        members={[
+          {
+            id: "m-hr-long",
+            personId: "p-hr-long",
+            fullName: "Omar Alaa Eldin Naeem Ali Mohamed Youssef",
+            email: "oa0734246@gmail.com",
+            committeeName: "Unassigned",
+            committeeId: null,
+            role: "hr_member",
+            isActive: true,
+          },
+        ]}
+      />
+    );
+
+    // HR Member Committee Assignment card must stack vertically with min-w-0 and a full-width select
+    const hrSelect = screen.getByLabelText(
+      /assign tracked committee for hr member omar alaa eldin/i
+    );
+    expect(hrSelect.className).toContain("w-full");
+    expect(hrSelect.className).toContain("min-w-0");
+    const hrCard = hrSelect.parentElement!;
+    expect(hrCard.className).toContain("flex-col");
+    expect(hrCard.className).toContain("min-w-0");
+
+    // Filter selects must have min-w-0 and max-w-full so long committee names never clip on mobile
+    const committeeFilter = screen.getByLabelText("Filter by committee");
+    expect(committeeFilter.className).toContain("min-w-0");
+    expect(committeeFilter.className).toContain("max-w-full");
+
+    // Add Member modal panel must support vertical scroll on mobile viewports
+    await user.click(screen.getByRole("button", { name: /add member/i }));
+    const dialog = screen.getByRole("dialog", { name: /add member to roster/i });
+    const modalPanel = dialog.firstElementChild as HTMLElement;
+    expect(modalPanel.className).toContain("max-h-[90vh]");
+    expect(modalPanel.className).toContain("overflow-y-auto");
+  });
 });

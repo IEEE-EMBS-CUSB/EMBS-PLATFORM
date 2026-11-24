@@ -35,7 +35,7 @@ interface SeasonLeaderboardPanelProps {
 }
 
 const FILTER_SELECT_CLASS =
-  "h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583] sm:w-auto";
+  "h-10 w-full min-w-0 max-w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583] sm:w-auto";
 
 const TIER_BADGE_CLASSES: Record<string, string> = {
   Diamond: "bg-[#772583] text-white",

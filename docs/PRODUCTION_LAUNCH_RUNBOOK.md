@@ -1,6 +1,14 @@
-# Production Launch & Database Transfer Runbook
+# Production Launch & Database Operations Runbook
 
-This runbook explains how to:
+> **STATUS: LIVE IN PRODUCTION (`2026/2027` season)**
+>
+> The primary Neon database now contains **real live IEEE EMBS CUSB member data**.
+> - **Do NOT wipe, truncate, reset, or run `pnpm db:seed` on Neon.**
+> - **All future schema updates must be forward-only Drizzle migrations** (`drizzle/00XX_*.sql`), applied with `pnpm db:migrate` only after verifying locally against Docker Postgres (`embs_portal_test` / `embs_portal`).
+> - Use local Docker Postgres (`embs_portal`) for manual UI testing and `embs_portal_test` for automated tests (`pnpm test`).
+> - Never commit member CSV files (`*.csv` is gitignored).
+
+This runbook documents the production database architecture and initial launch/transfer steps:
 1. Keep your current Neon testing/showcase database safe while moving a local copy onto Docker Postgres so you can keep testing locally.
 2. Provision and initialize a clean production PostgreSQL database with all 12 official IEEE EMBS CUSB committees, 3 tracks, default rubrics, and your initial `master_admin` account (zero fake demo data).
 3. Upload your real chapter committee roster via CSV or the `/hr/roster` UI.

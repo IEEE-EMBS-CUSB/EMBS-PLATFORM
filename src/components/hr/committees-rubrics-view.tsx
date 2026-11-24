@@ -685,7 +685,7 @@ export function CommitteesRubricsView({
                               <CardTitle className="font-heading text-base font-bold text-[#002855]">
                                 {comm.name}
                               </CardTitle>
-                              <code className="text-[11px] text-muted-foreground">
+                              <code className="block truncate text-[11px] text-muted-foreground">
                                 /{comm.slug}
                               </code>
                             </div>
@@ -715,7 +715,7 @@ export function CommitteesRubricsView({
                             </div>
                           </div>
                         </CardHeader>
-                        <CardContent className="mt-auto flex items-center justify-between gap-2 border-t border-border/60 bg-[#f8f9fb]/60 py-2.5 text-xs text-muted-foreground">
+                        <CardContent className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border/60 bg-[#f8f9fb]/60 py-2.5 text-xs text-muted-foreground">
                           <span>
                             <strong className="text-[#002855] tabular-nums">
                               {comm.memberCount}
@@ -730,7 +730,7 @@ export function CommitteesRubricsView({
                               onChange={(e) =>
                                 handleMoveCommitteeTrack(comm, e.target.value)
                               }
-                              className="h-7 max-w-[140px] rounded border border-border bg-white px-2 text-[11px] font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                              className="h-7 min-w-0 max-w-[140px] rounded border border-border bg-white px-2 text-[11px] font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                             >
                               {tracks.map((t) => (
                                 <option key={t.id} value={t.id}>
@@ -761,7 +761,7 @@ export function CommitteesRubricsView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
-          <div className="relative w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl">
+          <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-white p-6 shadow-xl">
             <button
               type="button"
               aria-label="Close track modal"
@@ -860,7 +860,7 @@ export function CommitteesRubricsView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
-          <div className="relative w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl">
+          <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-white p-6 shadow-xl">
             <button
               type="button"
               aria-label="Close add committee modal"

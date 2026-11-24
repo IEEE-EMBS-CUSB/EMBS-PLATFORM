@@ -1791,7 +1791,7 @@ export function AttendanceManagerView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
         >
-          <div className="relative flex w-full max-w-lg flex-col items-center rounded-2xl border border-border bg-white p-8 text-center shadow-2xl">
+          <div className="relative flex max-h-[90vh] w-full max-w-lg flex-col items-center overflow-y-auto rounded-2xl border border-border bg-white p-5 text-center shadow-2xl sm:p-8">
             <button
               type="button"
               aria-label="Close check-in"
@@ -2079,7 +2079,7 @@ export function AttendanceManagerView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
-          <div className="relative w-full max-w-md rounded-2xl border border-border bg-white p-6 shadow-2xl">
+          <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-white p-6 shadow-2xl">
             <button
               type="button"
               aria-label="Cancel re-open"

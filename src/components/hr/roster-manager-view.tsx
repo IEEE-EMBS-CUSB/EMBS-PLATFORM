@@ -168,10 +168,10 @@ const ROLE_BADGE_COLORS: Record<MembershipRole, string> = {
 };
 
 const SELECT_CLASS =
-  "h-8 max-w-[190px] rounded-md border border-border bg-white px-2 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]";
+  "h-8 min-w-0 max-w-[190px] rounded-md border border-border bg-white px-2 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]";
 
 const FILTER_SELECT_CLASS =
-  "h-10 rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]";
+  "h-10 w-full min-w-0 max-w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583] sm:w-auto";
 
 export function RosterManagerView({
   members: initialMembers,
@@ -1038,7 +1038,7 @@ export function RosterManagerView({
               {activeHrMembers.map((hr) => (
                 <div
                   key={`hr-assign-${hr.id}`}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-border bg-[#f8f9fb] p-3"
+                  className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-[#f8f9fb] p-3"
                 >
                   <div className="min-w-0">
                     <p className="truncate font-heading text-xs font-bold text-[#002855]">
@@ -1054,7 +1054,7 @@ export function RosterManagerView({
                     onChange={(e) =>
                       handleCommitteeChange(hr.id, e.target.value)
                     }
-                    className={SELECT_CLASS}
+                    className="h-9 w-full min-w-0 max-w-full rounded-md border border-border bg-white px-2.5 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                   >
                     <option value="">Unassigned</option>
                     {trackableCommittees.map((c) => (
@@ -1359,7 +1359,7 @@ export function RosterManagerView({
           </div>
 
           {/* Filter Selects */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2.5">
             <select
               aria-label="Filter by role"
               value={roleFilter}
@@ -1416,28 +1416,33 @@ export function RosterManagerView({
               <option value="inactive">Deactivated</option>
             </select>
 
-            {hasActiveFilters && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearch("");
-                  setRoleFilter("all");
-                  setCommitteeFilter("all");
-                  setTrackFilter("all");
-                  setStatusFilter("active");
-                }}
-                className="h-9 text-xs font-semibold text-[#772583] hover:bg-[#f5edf7]"
-              >
-                Reset filters
-              </Button>
-            )}
+            <div className="col-span-2 flex items-center justify-between gap-2 pt-1 sm:ml-auto sm:pt-0">
+              {hasActiveFilters ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSearch("");
+                    setRoleFilter("all");
+                    setCommitteeFilter("all");
+                    setTrackFilter("all");
+                    setStatusFilter("active");
+                  }}
+                  className="h-9 text-xs font-semibold text-[#772583] hover:bg-[#f5edf7]"
+                >
+                  Reset filters
+                </Button>
+              ) : (
+                <span />
+              )}
 
-            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-              Showing <strong className="text-[#002855]">{filtered.length}</strong>{" "}
-              of {members.length}
-            </span>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                Showing{" "}
+                <strong className="text-[#002855]">{filtered.length}</strong> of{" "}
+                {members.length}
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1809,7 +1814,7 @@ export function RosterManagerView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
-          <div className="relative w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl">
+          <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-white p-6 shadow-xl">
             <button
               type="button"
               aria-label="Close add member modal"
@@ -2011,7 +2016,7 @@ export function RosterManagerView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
-          <div className="relative w-full max-w-2xl rounded-xl border border-border bg-white p-6 shadow-xl">
+          <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-white p-6 shadow-xl">
             <button
               type="button"
               aria-label="Close import modal"
@@ -2131,7 +2136,7 @@ export function RosterManagerView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
         >
-          <div className="relative w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl">
+          <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-white p-6 shadow-xl">
             <button
               type="button"
               aria-label="Close password modal"
