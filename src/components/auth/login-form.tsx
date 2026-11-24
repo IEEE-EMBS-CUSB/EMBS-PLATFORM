@@ -228,7 +228,7 @@ export function LoginForm({
                     autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@cu.edu.eg or 01012345678"
+                    placeholder="name@gmail.com or 01012345678"
                     className="h-11 pl-9"
                     required
                   />

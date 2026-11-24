@@ -25,6 +25,9 @@ describe("Production fresh-install bootstrap (src/db/bootstrap.ts)", () => {
     const masterEmail = `bootstrap.master.${suffix}@cu.edu.eg`;
     const memberEmail = `bootstrap.member.${suffix}@cu.edu.eg`;
 
+    const masterPhone = `010${String(Date.now()).slice(-8)}`;
+    const memberPhone = `011${String(Date.now() + 1).slice(-8)}`;
+
     const res = await bootstrapProductionDatabase({
       seasonName,
       startDate: "2026-09-01",
@@ -32,10 +35,11 @@ describe("Production fresh-install bootstrap (src/db/bootstrap.ts)", () => {
       activateSeason: false, // keep existing test DB active season intact
       masterFullName: "Chapter Chair",
       masterEmail,
+      masterPhoneNumber: masterPhone,
       masterPassword: "InitBootstrap#2026",
       rosterCsv: [
-        "full_name,email,committee_slug,role",
-        `Real AI Member,${memberEmail},ai-and-machine-learning,member`,
+        "full_name,email,committee_slug,role,phone_number",
+        `Real AI Member,${memberEmail},ai-and-machine-learning,member,${memberPhone}`,
       ].join("\n"),
     });
 
@@ -74,9 +78,16 @@ describe("Production fresh-install bootstrap (src/db/bootstrap.ts)", () => {
       .from(schema.persons)
       .where(eq(schema.persons.id, res.masterPersonId));
     expect(masterPerson.mustChangePassword).toBe(true);
+    expect(masterPerson.phoneNumber).toBe(`+2${masterPhone}`);
     expect(verifyPassword("InitBootstrap#2026", masterPerson.passwordHash)).toBe(
       true
     );
+
+    const [importedPerson] = await db
+      .select()
+      .from(schema.persons)
+      .where(eq(schema.persons.id, res.importedRoster[0].personId));
+    expect(importedPerson.phoneNumber).toBe(`+2${memberPhone}`);
 
     // Zero mock snapshots or fake demo accounts in this clean season
     const snapshots = await db

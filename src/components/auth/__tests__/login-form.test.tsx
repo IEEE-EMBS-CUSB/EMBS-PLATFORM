@@ -10,7 +10,10 @@ describe("LoginForm (Pre-assigned Password & First-Login Reset)", () => {
     expect(
       screen.getByRole("heading", { name: /sign in to chapter portal/i })
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/email address/i)).toHaveAttribute(
+      "placeholder",
+      "name@gmail.com or 01012345678"
+    );
     expect(screen.getByLabelText(/^password/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /sign in/i })

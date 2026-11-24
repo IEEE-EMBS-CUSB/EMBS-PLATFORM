@@ -17,6 +17,7 @@ import {
   DEFAULT_COMMITTEE_TRACKS,
   DEFAULT_SEASON_SETTINGS,
 } from "@/lib/season-settings";
+import { normalizePhoneNumber } from "@/lib/phone";
 import { parseRosterCsv } from "@/services/hr.service";
 
 export interface BootstrapInput {
@@ -27,8 +28,9 @@ export interface BootstrapInput {
   activateSeason?: boolean;
   masterFullName: string;
   masterEmail: string;
+  masterPhoneNumber?: string;
   masterPassword?: string;
-  /** Optional raw CSV text (`full_name,email,committee_slug,role`) to import initial roster. */
+  /** Optional raw CSV text (`full_name,email,committee_slug,role[,phone_number]`) to import initial roster. */
   rosterCsv?: string;
 }
 
@@ -75,6 +77,16 @@ export async function bootstrapProductionDatabase(
     throw new Error(
       "BOOTSTRAP_MASTER_NAME and a valid BOOTSTRAP_MASTER_EMAIL are required."
     );
+  }
+
+  let masterPhoneNumber: string | null = null;
+  if (input.masterPhoneNumber && input.masterPhoneNumber.trim()) {
+    masterPhoneNumber = normalizePhoneNumber(input.masterPhoneNumber);
+    if (!masterPhoneNumber) {
+      throw new Error(
+        `Invalid BOOTSTRAP_MASTER_PHONE: "${input.masterPhoneNumber}"`
+      );
+    }
   }
 
   const startDate = input.startDate ? new Date(input.startDate) : new Date();
@@ -204,6 +216,7 @@ export async function bootstrapProductionDatabase(
         .insert(schema.persons)
         .values({
           email: masterEmail,
+          phoneNumber: masterPhoneNumber,
           fullName: masterFullName,
           passwordHash: hashPassword(masterTempPassword),
           mustChangePassword: true,
@@ -211,6 +224,12 @@ export async function bootstrapProductionDatabase(
         })
         .returning();
       masterCreated = true;
+    } else if (!masterPerson.phoneNumber && masterPhoneNumber) {
+      [masterPerson] = await tx
+        .update(schema.persons)
+        .set({ phoneNumber: masterPhoneNumber, updatedAt: new Date() })
+        .where(eq(schema.persons.id, masterPerson.id))
+        .returning();
     }
 
     await tx
@@ -266,6 +285,10 @@ export async function bootstrapProductionDatabase(
           .where(eq(schema.persons.email, rec.email))
           .limit(1);
 
+        const normalizedCsvPhone = rec.phoneNumber
+          ? normalizePhoneNumber(rec.phoneNumber)
+          : null;
+
         let tempPassword: string | undefined;
         if (!person) {
           tempPassword = getDefaultMemberPassword();
@@ -273,11 +296,18 @@ export async function bootstrapProductionDatabase(
             .insert(schema.persons)
             .values({
               email: rec.email,
+              phoneNumber: normalizedCsvPhone,
               fullName: rec.fullName,
               passwordHash: hashPassword(tempPassword),
               mustChangePassword: true,
               isActive: true,
             })
+            .returning();
+        } else if (!person.phoneNumber && normalizedCsvPhone) {
+          [person] = await tx
+            .update(schema.persons)
+            .set({ phoneNumber: normalizedCsvPhone, updatedAt: new Date() })
+            .where(eq(schema.persons.id, person.id))
             .returning();
         }
 
@@ -347,6 +377,7 @@ if (process.argv[1]?.endsWith("bootstrap.ts")) {
     endDate: process.env.BOOTSTRAP_SEASON_END,
     masterFullName: process.env.BOOTSTRAP_MASTER_NAME ?? "",
     masterEmail: process.env.BOOTSTRAP_MASTER_EMAIL ?? "",
+    masterPhoneNumber: process.env.BOOTSTRAP_MASTER_PHONE,
     masterPassword: process.env.BOOTSTRAP_MASTER_PASSWORD,
     rosterCsv,
   })
