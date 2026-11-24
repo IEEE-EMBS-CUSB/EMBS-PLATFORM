@@ -720,6 +720,13 @@ export async function gradeTaskSubmissionAsActor(
       .where(eq(schema.rosterMemberships.id, submission.membershipId))
       .limit(1);
     if (!member) return { ok: false, error: "Assignee record not found." };
+    if (actor.profile.role === "hr_member" && member.role !== "member") {
+      return {
+        ok: false,
+        error:
+          "Unauthorized: HR members cannot verify or change points for committee heads or leadership.",
+      };
+    }
 
     const actorPersonId = await resolveActorPersonId(actor);
     if (
@@ -877,6 +884,13 @@ export async function toggleTaskCompletionAsActor(
       .where(eq(schema.rosterMemberships.id, submission.membershipId))
       .limit(1);
     if (!member) return { ok: false, error: "Assignee record not found." };
+    if (actor.profile.role === "hr_member" && member.role !== "member") {
+      return {
+        ok: false,
+        error:
+          "Unauthorized: HR members cannot verify or change points for committee heads or leadership.",
+      };
+    }
 
     const actorPersonId = await resolveActorPersonId(actor);
     if (

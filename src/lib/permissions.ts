@@ -29,6 +29,7 @@ export function getOperationalCommitteeScope(
 }
 
 export type HrModuleName =
+  | "statistics"
   | "seasons"
   | "committees"
   | "roster"
@@ -260,17 +261,27 @@ export function canManageWorkItem(
 /**
  * Award bonus or point overrides in score_ledger.
  * Master and HR Admin can award across all committees.
- * HR Member and Committee Head can award only to members in their operational committee.
+ * HR Member can award only to regular members (`member`) in their tracked committee
+ * (never to committee heads or leadership roles).
+ * Committee Head can award to members in their committee.
  * Directors have read-only access to the points ledger and cannot edit points.
  */
 export function canAwardBonus(
   user: UserPermissionContext,
-  targetMemberCommitteeId: string | null
+  targetMemberCommitteeId: string | null,
+  targetMemberRole?: MembershipRole
 ): boolean {
   if (user.role === "master_admin" || user.role === "hr_admin") {
     return true;
   }
-  if (user.role === "hr_member" || user.role === "committee_head") {
+  if (user.role === "hr_member") {
+    if (targetMemberRole && targetMemberRole !== "member") {
+      return false;
+    }
+    const scopeId = getOperationalCommitteeScope(user);
+    return scopeId !== null && scopeId === targetMemberCommitteeId;
+  }
+  if (user.role === "committee_head") {
     const scopeId = getOperationalCommitteeScope(user);
     return scopeId !== null && scopeId === targetMemberCommitteeId;
   }
@@ -327,6 +338,14 @@ export function canGiveFeedback(
 }
 
 /**
+ * Determine whether a role can switch between active/archived seasons on `/hr/statistics`.
+ * Restricted to chapter-wide admin roles (`master_admin` and `hr_admin`).
+ */
+export function canSwitchStatisticsSeason(role: MembershipRole): boolean {
+  return role === "master_admin" || role === "hr_admin";
+}
+
+/**
  * Determine which top-level modules in the /hr navigation shell are visible.
  */
 export function canAccessHrModule(
@@ -334,6 +353,15 @@ export function canAccessHrModule(
   moduleName: HrModuleName
 ): boolean {
   switch (moduleName) {
+    case "statistics":
+      return (
+        role === "master_admin" ||
+        role === "director" ||
+        role === "hr_admin" ||
+        role === "hr_member" ||
+        role === "committee_head"
+      );
+
     case "seasons":
       // Master manages lifecycle + settings; HR Admin configures season settings
       return role === "master_admin" || role === "hr_admin";
@@ -606,6 +634,10 @@ export function canGradeWorkSubmission(input: {
   }
 
   if (actor.personId && submissionPersonId && actor.personId === submissionPersonId) {
+    return false;
+  }
+
+  if (actor.role === "hr_member" && memberRole !== "member") {
     return false;
   }
 

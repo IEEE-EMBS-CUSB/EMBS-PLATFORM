@@ -56,4 +56,52 @@ describe("LeaderboardNav — Committee Leaders & Per-Committee navigation", () =
     expect(octLinks.length).toBeGreaterThan(0);
     expect(octLinks[0]).toHaveAttribute("href", "/leaderboards?month=2026-10");
   });
+
+  it("groups committees under their season-defined track headings rather than hardcoded Technical/Non-technical", () => {
+    render(
+      <LeaderboardNav
+        committees={[
+          {
+            id: "c-ai",
+            slug: "ai-and-machine-learning",
+            name: "AI and Machine Learning",
+            shortName: "AI & ML",
+            track: "technical",
+            trackSlug: "technical",
+            trackName: "Technical",
+            trackSortOrder: 1,
+            description: "",
+          },
+          {
+            id: "c-design",
+            slug: "graphic-design",
+            name: "Graphic Design",
+            shortName: "Design",
+            track: "non_technical",
+            trackSlug: "creative",
+            trackName: "Creative",
+            trackSortOrder: 2,
+            description: "",
+          },
+          {
+            id: "c-hr",
+            slug: "human-resources",
+            name: "Human Resources",
+            shortName: "HR",
+            track: "non_technical",
+            trackSlug: "operations",
+            trackName: "Operations",
+            trackSortOrder: 3,
+            description: "",
+          },
+        ]}
+        months={[]}
+        activeMonth="2026-11"
+      />
+    );
+
+    expect(screen.getAllByText(/^creative$/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^operations$/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/non-technical/i)).not.toBeInTheDocument();
+  });
 });

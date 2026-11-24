@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Crown, UserRound } from "lucide-react";
+import {
+  groupCommitteesByTrack,
+  resolveCommitteeTrackMeta,
+} from "@/lib/committee-catalog";
 import { cn } from "@/lib/utils";
-import type { CommitteeLeaderSpotlight, CommitteeTrack } from "@/types";
+import type { CommitteeLeaderSpotlight } from "@/types";
 
-type TrackFilter = "all" | CommitteeTrack;
+type TrackFilter = "all" | string;
 
 const AVATAR_BG_BY_SLUG: Record<string, string> = {
   "ai-and-machine-learning": "bg-[#002855]",
@@ -38,17 +42,17 @@ export function CommitteeLeadersShowcase({
 }: CommitteeLeadersShowcaseProps) {
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
 
-  const technicalCount = spotlights.filter(
-    (item) => item.committee.track === "technical"
-  ).length;
-  const nonTechnicalCount = spotlights.filter(
-    (item) => item.committee.track === "non_technical"
-  ).length;
+  const trackGroups = useMemo(
+    () => groupCommitteesByTrack(spotlights.map((item) => item.committee)),
+    [spotlights]
+  );
 
   const filtered =
     trackFilter === "all"
       ? spotlights
-      : spotlights.filter((item) => item.committee.track === trackFilter);
+      : spotlights.filter(
+          (item) => resolveCommitteeTrackMeta(item.committee).slug === trackFilter
+        );
 
   const filterOptions: {
     id: TrackFilter;
@@ -56,12 +60,11 @@ export function CommitteeLeadersShowcase({
     count: number;
   }[] = [
     { id: "all", label: "All", count: spotlights.length },
-    { id: "technical", label: "Technical", count: technicalCount },
-    {
-      id: "non_technical",
-      label: "Non-technical",
-      count: nonTechnicalCount,
-    },
+    ...trackGroups.map((group) => ({
+      id: group.slug,
+      label: group.name,
+      count: group.committees.length,
+    })),
   ];
 
   return (
@@ -84,7 +87,7 @@ export function CommitteeLeadersShowcase({
           <div
             role="group"
             aria-label="Filter committees by track"
-            className="inline-flex rounded-lg border border-border bg-white p-1"
+            className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-white p-1"
           >
             {filterOptions.map((option) => {
               const isActive = trackFilter === option.id;

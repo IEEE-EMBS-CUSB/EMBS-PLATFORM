@@ -4,8 +4,12 @@ import {
 } from "@/lib/committee-catalog";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { eq, desc, and } from "drizzle-orm";
-import { normalizeSeasonSettings } from "@/lib/season-settings";
+import { eq, desc, and, asc } from "drizzle-orm";
+import {
+  DEFAULT_COMMITTEE_TRACKS,
+  inferDefaultTrackSlug,
+  normalizeSeasonSettings,
+} from "@/lib/season-settings";
 import {
   isCommitteeBoardEligibleRole,
   isHrMemberEligibleForCommittee,
@@ -133,28 +137,59 @@ export async function getCommittees(): Promise<Committee[]> {
     if (!seasonId) return [];
 
     const rows = await db
-      .select()
+      .select({
+        id: schema.committees.id,
+        slug: schema.committees.slug,
+        name: schema.committees.name,
+        category: schema.committees.category,
+        trackId: schema.committees.trackId,
+        trackSlug: schema.committeeTracks.slug,
+        trackName: schema.committeeTracks.name,
+        trackSortOrder: schema.committeeTracks.sortOrder,
+      })
       .from(schema.committees)
+      .leftJoin(
+        schema.committeeTracks,
+        eq(schema.committees.trackId, schema.committeeTracks.id)
+      )
       .where(
         and(
           eq(schema.committees.seasonId, seasonId),
           eq(schema.committees.isActive, true)
         )
+      )
+      .orderBy(
+        asc(schema.committeeTracks.sortOrder),
+        asc(schema.committees.name)
       );
 
     if (rows.length > 0) {
       const catalogMap = new Map(
         OFFICIAL_CHAPTER_COMMITTEES.map((c) => [c.slug, c])
       );
+      const defaultTrackBySlug = new Map(
+        DEFAULT_COMMITTEE_TRACKS.map((t) => [t.slug, t])
+      );
 
       return rows.map((c) => {
         const existing = catalogMap.get(c.slug);
+        const inferredSlug = inferDefaultTrackSlug({
+          name: c.name,
+          slug: c.slug,
+          category: c.category,
+        });
+        const fallbackTrack = defaultTrackBySlug.get(inferredSlug);
         return {
           id: c.id,
           slug: c.slug,
           name: c.name,
           shortName: existing?.shortName ?? c.name,
           track: c.category as "technical" | "non_technical",
+          trackId: c.trackId ?? null,
+          trackSlug: c.trackSlug ?? inferredSlug,
+          trackName: c.trackName ?? fallbackTrack?.name ?? inferredSlug,
+          trackSortOrder:
+            c.trackSortOrder ?? fallbackTrack?.sortOrder ?? 99,
           description: existing?.description ?? "",
         };
       });

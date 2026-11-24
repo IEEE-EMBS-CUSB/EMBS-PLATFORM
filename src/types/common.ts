@@ -10,6 +10,10 @@ export interface Committee {
   name: string;
   shortName: string;
   track: CommitteeTrack;
+  trackId?: string | null;
+  trackSlug?: string | null;
+  trackName?: string | null;
+  trackSortOrder?: number | null;
   description: string;
 }
 

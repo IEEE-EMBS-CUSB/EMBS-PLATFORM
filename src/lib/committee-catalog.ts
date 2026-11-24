@@ -191,17 +191,94 @@ export const OFFICIAL_SCORING_RUBRICS = [
   },
 ] as const;
 
+const DEFAULT_TRACK_META: Record<
+  "technical" | "creative" | "operations",
+  { name: string; sortOrder: number }
+> = {
+  technical: { name: "Technical", sortOrder: 1 },
+  creative: { name: "Creative", sortOrder: 2 },
+  operations: { name: "Operations", sortOrder: 3 },
+};
+
+export interface CommitteeTrackGroup {
+  slug: string;
+  name: string;
+  sortOrder: number;
+  committees: Committee[];
+}
+
+export function resolveCommitteeTrackMeta(committee: Committee): {
+  slug: string;
+  name: string;
+  sortOrder: number;
+} {
+  if (committee.trackSlug && committee.trackName) {
+    return {
+      slug: committee.trackSlug,
+      name: committee.trackName,
+      sortOrder: committee.trackSortOrder ?? 99,
+    };
+  }
+  const catalogMatch = OFFICIAL_CHAPTER_COMMITTEES.find(
+    (c) => c.slug === committee.slug
+  );
+  if (catalogMatch) {
+    const meta = DEFAULT_TRACK_META[catalogMatch.defaultTrackSlug];
+    return {
+      slug: catalogMatch.defaultTrackSlug,
+      name: meta.name,
+      sortOrder: meta.sortOrder,
+    };
+  }
+  if (committee.track === "technical") {
+    return { slug: "technical", name: "Technical", sortOrder: 1 };
+  }
+  return { slug: "operations", name: "Operations", sortOrder: 3 };
+}
+
+export function groupCommitteesByTrack(
+  committees: readonly Committee[]
+): CommitteeTrackGroup[] {
+  const bySlug = new Map<string, CommitteeTrackGroup>();
+  for (const committee of committees) {
+    const meta = resolveCommitteeTrackMeta(committee);
+    const existing = bySlug.get(meta.slug);
+    if (existing) {
+      existing.committees.push(committee);
+      if (meta.sortOrder < existing.sortOrder) {
+        existing.sortOrder = meta.sortOrder;
+      }
+    } else {
+      bySlug.set(meta.slug, {
+        slug: meta.slug,
+        name: meta.name,
+        sortOrder: meta.sortOrder,
+        committees: [committee],
+      });
+    }
+  }
+
+  return Array.from(bySlug.values()).sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 export function findOfficialCommitteeBySlug(
   slug: string
 ): Committee | undefined {
   const found = OFFICIAL_CHAPTER_COMMITTEES.find((c) => c.slug === slug);
   if (!found) return undefined;
+  const meta = DEFAULT_TRACK_META[found.defaultTrackSlug];
   return {
     id: found.id,
     slug: found.slug,
     name: found.name,
     shortName: found.shortName,
     track: found.track,
+    trackSlug: found.defaultTrackSlug,
+    trackName: meta.name,
+    trackSortOrder: meta.sortOrder,
     description: found.description,
   };
 }

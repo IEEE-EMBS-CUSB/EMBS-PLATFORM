@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/states/empty-state";
 import { LeaderboardLoadingState } from "@/components/states/loading-state";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { resolveCommitteeTrackMeta } from "@/lib/committee-catalog";
 import { formatDisplayDate } from "@/lib/format";
 import { getServerSession } from "@/lib/session-cookie";
 import { cn } from "@/lib/utils";
@@ -91,14 +92,14 @@ async function CommitteeLeaderboardContent({
                 variant="secondary"
                 className={cn(
                   "font-medium",
-                  committee.track === "technical"
+                  resolveCommitteeTrackMeta(committee).slug === "technical"
                     ? "bg-[#e3f5f6] text-[#007377]"
-                    : "bg-[#ebf3f8] text-[#00629b]"
+                    : resolveCommitteeTrackMeta(committee).slug === "creative"
+                      ? "bg-[#f5edf7] text-[#5a1b63]"
+                      : "bg-[#ebf3f8] text-[#00629b]"
                 )}
               >
-                {committee.track === "technical"
-                  ? "Technical committee"
-                  : "Non-technical committee"}
+                {resolveCommitteeTrackMeta(committee).name}
               </Badge>
             </div>
             <p className="max-w-2xl text-sm text-muted-foreground">

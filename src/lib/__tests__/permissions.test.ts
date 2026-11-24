@@ -16,6 +16,7 @@ import {
   canManageCommitteeSessions,
   canViewAllCommittees,
   canAccessHrModule,
+  canSwitchStatisticsSeason,
   canAssignTaskToRole,
   canReceiveTasksFromRole,
   canAssignTask,
@@ -200,9 +201,40 @@ describe("RBAC Permissions Engine", () => {
       // Director has read-only ledger access and CANNOT edit/award points
       expect(canAwardBonus(directorUser, commAi)).toBe(false);
 
-      // HR member can award bonus to members of their committee
+      // HR member can award bonus to regular members of their committee,
+      // but CANNOT award/deduct points for committee heads or other leadership roles
       expect(canAwardBonus(hrMemberAiUser, commAi)).toBe(true);
+      expect(canAwardBonus(hrMemberAiUser, commAi, "member")).toBe(true);
+      expect(canAwardBonus(hrMemberAiUser, commAi, "committee_head")).toBe(false);
+      expect(canAwardBonus(hrMemberAiUser, commAi, "director")).toBe(false);
+      expect(canAwardBonus(hrMemberAiUser, commAi, "hr_admin")).toBe(false);
       expect(canAwardBonus(hrMemberAiUser, commWeb)).toBe(false);
+
+      // Master admin & HR admin CAN award bonus to committee heads
+      expect(canAwardBonus(masterUser, commAi, "committee_head")).toBe(true);
+      expect(canAwardBonus(hrAdminUser, commAi, "committee_head")).toBe(true);
+
+      // HR member cannot verify/grade task submissions belonging to a committee head
+      expect(
+        canGradeWorkSubmission({
+          actor: hrMemberAiUser,
+          workType: "task",
+          taskCommitteeId: commAi,
+          submissionMembershipId: headAiUser.id,
+          memberRole: "committee_head",
+          memberCommitteeId: commAi,
+        })
+      ).toBe(false);
+      expect(
+        canGradeWorkSubmission({
+          actor: hrMemberAiUser,
+          workType: "task",
+          taskCommitteeId: commAi,
+          submissionMembershipId: memberAiUser.id,
+          memberRole: "member",
+          memberCommitteeId: commAi,
+        })
+      ).toBe(true);
 
       // Committee head can award bonus to members of their committee
       expect(canAwardBonus(headAiUser, commAi)).toBe(true);
@@ -253,6 +285,23 @@ describe("RBAC Permissions Engine", () => {
       expect(canAccessHrModule("director", "publishing")).toBe(false);
       expect(canAccessHrModule("hr_member", "publishing")).toBe(false);
       expect(canAccessHrModule("committee_head", "publishing")).toBe(false);
+
+      // Statistics module (accessible to every role that enters /hr, blocked for member/attendee)
+      expect(canAccessHrModule("master_admin", "statistics")).toBe(true);
+      expect(canAccessHrModule("director", "statistics")).toBe(true);
+      expect(canAccessHrModule("hr_admin", "statistics")).toBe(true);
+      expect(canAccessHrModule("hr_member", "statistics")).toBe(true);
+      expect(canAccessHrModule("committee_head", "statistics")).toBe(true);
+      expect(canAccessHrModule("member", "statistics")).toBe(false);
+      expect(canAccessHrModule("attendee", "statistics")).toBe(false);
+
+      // Season switching on statistics (chapter-wide admin roles only)
+      expect(canSwitchStatisticsSeason("master_admin")).toBe(true);
+      expect(canSwitchStatisticsSeason("hr_admin")).toBe(true);
+      expect(canSwitchStatisticsSeason("director")).toBe(false);
+      expect(canSwitchStatisticsSeason("hr_member")).toBe(false);
+      expect(canSwitchStatisticsSeason("committee_head")).toBe(false);
+      expect(canSwitchStatisticsSeason("member")).toBe(false);
     });
   });
 

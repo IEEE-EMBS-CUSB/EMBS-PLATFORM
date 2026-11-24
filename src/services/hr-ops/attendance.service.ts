@@ -785,6 +785,13 @@ export async function setSessionMemberAttendanceAsActor(
     if (!member) {
       return { ok: false, error: "Active member not found in this season." };
     }
+    if (actor.profile.role === "hr_member" && member.role !== "member") {
+      return {
+        ok: false,
+        error:
+          "Unauthorized: HR members cannot modify attendance points for committee heads or leadership.",
+      };
+    }
 
     const isAttendee = member.role === "attendee";
     const monthKey = formatMonthInCairo(session.startsAt);

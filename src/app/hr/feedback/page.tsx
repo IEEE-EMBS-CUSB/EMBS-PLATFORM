@@ -28,6 +28,7 @@ export default async function HrFeedbackPage() {
     fullName: string;
     committeeName: string;
     email: string;
+    canAwardPoints?: boolean;
   }> = [];
   let feedbackList: FeedbackItem[] = [];
   let feedbackCaps: SeasonFeedbackSettings = DEFAULT_SEASON_SETTINGS.feedback;
@@ -72,6 +73,7 @@ export default async function HrFeedbackPage() {
             email: schema.persons.email,
             personActive: schema.persons.isActive,
             committeeId: schema.rosterMemberships.committeeId,
+            role: schema.rosterMemberships.role,
             isActive: schema.rosterMemberships.isActive,
           })
           .from(schema.rosterMemberships)
@@ -129,6 +131,14 @@ export default async function HrFeedbackPage() {
         return true;
       });
 
+      const actorPermCtx = {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+        committeeId: profile.committeeId,
+        trackedCommitteeId: profile.trackedCommitteeId,
+      };
+
       members = targetableMembers
         .map((m) => ({
           id: m.id,
@@ -137,6 +147,10 @@ export default async function HrFeedbackPage() {
           committeeName: m.committeeId
             ? commMap.get(m.committeeId) ?? "Unassigned"
             : "Unassigned",
+          canAwardPoints:
+            canAwardPoints &&
+            m.role !== "attendee" &&
+            canAwardBonus(actorPermCtx, m.committeeId, m.role),
         }))
         .sort((a, b) => a.fullName.localeCompare(b.fullName));
 

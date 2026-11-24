@@ -101,13 +101,15 @@ export async function addManualLedgerEntryAsActor(
       committeeId: actor.profile.committeeId,
       trackedCommitteeId: actor.profile.trackedCommitteeId,
     };
-    if (!canAwardBonus(permCtx, member.committeeId)) {
+    if (!canAwardBonus(permCtx, member.committeeId, member.role as MembershipRole)) {
       return {
         ok: false,
         error:
           actor.profile.role === "director"
             ? "Unauthorized: Directors have read-only access to the points ledger and cannot edit points."
-            : "Unauthorized: cannot award points to this member.",
+            : actor.profile.role === "hr_member" && member.role !== "member"
+              ? "Unauthorized: HR members cannot modify points for committee heads or leadership."
+              : "Unauthorized: cannot award points to this member.",
       };
     }
 

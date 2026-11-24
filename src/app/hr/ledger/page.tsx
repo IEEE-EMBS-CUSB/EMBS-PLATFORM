@@ -85,9 +85,15 @@ export default async function HrLedgerPage() {
         return true;
       });
 
-      // Exclude self (across all hats owned by the same person) from manual bonus award dropdown
+      // Exclude self (across all hats owned by the same person) from manual bonus award dropdown.
+      // HR members can only adjust points for regular members (`member`), never committee heads.
       members = visibleMembers
-        .filter((m) => m.id !== profile.id && m.personId !== profile.personId)
+        .filter(
+          (m) =>
+            m.id !== profile.id &&
+            m.personId !== profile.personId &&
+            (profile.role !== "hr_member" || m.role === "member")
+        )
         .map((m) => ({
           id: m.id,
           fullName: m.fullName,

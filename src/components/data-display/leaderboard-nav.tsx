@@ -1,7 +1,15 @@
 import Link from "next/link";
 import { Calendar, ChevronDown, Crown, History } from "lucide-react";
+import { groupCommitteesByTrack } from "@/lib/committee-catalog";
 import { cn } from "@/lib/utils";
 import type { Committee, MonthKey, PublishedMonthOption } from "@/types";
+
+const TRACK_HEADER_COLORS = [
+  "text-[#007377]",
+  "text-[#772583]",
+  "text-[#00629b]",
+  "text-[#5a1b63]",
+] as const;
 
 interface LeaderboardNavProps {
   committees: Committee[];
@@ -18,8 +26,7 @@ export function LeaderboardNav({
   activeCommitteeSlug,
   isHistoryPage = false,
 }: LeaderboardNavProps) {
-  const technical = committees.filter((c) => c.track === "technical");
-  const nonTechnical = committees.filter((c) => c.track === "non_technical");
+  const trackGroups = groupCommitteesByTrack(committees);
   const activeCommittee = committees.find((c) => c.slug === activeCommitteeSlug);
 
   const monthBaseHref = activeCommitteeSlug
@@ -97,54 +104,43 @@ export function LeaderboardNav({
             />
           </summary>
           <div className="space-y-4 border-t border-border p-3">
-            <div className="space-y-1">
-              <p className="px-2 text-xs font-semibold text-[#007377]">
-                Technical
-              </p>
-              <div className="grid gap-1 sm:grid-cols-2">
-                {technical.map((committee) => {
-                  const isActive = activeCommitteeSlug === committee.slug;
-                  return (
-                    <Link
-                      key={committee.id}
-                      href={`/leaderboards/committees/${committee.slug}?month=${activeMonth}`}
-                      className={cn(
-                        "flex min-h-10 items-center rounded-md px-2.5 text-sm",
-                        isActive
-                          ? "bg-[#f5edf7] font-semibold text-[#5a1b63]"
-                          : "text-foreground hover:bg-muted"
-                      )}
-                    >
-                      {committee.name}
-                    </Link>
-                  );
-                })}
+            {trackGroups.map((group, idx) => (
+              <div
+                key={group.slug}
+                className={cn(
+                  "space-y-1",
+                  idx > 0 && "border-t border-border pt-3"
+                )}
+              >
+                <p
+                  className={cn(
+                    "px-2 text-xs font-semibold",
+                    TRACK_HEADER_COLORS[idx % TRACK_HEADER_COLORS.length]
+                  )}
+                >
+                  {group.name}
+                </p>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  {group.committees.map((committee) => {
+                    const isActive = activeCommitteeSlug === committee.slug;
+                    return (
+                      <Link
+                        key={committee.id}
+                        href={`/leaderboards/committees/${committee.slug}?month=${activeMonth}`}
+                        className={cn(
+                          "flex min-h-10 items-center rounded-md px-2.5 text-sm",
+                          isActive
+                            ? "bg-[#f5edf7] font-semibold text-[#5a1b63]"
+                            : "text-foreground hover:bg-muted"
+                        )}
+                      >
+                        {committee.name}
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-            <div className="space-y-1 border-t border-border pt-3">
-              <p className="px-2 text-xs font-semibold text-[#00629b]">
-                Non-technical
-              </p>
-              <div className="grid gap-1 sm:grid-cols-2">
-                {nonTechnical.map((committee) => {
-                  const isActive = activeCommitteeSlug === committee.slug;
-                  return (
-                    <Link
-                      key={committee.id}
-                      href={`/leaderboards/committees/${committee.slug}?month=${activeMonth}`}
-                      className={cn(
-                        "flex min-h-10 items-center rounded-md px-2.5 text-sm",
-                        isActive
-                          ? "bg-[#f5edf7] font-semibold text-[#5a1b63]"
-                          : "text-foreground hover:bg-muted"
-                      )}
-                    >
-                      {committee.name}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
+            ))}
           </div>
         </details>
       </div>
@@ -215,59 +211,45 @@ export function LeaderboardNav({
         )}
 
         <div className="space-y-3 border-t border-border pt-4">
-          <div className="space-y-1">
-            <p className="px-2 text-xs font-semibold text-[#007377]">
-              Technical committees
-            </p>
-            <ul className="space-y-0.5">
-              {technical.map((committee) => {
-                const isActive = activeCommitteeSlug === committee.slug;
-                return (
-                  <li key={committee.id}>
-                    <Link
-                      href={`/leaderboards/committees/${committee.slug}?month=${activeMonth}`}
-                      aria-current={isActive ? "page" : undefined}
-                      className={cn(
-                        "block rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                        isActive
-                          ? "bg-[#f5edf7] font-semibold text-[#5a1b63]"
-                          : "text-foreground/85 hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      {committee.name}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          <div className="space-y-1 border-t border-border/70 pt-2">
-            <p className="px-2 text-xs font-semibold text-[#00629b]">
-              Non-technical committees
-            </p>
-            <ul className="space-y-0.5">
-              {nonTechnical.map((committee) => {
-                const isActive = activeCommitteeSlug === committee.slug;
-                return (
-                  <li key={committee.id}>
-                    <Link
-                      href={`/leaderboards/committees/${committee.slug}?month=${activeMonth}`}
-                      aria-current={isActive ? "page" : undefined}
-                      className={cn(
-                        "block rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                        isActive
-                          ? "bg-[#f5edf7] font-semibold text-[#5a1b63]"
-                          : "text-foreground/85 hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      {committee.name}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          {trackGroups.map((group, idx) => (
+            <div
+              key={group.slug}
+              className={cn(
+                "space-y-1",
+                idx > 0 && "border-t border-border/70 pt-2"
+              )}
+            >
+              <p
+                className={cn(
+                  "px-2 text-xs font-semibold",
+                  TRACK_HEADER_COLORS[idx % TRACK_HEADER_COLORS.length]
+                )}
+              >
+                {group.name}
+              </p>
+              <ul className="space-y-0.5">
+                {group.committees.map((committee) => {
+                  const isActive = activeCommitteeSlug === committee.slug;
+                  return (
+                    <li key={committee.id}>
+                      <Link
+                        href={`/leaderboards/committees/${committee.slug}?month=${activeMonth}`}
+                        aria-current={isActive ? "page" : undefined}
+                        className={cn(
+                          "block rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                          isActive
+                            ? "bg-[#f5edf7] font-semibold text-[#5a1b63]"
+                            : "text-foreground/85 hover:bg-muted hover:text-foreground"
+                        )}
+                      >
+                        {committee.name}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
         </div>
       </div>
     </aside>

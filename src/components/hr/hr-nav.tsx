@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BarChart3,
   CheckSquare,
   FileSpreadsheet,
   History,
@@ -23,6 +24,7 @@ import { canAccessHrModule } from "@/lib/permissions";
 
 export type HrTabKey =
   | "overview"
+  | "statistics"
   | "seasons"
   | "committees"
   | "roster"
@@ -48,6 +50,14 @@ export const HR_NAV_ITEMS: readonly HrNavItem[] = [
     mobileLabel: "Home",
     href: "/hr",
     icon: LayoutDashboard,
+    section: "workspace",
+  },
+  {
+    key: "statistics",
+    label: "Statistics",
+    mobileLabel: "Stats",
+    href: "/hr/statistics",
+    icon: BarChart3,
     section: "workspace",
   },
   {

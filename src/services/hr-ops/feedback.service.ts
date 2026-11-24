@@ -127,13 +127,15 @@ export function validateFeedbackPointsDelta(input: {
     };
   }
 
-  if (!canAwardBonus(actor, targetCommitteeId)) {
+  if (!canAwardBonus(actor, targetCommitteeId, targetRole)) {
     return {
       ok: false,
       error:
         actor.role === "director"
           ? "Unauthorized: Directors cannot modify member points."
-          : "Unauthorized: you do not have permission to award or deduct points for this member.",
+          : actor.role === "hr_member" && targetRole !== "member"
+            ? "Unauthorized: HR members cannot award or deduct points for committee heads or leadership."
+            : "Unauthorized: you do not have permission to award or deduct points for this member.",
     };
   }
 

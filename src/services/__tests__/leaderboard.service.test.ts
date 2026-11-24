@@ -114,6 +114,16 @@ describe("leaderboard.service", () => {
         "Game Development",
       ])
     );
+
+    // Every committee carries its season-defined track category (Technical, Creative, Operations, etc.)
+    const trackNames = new Set(committees.map((c) => c.trackName));
+    expect(trackNames).toEqual(
+      expect.objectContaining(new Set(["Technical", "Creative", "Operations"]))
+    );
+    const graphicDesign = committees.find((c) => c.slug === "graphic-design");
+    expect(graphicDesign?.trackName).toBe("Creative");
+    const hr = committees.find((c) => c.slug === "human-resources");
+    expect(hr?.trackName).toBe("Operations");
   });
 
   it("excludes unpublished draft months from published months and history", async () => {

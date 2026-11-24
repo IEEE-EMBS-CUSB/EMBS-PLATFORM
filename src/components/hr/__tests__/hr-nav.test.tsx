@@ -10,6 +10,10 @@ describe("HrNav Component", () => {
       "href",
       "/hr"
     );
+    expect(screen.getByRole("link", { name: /statistics/i })).toHaveAttribute(
+      "href",
+      "/hr/statistics"
+    );
     expect(screen.getByRole("link", { name: /seasons/i })).toHaveAttribute(
       "href",
       "/hr/seasons"
@@ -51,6 +55,10 @@ describe("HrNav Component", () => {
       "href",
       "/hr/seasons"
     );
+    expect(screen.getByRole("link", { name: /statistics/i })).toHaveAttribute(
+      "href",
+      "/hr/statistics"
+    );
     expect(screen.queryByRole("link", { name: /events/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /committees/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /roster/i })).toBeInTheDocument();
@@ -64,6 +72,7 @@ describe("HrNav Component", () => {
     render(<HrNav activeTab="tasks" currentUserRole="director" />);
 
     expect(screen.getByRole("link", { name: /overview/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /statistics/i })).toHaveAttribute("href", "/hr/statistics");
     expect(screen.getByRole("link", { name: /^assignments$/i })).toHaveAttribute("href", "/hr/tasks");
     expect(screen.getByRole("link", { name: /committees/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /roster/i })).toBeInTheDocument();
@@ -80,6 +89,7 @@ describe("HrNav Component", () => {
     render(<HrNav activeTab="attendance" currentUserRole="hr_member" />);
 
     expect(screen.getByRole("link", { name: /overview/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /statistics/i })).toHaveAttribute("href", "/hr/statistics");
     expect(screen.getByRole("link", { name: /attendance/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /^tasks$/i })).toHaveAttribute("href", "/hr/tasks");
     expect(screen.getByRole("link", { name: /points ledger/i })).toBeInTheDocument();
@@ -96,6 +106,7 @@ describe("HrNav Component", () => {
     render(<HrNav activeTab="tasks" currentUserRole="committee_head" />);
 
     expect(screen.getByRole("link", { name: /overview/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /statistics/i })).toHaveAttribute("href", "/hr/statistics");
     expect(screen.getByRole("link", { name: /attendance/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /^assignments$/i })).toHaveAttribute("href", "/hr/tasks");
     expect(screen.getByRole("link", { name: /points ledger/i })).toBeInTheDocument();

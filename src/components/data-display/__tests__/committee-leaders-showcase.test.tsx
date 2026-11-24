@@ -7,7 +7,12 @@ import type { CommitteeLeaderSpotlight } from "@/types";
 
 const SAMPLE_SPOTLIGHTS: CommitteeLeaderSpotlight[] = [
   {
-    committee: getCommitteeOrThrow("ai-and-machine-learning"),
+    committee: {
+      ...getCommitteeOrThrow("ai-and-machine-learning"),
+      trackSlug: "technical",
+      trackName: "Technical",
+      trackSortOrder: 1,
+    },
     month: "2026-10",
     monthLabel: "October 2026",
     leader: {
@@ -17,13 +22,38 @@ const SAMPLE_SPOTLIGHTS: CommitteeLeaderSpotlight[] = [
     },
   },
   {
-    committee: getCommitteeOrThrow("graphic-design"),
+    committee: {
+      ...getCommitteeOrThrow("graphic-design"),
+      trackSlug: "creative",
+      trackName: "Creative",
+      trackSortOrder: 2,
+    },
     month: "2026-10",
     monthLabel: "October 2026",
     leader: {
       memberName: "Nourhan Khaled",
       role: "Vice",
       monthlyScore: 91,
+    },
+  },
+  {
+    committee: {
+      id: "com-clinical",
+      slug: "clinical-innovation",
+      name: "Clinical Innovation",
+      shortName: "Clinical",
+      track: "non_technical",
+      trackSlug: "clinical-tracks",
+      trackName: "Clinical Tracks",
+      trackSortOrder: 3,
+      description: "",
+    },
+    month: "2026-10",
+    monthLabel: "October 2026",
+    leader: {
+      memberName: "Youssef Adel",
+      role: "Member",
+      monthlyScore: 88,
     },
   },
 ];
@@ -33,7 +63,7 @@ describe("CommitteeLeadersShowcase", () => {
     cleanup();
   });
 
-  it("renders crowned user emblems with member name and committee without boxed cards, and filters by track", async () => {
+  it("renders crowned user emblems and filters dynamically by season-defined categories instead of hardcoded Technical/Non-technical", async () => {
     const user = userEvent.setup();
     render(
       <CommitteeLeadersShowcase
@@ -60,16 +90,25 @@ describe("CommitteeLeadersShowcase", () => {
     ).toHaveClass("min-h-8");
 
     expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
-    expect(screen.getByText("AI and Machine Learning")).toBeInTheDocument();
     expect(screen.getByText("Nourhan Khaled")).toBeInTheDocument();
-    expect(screen.getByText("Graphic Design")).toBeInTheDocument();
+    expect(screen.getByText("Youssef Adel")).toBeInTheDocument();
+
+    // Must NOT render legacy hardcoded "Non-technical" filter button
+    expect(
+      screen.queryByRole("button", { name: /non-technical/i })
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /^technical/i }));
     expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
     expect(screen.queryByText("Nourhan Khaled")).not.toBeInTheDocument();
+    expect(screen.queryByText("Youssef Adel")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /^non-technical/i }));
+    await user.click(screen.getByRole("button", { name: /^creative/i }));
     expect(screen.getByText("Nourhan Khaled")).toBeInTheDocument();
     expect(screen.queryByText("Salma El-Sayed")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^clinical tracks/i }));
+    expect(screen.getByText("Youssef Adel")).toBeInTheDocument();
+    expect(screen.queryByText("Nourhan Khaled")).not.toBeInTheDocument();
   });
 });

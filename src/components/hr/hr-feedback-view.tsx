@@ -50,6 +50,7 @@ export interface MemberOption {
   fullName: string;
   committeeName: string;
   email: string;
+  canAwardPoints?: boolean;
 }
 
 interface HrFeedbackViewProps {
@@ -209,6 +210,13 @@ export function HrFeedbackView({
     setIsModalOpen(true);
   };
 
+  const selectedMember = useMemo(
+    () => members.find((m) => m.id === selectedMemberId) ?? null,
+    [members, selectedMemberId]
+  );
+  const canAwardPointsForSelected =
+    canAwardPoints && (selectedMember?.canAwardPoints ?? true);
+
   const handleSaveEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim() || isSubmitting) return;
@@ -219,20 +227,23 @@ export function HrFeedbackView({
       return;
     }
 
-    const parsedDelta = canAwardPoints
+    const allowPoints =
+      canAwardPoints && (targetMember.canAwardPoints ?? true);
+
+    const parsedDelta = allowPoints
       ? parseInt(pointsDeltaInput.trim() === "" ? "0" : pointsDeltaInput, 10)
       : 0;
-    if (canAwardPoints && Number.isNaN(parsedDelta)) {
+    if (allowPoints && Number.isNaN(parsedDelta)) {
       setFormError("Bonus / deduction must be a whole number (0 for none).");
       return;
     }
-    if (canAwardPoints && parsedDelta > feedbackCaps.maxBonusPoints) {
+    if (allowPoints && parsedDelta > feedbackCaps.maxBonusPoints) {
       setFormError(
         `Feedback bonus cannot exceed +${feedbackCaps.maxBonusPoints} pts (season cap).`
       );
       return;
     }
-    if (canAwardPoints && parsedDelta < -feedbackCaps.maxDeductionPoints) {
+    if (allowPoints && parsedDelta < -feedbackCaps.maxDeductionPoints) {
       setFormError(
         `Feedback deduction cannot exceed -${feedbackCaps.maxDeductionPoints} pts (season cap).`
       );
@@ -255,7 +266,7 @@ export function HrFeedbackView({
           membershipId: targetMember.id,
           category: effectiveCategory,
           content: content.trim(),
-          pointsDelta: canAwardPoints ? parsedDelta : 0,
+          pointsDelta: allowPoints ? parsedDelta : 0,
         });
         if (res && !res.ok) {
           setFormError(res.error ?? "Failed to save feedback.");
@@ -272,7 +283,7 @@ export function HrFeedbackView({
         memberEmail: targetMember.email,
         committeeName: targetMember.committeeName,
         category: effectiveCategory,
-        pointsDelta: canAwardPoints ? parsedDelta : 0,
+        pointsDelta: allowPoints ? parsedDelta : 0,
         content: content.trim(),
         isPublished: meta.visibility === "member",
         isWarning:
@@ -608,7 +619,7 @@ export function HrFeedbackView({
                 </div>
               </div>
 
-              {canAwardPoints ? (
+              {canAwardPointsForSelected ? (
                 <div>
                   <label
                     htmlFor="fbPointsDelta"
@@ -635,8 +646,9 @@ export function HrFeedbackView({
                 </div>
               ) : (
                 <p className="rounded-lg border border-border bg-[#f8f9fb] px-3 py-2 text-xs text-muted-foreground">
-                  Point bonuses and deductions are managed by HR and Master
-                  Admin. Feedback logged here carries 0 point change.
+                  {canAwardPoints && selectedMember?.canAwardPoints === false
+                    ? "HR members cannot award or deduct points for committee heads or leadership. Feedback logged here carries 0 point change."
+                    : "Point bonuses and deductions are managed by HR and Master Admin. Feedback logged here carries 0 point change."}
                 </p>
               )}
 

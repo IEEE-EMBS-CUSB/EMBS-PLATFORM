@@ -729,6 +729,7 @@ export function AttendanceManagerView({
     async (row: SessionRosterRow, nextStatus: SessionAttendanceStatus) => {
       if (!sheetSession) return;
       if (!canManageSession(sheetSession)) return;
+      if (currentUserRole === "hr_member" && row.role !== "member") return;
       if (row.status === nextStatus) return;
 
       const prevRows = rosterRows;
@@ -846,7 +847,13 @@ export function AttendanceManagerView({
         setSavingMembershipId(null);
       }
     },
-    [sheetSession, canManageSession, rosterRows, onSetMemberAttendance]
+    [
+      sheetSession,
+      canManageSession,
+      currentUserRole,
+      rosterRows,
+      onSetMemberAttendance,
+    ]
   );
 
   // Keyboard shortcuts inside Attendance Sheet (↑ / ↓ / O / L / E / A)
@@ -1621,11 +1628,23 @@ export function AttendanceManagerView({
                               {ALL_STATUSES.map((st) => {
                                 const active = row.status === st;
                                 const meta = STATUS_META[st];
+                                const rowLockedForHrMember =
+                                  currentUserRole === "hr_member" &&
+                                  row.role !== "member";
                                 return (
                                   <button
                                     key={st}
                                     type="button"
-                                    disabled={!editable || isRowSaving}
+                                    disabled={
+                                      !editable ||
+                                      rowLockedForHrMember ||
+                                      isRowSaving
+                                    }
+                                    title={
+                                      rowLockedForHrMember
+                                        ? "HR members cannot change attendance points for committee heads"
+                                        : undefined
+                                    }
                                     aria-pressed={active}
                                     aria-label={`Mark ${row.fullName} as ${meta.label}`}
                                     onClick={(e) => {
