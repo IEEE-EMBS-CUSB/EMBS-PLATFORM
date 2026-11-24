@@ -33,7 +33,7 @@ export default async function HrSeasonsPage() {
     const dbSeasons = await db
       .select()
       .from(schema.seasons)
-      .orderBy(desc(schema.seasons.startDate));
+      .orderBy(desc(schema.seasons.startDate), asc(schema.seasons.createdAt));
 
     // Idempotently ensure every non-archived season has its default tracks seeded & committees backfilled
     await Promise.all(

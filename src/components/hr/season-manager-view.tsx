@@ -141,6 +141,18 @@ export function SeasonManagerView({
       rubrics: s.rubrics ?? [],
     }))
   );
+  const [prevInitialSeasons, setPrevInitialSeasons] = useState(initialSeasons);
+  if (initialSeasons !== prevInitialSeasons) {
+    setPrevInitialSeasons(initialSeasons);
+    setSeasons(
+      initialSeasons.map((s) => ({
+        ...s,
+        settings: normalizeSeasonSettings(s.settings),
+        tracks: s.tracks ?? [],
+        rubrics: s.rubrics ?? [],
+      }))
+    );
+  }
 
   const defaultSelectedId =
     initialSeasons.find((s) => s.status === "active")?.id ??
@@ -721,8 +733,8 @@ export function SeasonManagerView({
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
+                <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                  <div className="flex items-center gap-1.5">
                     <Button
                       type="button"
                       variant={isSelected ? "default" : "outline"}
@@ -750,45 +762,37 @@ export function SeasonManagerView({
                         <span>Clone</span>
                       </Button>
                     )}
-
-                    {canManage && isDraft && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={transitioningId === season.id}
-                        onClick={() => handleActivate(season)}
-                        className="h-8 gap-1 bg-[#1e6b0a] text-xs font-semibold text-white hover:bg-[#165207]"
-                      >
-                        <Play className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>Activate</span>
-                      </Button>
-                    )}
-
-                    {canManage && isArchived && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={transitioningId === season.id}
-                        onClick={() => handleActivate(season)}
-                        className="h-8 gap-1 border-[#772583]/35 text-xs font-semibold text-[#772583] hover:bg-[#f5edf7]"
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>Re-activate</span>
-                      </Button>
-                    )}
                   </div>
 
                   {isActive ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#1e6b0a]">
+                    <span className="inline-flex h-8 shrink-0 items-center gap-1 text-xs font-semibold text-[#1e6b0a]">
                       <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" />
                       Current Active
                     </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      {isArchived ? "Archived (read-only)" : "Draft season"}
-                    </span>
-                  )}
+                  ) : canManage && isDraft ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={transitioningId === season.id}
+                      onClick={() => handleActivate(season)}
+                      className="h-8 shrink-0 gap-1 bg-[#1e6b0a] text-xs font-semibold text-white hover:bg-[#165207]"
+                    >
+                      <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Activate</span>
+                    </Button>
+                  ) : canManage && isArchived ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={transitioningId === season.id}
+                      onClick={() => handleActivate(season)}
+                      className="h-8 shrink-0 gap-1 border-[#772583]/35 text-xs font-semibold text-[#772583] hover:bg-[#f5edf7]"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Re-activate</span>
+                    </Button>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
