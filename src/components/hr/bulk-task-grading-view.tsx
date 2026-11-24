@@ -45,6 +45,7 @@ export interface SubmissionGradingItem {
   notes: string;
   submissionUrl?: string | null;
   submissionText?: string | null;
+  submittedAt?: string | null;
   completed?: boolean;
 }
 
@@ -80,6 +81,15 @@ function isSafeHttpUrl(url: string | null | undefined): url is string {
   }
 }
 
+function isSubmissionSubmitted(sub: SubmissionGradingItem): boolean {
+  return Boolean(
+    sub.submittedAt ||
+      sub.submissionUrl?.trim() ||
+      sub.submissionText?.trim() ||
+      sub.totalPoints !== null
+  );
+}
+
 export function BulkTaskGradingView({
   task,
   submissions: initialSubmissions,
@@ -110,7 +120,18 @@ export function BulkTaskGradingView({
   const completedCount = submissions.filter((sub) =>
     Boolean(sub.completed ?? (sub.totalPoints !== null && sub.totalPoints > 0))
   ).length;
+  const submittedCount = submissions.filter(isSubmissionSubmitted).length;
   const gradedCount = submissions.filter((sub) => sub.totalPoints !== null).length;
+  const pendingGradingCount = isCheckableTask
+    ? 0
+    : submissions.filter(
+        (sub) => isSubmissionSubmitted(sub) && sub.totalPoints === null
+      ).length;
+  const pendingVerifyCount =
+    isCheckableTask && isHrOnlyTask ? submissions.length - completedCount : 0;
+  const attentionCount = isCheckableTask
+    ? pendingVerifyCount
+    : pendingGradingCount;
 
   const handleScoreChange = (
     idx: number,
@@ -281,14 +302,16 @@ export function BulkTaskGradingView({
     if (!collapsible) return body;
 
     const totalCount = submissions.length;
-    const progressDone = isCheckableTask ? completedCount : gradedCount;
-    const allDone = totalCount > 0 && progressDone === totalCount;
-    const progressLabel = isCheckableTask
-      ? `${completedCount} / ${totalCount} completed`
-      : `${gradedCount} / ${totalCount} graded`;
+    const allTasksDone = isCheckableTask && totalCount > 0 && completedCount === totalCount;
+    const allSubmittedGraded =
+      !isCheckableTask && submittedCount > 0 && gradedCount === submittedCount;
 
     return (
-      <div className="overflow-hidden rounded-xl border border-border bg-white shadow-xs transition-colors hover:border-[#772583]/40">
+      <div
+        className={`overflow-hidden rounded-xl border bg-white shadow-xs transition-colors hover:border-[#772583]/40 ${
+          attentionCount > 0 ? "border-[#772583]/45" : "border-border"
+        }`}
+      >
         <button
           type="button"
           aria-expanded={isExpanded}
@@ -339,16 +362,40 @@ export function BulkTaskGradingView({
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            <span
-              className={
-                allDone
-                  ? "inline-flex rounded-full bg-[#eef8e0] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#2f600b]"
-                  : "inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#002855]"
-              }
-            >
-              {progressLabel}
-            </span>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+            {attentionCount > 0 && (
+              <span
+                className="inline-flex items-center rounded-full bg-[#772583] px-2.5 py-0.5 text-[11px] font-bold tabular-nums text-white"
+              >
+                {attentionCount} {isCheckableTask ? "to verify" : "to grade"}
+              </span>
+            )}
+            {isCheckableTask ? (
+              <span
+                className={
+                  allTasksDone
+                    ? "inline-flex rounded-full bg-[#eef8e0] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#2f600b]"
+                    : "inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#002855]"
+                }
+              >
+                {completedCount} / {totalCount} completed
+              </span>
+            ) : (
+              <>
+                <span className="inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#002855]">
+                  Submitted {submittedCount}/{totalCount}
+                </span>
+                <span
+                  className={
+                    allSubmittedGraded
+                      ? "inline-flex rounded-full bg-[#eef8e0] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#2f600b]"
+                      : "inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#002855]"
+                  }
+                >
+                  Graded {gradedCount}/{submittedCount}
+                </span>
+              </>
+            )}
             <span className="hidden font-mono text-xs font-bold tabular-nums text-muted-foreground sm:inline">
               {task.maxPoints} pts
             </span>

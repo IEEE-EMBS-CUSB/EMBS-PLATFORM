@@ -54,6 +54,7 @@ export default async function HrTasksPage() {
     notes: string;
     submissionUrl?: string | null;
     submissionText?: string | null;
+    submittedAt?: string | null;
     completed?: boolean;
   };
   const bulkTasks: { task: BulkTask; submissions: BulkSubmission[] }[] = [];
@@ -349,6 +350,7 @@ export default async function HrTasksPage() {
             notes: sub.notes ?? "",
             submissionUrl: sub.submissionUrl,
             submissionText: sub.submissionText,
+            submittedAt: sub.submittedAt ? sub.submittedAt.toISOString() : null,
             completed: sub.gradedAt !== null && (sub.totalPoints ?? 0) > 0,
           });
           subsByTask.set(sub.taskId, list);

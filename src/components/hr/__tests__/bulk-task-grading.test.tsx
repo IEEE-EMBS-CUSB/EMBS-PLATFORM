@@ -284,7 +284,7 @@ describe("BulkTaskGradingView Component", () => {
     expect(screen.getByText("Saved")).toBeInTheDocument();
   });
 
-  it("renders as a compact collapsible row entry that expands on click to show full grading", async () => {
+  it("renders as a compact collapsible row entry showing submitted/total and graded/submitted counts", async () => {
     const user = userEvent.setup();
     render(
       <BulkTaskGradingView
@@ -300,7 +300,9 @@ describe("BulkTaskGradingView Component", () => {
       name: /design summit social media campaign/i,
     });
     expect(toggleBtn).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByText(/2 \/ 2 graded/i)).toBeInTheDocument();
+    expect(screen.getByText(/submitted 2\/2/i)).toBeInTheDocument();
+    expect(screen.getByText(/graded 2\/2/i)).toBeInTheDocument();
+    expect(screen.queryByText(/to grade/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/effort score for nourhan khaled/i)).not.toBeInTheDocument();
 
     // Clicking the row expands full grading table
@@ -312,5 +314,141 @@ describe("BulkTaskGradingView Component", () => {
     await user.click(toggleBtn);
     expect(toggleBtn).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByLabelText(/effort score for nourhan khaled/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a row-level notification badge and submitted/graded counts when submitted assignments are awaiting scoring", () => {
+    const { rerender } = render(
+      <BulkTaskGradingView
+        task={{ ...sampleTask, workType: "assignment" }}
+        submissions={[
+          {
+            submissionId: "sub-1",
+            membershipId: "m-1",
+            memberName: "Nourhan Khaled",
+            effortScore: 5,
+            qualityScore: 5,
+            timelinessScore: 5,
+            totalPoints: 100,
+            notes: "",
+            submittedAt: "2026-11-20T12:00:00.000Z",
+            submissionUrl: "https://github.com/embs/a1",
+          },
+          {
+            submissionId: "sub-2",
+            membershipId: "m-2",
+            memberName: "Omar Tarek",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: null,
+            notes: "",
+            submittedAt: "2026-11-21T12:00:00.000Z",
+            submissionUrl: "https://github.com/embs/a2",
+          },
+          {
+            submissionId: "sub-3",
+            membershipId: "m-3",
+            memberName: "Salma El-Sayed",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: null,
+            notes: "",
+            submittedAt: "2026-11-22T12:00:00.000Z",
+            submissionUrl: "https://github.com/embs/a3",
+          },
+          {
+            submissionId: "sub-4",
+            membershipId: "m-4",
+            memberName: "Ziad Hany",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: null,
+            notes: "",
+            submittedAt: null,
+            submissionUrl: null,
+          },
+        ]}
+        collapsible
+        defaultExpanded={false}
+      />
+    );
+
+    // 3 of 4 submitted, 1 of 3 graded, 2 awaiting scoring
+    expect(screen.getByText(/submitted 3\/4/i)).toBeInTheDocument();
+    expect(screen.getByText(/graded 1\/3/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 to grade/i)).toBeInTheDocument();
+
+    // When 0 members have submitted yet, no 'to grade' badge appears and graded shows 0/0
+    rerender(
+      <BulkTaskGradingView
+        task={{ ...sampleTask, workType: "assignment" }}
+        submissions={[
+          {
+            submissionId: "sub-4",
+            membershipId: "m-4",
+            memberName: "Ziad Hany",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: null,
+            notes: "",
+            submittedAt: null,
+            submissionUrl: null,
+          },
+        ]}
+        collapsible
+        defaultExpanded={false}
+      />
+    );
+
+    expect(screen.getByText(/submitted 0\/1/i)).toBeInTheDocument();
+    expect(screen.getByText(/graded 0\/0/i)).toBeInTheDocument();
+    expect(screen.queryByText(/to grade/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a row-level verification badge on collapsible hr_only tasks with pending items", () => {
+    render(
+      <BulkTaskGradingView
+        task={{
+          id: "t-hr-only",
+          title: "Verify Lab Safety Sign-Off",
+          workType: "task",
+          completionMode: "hr_only",
+          committeeName: "Biomedical",
+          maxPoints: 15,
+        }}
+        submissions={[
+          {
+            submissionId: "sub-1",
+            membershipId: "m-1",
+            memberName: "Nourhan Khaled",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: null,
+            notes: "",
+            completed: false,
+          },
+          {
+            submissionId: "sub-2",
+            membershipId: "m-2",
+            memberName: "Omar Tarek",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: 15,
+            notes: "",
+            completed: true,
+          },
+        ]}
+        collapsible
+        defaultExpanded={false}
+      />
+    );
+
+    expect(screen.getByText(/1 to verify/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 \/ 2 completed/i)).toBeInTheDocument();
   });
 });
