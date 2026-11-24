@@ -18,6 +18,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  MemberCombobox,
+  type MemberComboboxOption,
+} from "@/components/ui/member-combobox";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canAssignTask,
@@ -54,6 +58,8 @@ export interface AssignedTaskItem {
 export interface EligibleAssignee {
   id: string;
   fullName: string;
+  email?: string;
+  phoneNumber?: string | null;
   role: MembershipRole;
   committeeId?: string | null;
   committeeName?: string;
@@ -93,6 +99,16 @@ interface TargetGroupOption {
   value: TaskTargetGroup;
   label: string;
 }
+
+const ROLE_LABELS: Record<MembershipRole, string> = {
+  master_admin: "Master",
+  director: "Director",
+  hr_admin: "HR Admin",
+  hr_member: "HR Member",
+  committee_head: "Head",
+  member: "Member",
+  attendee: "Attendee",
+};
 
 function getTargetGroupOptions(
   role: MembershipRole,
@@ -271,15 +287,18 @@ export function TaskDelegationView({
     );
   }, [currentUserRole, effectiveWorkType]);
 
-  const roleLabels: Record<MembershipRole, string> = {
-    master_admin: "Master",
-    director: "Director",
-    hr_admin: "HR Admin",
-    hr_member: "HR Member",
-    committee_head: "Head",
-    member: "Member",
-    attendee: "Attendee",
-  };
+  const assigneeComboboxOptions = useMemo<MemberComboboxOption[]>(
+    () =>
+      assignableMembers.map((m) => ({
+        id: m.id,
+        fullName: m.fullName,
+        email: m.email,
+        phoneNumber: m.phoneNumber ?? null,
+        committeeName: m.committeeName,
+        roleLabel: ROLE_LABELS[m.role],
+      })),
+    [assignableMembers]
+  );
 
   const isCommitteeGroup =
     effectiveTargetGroup === "committee_all" ||
@@ -443,7 +462,7 @@ export function TaskDelegationView({
                         aria-hidden="true"
                       />
                       <span>
-                        Assigned by {roleLabels[item.assignerRole]}{" "}
+                        Assigned by {ROLE_LABELS[item.assignerRole]}{" "}
                         {item.assignedByName}
                       </span>
                     </div>
@@ -640,33 +659,23 @@ export function TaskDelegationView({
                 </div>
 
                 {targetType === "specific_person" ? (
-                  <div>
+                  <div className="min-w-0">
                     <label
                       htmlFor="task-assignee-select"
                       className="block font-heading text-xs font-bold text-[#002855]"
                     >
                       Assign To
                     </label>
-                    <div className="relative mt-1">
-                      <select
+                    <div className="mt-1">
+                      <MemberCombobox
                         id="task-assignee-select"
-                        aria-label="Assign to"
-                        required
+                        ariaLabel="Assign to"
+                        options={assigneeComboboxOptions}
                         value={effectiveSelectedAssignee}
-                        onChange={(e) => setSelectedAssignee(e.target.value)}
-                        className="block h-10 w-full appearance-none truncate rounded-lg border border-border bg-white py-2 pr-9 pl-3 text-xs leading-normal font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
-                      >
-                        <option value="">Select recipient...</option>
-                        {assignableMembers.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.fullName} ({roleLabels[m.role]})
-                            {m.committeeName ? ` — ${m.committeeName}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        className="pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
+                        onChange={setSelectedAssignee}
+                        placeholder="Type a member's name, email, phone, or committee..."
+                        emptyText="No eligible recipients match your search."
+                        required
                       />
                     </div>
                   </div>

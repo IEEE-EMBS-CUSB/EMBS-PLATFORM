@@ -8,6 +8,7 @@ export interface MemberComboboxOption {
   id: string;
   fullName: string;
   email?: string;
+  phoneNumber?: string | null;
   committeeName?: string;
   roleLabel?: string;
 }
@@ -55,17 +56,30 @@ export function MemberCombobox({
 
   const filteredOptions = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const qDigits = q.replace(/\D/g, "");
+    const qLocalDigits = qDigits.startsWith("0") ? qDigits.slice(1) : qDigits;
     const sorted = [...options].sort((a, b) =>
       a.fullName.localeCompare(b.fullName)
     );
     if (!q) return sorted;
-    return sorted.filter(
-      (opt) =>
+    return sorted.filter((opt) => {
+      if (
         opt.fullName.toLowerCase().includes(q) ||
         (opt.email ?? "").toLowerCase().includes(q) ||
         (opt.committeeName ?? "").toLowerCase().includes(q) ||
         (opt.roleLabel ?? "").toLowerCase().includes(q)
-    );
+      ) {
+        return true;
+      }
+      if (qDigits.length > 0 && opt.phoneNumber) {
+        const phoneDigits = opt.phoneNumber.replace(/\D/g, "");
+        return (
+          phoneDigits.includes(qDigits) ||
+          (qLocalDigits.length > 0 && phoneDigits.includes(qLocalDigits))
+        );
+      }
+      return false;
+    });
   }, [options, query]);
 
   useEffect(() => {
@@ -126,8 +140,8 @@ export function MemberCombobox({
   };
 
   return (
-    <div ref={containerRef} className={cn("relative", className)}>
-      <div className="relative flex items-center">
+    <div ref={containerRef} className={cn("relative min-w-0", className)}>
+      <div className="relative flex min-w-0 items-center">
         <Search
           className="pointer-events-none absolute left-3 h-4 w-4 text-muted-foreground"
           aria-hidden="true"

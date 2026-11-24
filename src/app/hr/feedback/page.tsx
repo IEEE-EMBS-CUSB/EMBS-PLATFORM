@@ -71,6 +71,7 @@ export default async function HrFeedbackPage() {
             personId: schema.rosterMemberships.personId,
             fullName: schema.persons.fullName,
             email: schema.persons.email,
+            phoneNumber: schema.persons.phoneNumber,
             personActive: schema.persons.isActive,
             committeeId: schema.rosterMemberships.committeeId,
             role: schema.rosterMemberships.role,
@@ -139,11 +140,23 @@ export default async function HrFeedbackPage() {
         trackedCommitteeId: profile.trackedCommitteeId,
       };
 
+      const roleLabels: Record<string, string> = {
+        master_admin: "Master",
+        director: "Director",
+        hr_admin: "HR Admin",
+        hr_member: "HR Member",
+        committee_head: "Head",
+        member: "Member",
+        attendee: "Attendee",
+      };
+
       members = targetableMembers
         .map((m) => ({
           id: m.id,
           fullName: m.fullName,
           email: m.email,
+          phoneNumber: m.phoneNumber ?? null,
+          roleLabel: roleLabels[m.role] ?? m.role,
           committeeName: m.committeeId
             ? commMap.get(m.committeeId) ?? "Unassigned"
             : "Unassigned",

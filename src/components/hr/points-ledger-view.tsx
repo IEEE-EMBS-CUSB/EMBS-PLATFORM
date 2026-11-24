@@ -41,6 +41,8 @@ export interface MemberOption {
   fullName: string;
   committeeName: string;
   email: string;
+  phoneNumber?: string | null;
+  roleLabel?: string;
 }
 
 interface PointsLedgerViewProps {
@@ -418,7 +420,7 @@ export function PointsLedgerView({
                     options={members}
                     value={selectedMemberId}
                     onChange={setSelectedMemberId}
-                    placeholder="Type a member's name, email, or committee..."
+                    placeholder="Type a member's name, email, phone, or committee..."
                     required
                   />
                 </div>

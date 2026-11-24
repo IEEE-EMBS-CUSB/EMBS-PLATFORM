@@ -20,6 +20,8 @@ describe("TaskDelegationView Component", () => {
     {
       id: "m-head-1",
       fullName: "Salma El-Sayed",
+      email: "salma@gmail.com",
+      phoneNumber: "+201001112233",
       role: "committee_head" as const,
       committeeId: "comm-ai",
       committeeName: "AI and Machine Learning",
@@ -27,6 +29,8 @@ describe("TaskDelegationView Component", () => {
     {
       id: "m-hr-admin",
       fullName: "Sara Hassan",
+      email: "sara@gmail.com",
+      phoneNumber: "+201004445566",
       role: "hr_admin" as const,
       committeeId: "comm-hr",
       committeeName: "Human Resources",
@@ -34,6 +38,8 @@ describe("TaskDelegationView Component", () => {
     {
       id: "m-hr-mem",
       fullName: "Laila Amr",
+      email: "laila@gmail.com",
+      phoneNumber: "+201007778899",
       role: "hr_member" as const,
       committeeId: "comm-ai",
       committeeName: "AI and Machine Learning",
@@ -41,6 +47,8 @@ describe("TaskDelegationView Component", () => {
     {
       id: "m-mem-1",
       fullName: "Omar Tarek",
+      email: "omar@gmail.com",
+      phoneNumber: "+201019716969",
       role: "member" as const,
       committeeId: "comm-ai",
       committeeName: "AI and Machine Learning",
@@ -84,13 +92,19 @@ describe("TaskDelegationView Component", () => {
     const titleInput = screen.getByLabelText(/assignment title/i);
     await user.type(titleInput, "Finalize Midterm Curriculum");
 
-    const assigneeSelect = screen.getByLabelText(/assign to/i);
-    // Director can now assign assignments to Committee Heads, HR Admins, AND regular members
-    expect(screen.getByRole("option", { name: /Salma El-Sayed \(Head\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /Sara Hassan \(HR Admin\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /Omar Tarek \(Member\)/i })).toBeInTheDocument();
+    // Uses searchable MemberCombobox instead of a raw <select>
+    const assigneeCombobox = screen.getByRole("combobox", {
+      name: /assign to/i,
+    });
+    expect(assigneeCombobox.tagName).toBe("INPUT");
+    await user.click(assigneeCombobox);
+    // Director can assign assignments to Committee Heads, HR Admins, AND regular members
+    expect(screen.getByRole("option", { name: /Salma El-Sayed/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Sara Hassan/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Omar Tarek/i })).toBeInTheDocument();
 
-    await user.selectOptions(assigneeSelect, "m-mem-1");
+    await user.type(assigneeCombobox, "Omar");
+    await user.click(screen.getByRole("option", { name: /Omar Tarek/i }));
 
     const submitBtn = screen.getByRole("button", { name: /create assignment/i });
     await user.click(submitBtn);
@@ -131,12 +145,16 @@ describe("TaskDelegationView Component", () => {
 
     // Under Assignment mode, HR Admin can ONLY assign to HR Members
     await user.click(assignmentBtn);
-    expect(screen.getByRole("option", { name: /Laila Amr \(HR Member\)/i })).toBeInTheDocument();
+    const assigneeCombobox = screen.getByRole("combobox", {
+      name: /assign to/i,
+    });
+    await user.click(assigneeCombobox);
+    expect(screen.getByRole("option", { name: /Laila Amr/i })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Salma El-Sayed/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Omar Tarek/i })).not.toBeInTheDocument();
 
+    await user.click(screen.getByRole("option", { name: /Laila Amr/i }));
     await user.type(screen.getByLabelText(/assignment title/i), "Audit Sheet Review");
-    await user.selectOptions(screen.getByLabelText(/assign to/i), "m-hr-mem");
     await user.click(screen.getByRole("button", { name: /create assignment/i }));
 
     expect(handleCreateTask).toHaveBeenCalledWith(
@@ -149,8 +167,9 @@ describe("TaskDelegationView Component", () => {
 
     // Switch to Task mode: HR Admin can target everyone, including Heads-Only group, and choose HR-Only verification
     await user.click(taskBtn);
-    expect(screen.getByRole("option", { name: /Salma El-Sayed \(Head\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /Omar Tarek \(Member\)/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: /assign to/i }));
+    expect(screen.getByRole("option", { name: /Salma El-Sayed/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Omar Tarek/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /^group$/i }));
     const groupSelect = screen.getByLabelText(/target group/i);
@@ -191,7 +210,10 @@ describe("TaskDelegationView Component", () => {
 
     expect(screen.queryByRole("button", { name: /^assignment$/i })).not.toBeInTheDocument();
     await user.type(screen.getByLabelText(/task title/i), "Submit Monthly Report");
-    await user.selectOptions(screen.getByLabelText(/assign to/i), "m-mem-1");
+    const assigneeCombobox = screen.getByRole("combobox", { name: /assign to/i });
+    await user.click(assigneeCombobox);
+    await user.type(assigneeCombobox, "Omar");
+    await user.click(screen.getByRole("option", { name: /Omar Tarek/i }));
     await user.click(screen.getByRole("button", { name: /create task/i }));
 
     expect(handleCreateTask).toHaveBeenCalledWith(

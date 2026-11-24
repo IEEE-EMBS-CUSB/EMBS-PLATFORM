@@ -107,6 +107,8 @@ export default async function HrTasksPage() {
             .select({
               id: schema.rosterMemberships.id,
               fullName: schema.persons.fullName,
+              email: schema.persons.email,
+              phoneNumber: schema.persons.phoneNumber,
               role: schema.rosterMemberships.role,
               committeeId: schema.rosterMemberships.committeeId,
             })
@@ -209,6 +211,8 @@ export default async function HrTasksPage() {
       eligibleMembers = scopedMembers.map((m) => ({
         id: m.id,
         fullName: m.fullName,
+        email: m.email,
+        phoneNumber: m.phoneNumber ?? null,
         role: m.role,
         committeeId: m.committeeId,
         committeeName: m.committeeId ? commMap.get(m.committeeId) : undefined,

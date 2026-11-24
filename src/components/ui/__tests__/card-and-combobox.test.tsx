@@ -16,6 +16,7 @@ const SAMPLE_MEMBERS: MemberComboboxOption[] = [
     id: "m-2",
     fullName: "Omar Tarek",
     email: "omar@cu.edu.eg",
+    phoneNumber: "+201019716969",
     committeeName: "Robotics and Automation",
     roleLabel: "Member",
   },
@@ -89,5 +90,29 @@ describe("CP3 UI Primitives — Card padding & MemberCombobox", () => {
     const clearBtn = screen.getByRole("button", { name: /clear selection/i });
     await user.click(clearBtn);
     expect(onChange).toHaveBeenCalledWith("");
+  });
+
+  it("filters member suggestions by local phone number digits", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    render(
+      <MemberCombobox
+        id="test-member-picker-phone"
+        options={SAMPLE_MEMBERS}
+        value=""
+        onChange={onChange}
+      />
+    );
+
+    const input = screen.getByRole("combobox");
+    await user.click(input);
+    await user.type(input, "01019716969");
+
+    expect(screen.getByText("Omar Tarek")).toBeInTheDocument();
+    expect(screen.queryByText("Salma El-Sayed")).not.toBeInTheDocument();
+
+    await user.keyboard("{Enter}");
+    expect(onChange).toHaveBeenCalledWith("m-2");
   });
 });
