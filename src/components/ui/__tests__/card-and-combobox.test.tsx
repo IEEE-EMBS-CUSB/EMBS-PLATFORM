@@ -115,4 +115,29 @@ describe("CP3 UI Primitives — Card padding & MemberCombobox", () => {
     await user.keyboard("{Enter}");
     expect(onChange).toHaveBeenCalledWith("m-2");
   });
+
+  it("portals the dropdown listbox to document.body with fixed positioning so overflow-hidden cards cannot clip it", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <Card>
+        <CardContent className="p-4">
+          <MemberCombobox
+            id="card-clipped-combobox"
+            options={SAMPLE_MEMBERS}
+            value=""
+            onChange={() => {}}
+          />
+        </CardContent>
+      </Card>
+    );
+
+    const cardEl = container.querySelector('[data-slot="card"]')!;
+    const input = screen.getByRole("combobox");
+    await user.click(input);
+
+    const listbox = screen.getByRole("listbox");
+    expect(cardEl.contains(listbox)).toBe(false);
+    expect(document.body.contains(listbox)).toBe(true);
+    expect(listbox.className).toContain("fixed");
+  });
 });
