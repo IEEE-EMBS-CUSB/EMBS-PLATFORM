@@ -49,6 +49,7 @@ describe("RoleOperationalDashboard Component", () => {
 
     expect(screen.queryByText(/Executive Directives & Roadmap/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Committee Overseer & Heads Delegation/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Director Authority/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /delegate assignments to heads/i })).toHaveAttribute("href", "/hr/tasks");
 
     // Director cannot manage seasons or attendance
@@ -85,7 +86,7 @@ describe("RoleOperationalDashboard Component", () => {
     expect(screen.queryByText(/Directives from Director/i)).not.toBeInTheDocument();
   });
 
-  it("renders Master Authority governance console for master_admin", () => {
+  it("renders Master governance console for master_admin without redundant authority pill", () => {
     render(
       <RoleOperationalDashboard
         currentUserRole="master_admin"
@@ -93,9 +94,11 @@ describe("RoleOperationalDashboard Component", () => {
       />
     );
 
-    expect(screen.getByText(/Master Authority & Chapter Governance/i)).toBeInTheDocument();
+    expect(screen.getByText(/Chapter Governance/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Master Admin$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/zero code edits/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /season lifecycle & clone/i })).toHaveAttribute("href", "/hr/seasons");
-    expect(screen.getByRole("link", { name: /roster whitelist & roles/i })).toHaveAttribute("href", "/hr/roster");
+    expect(screen.getByRole("link", { name: /roster & roles/i })).toHaveAttribute("href", "/hr/roster");
   });
 
   it("renders scoped attendance desk for hr_member", () => {

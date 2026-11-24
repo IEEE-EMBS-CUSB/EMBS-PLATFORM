@@ -328,20 +328,19 @@ export function HrFeedbackView({
           aria-hidden="true"
         />
         <div className="space-y-1">
-          <p className="font-bold">Who Can &amp; Cannot See Feedback</p>
+          <p className="font-bold">Visibility</p>
           <p>
             <strong>Sent to Member</strong> (Public Recognition, Excused
-            Absence, General Note, and <strong>Official Warning</strong>) are
-            delivered directly to the member&apos;s portal.
+            Absence, General Note, and <strong>Official Warning</strong>) appears
+            in the member&apos;s portal.
           </p>
           <p>
-            <strong>Hidden HR Notes</strong> are filtered at the SQL query layer:
-            visible only to Master Admin, Track Director, HR Admin, and the
-            committee&apos;s HR Officer —{" "}
+            <strong>Hidden HR Notes</strong> are visible only to Master Admin,
+            Track Director, HR Admin, and the committee&apos;s HR Officer —{" "}
             <strong>
               never visible to the member, attendees, or committee heads
             </strong>
-            , and never visible to the subject across any of their own hats.
+            .
           </p>
         </div>
       </div>

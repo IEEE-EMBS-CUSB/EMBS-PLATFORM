@@ -183,7 +183,7 @@ export function LoginForm({
           </h1>
           <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
             {step === "credentials"
-              ? "Access is guarded by active roster membership. Zero emails sent."
+              ? "Sign in with your chapter email and password."
               : "Welcome to IEEE EMBS CUSB! Please choose your permanent password to complete your account activation."}
           </p>
         </div>

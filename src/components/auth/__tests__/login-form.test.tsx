@@ -16,8 +16,9 @@ describe("LoginForm (Pre-assigned Password & First-Login Reset)", () => {
       screen.getByRole("button", { name: /sign in/i })
     ).toBeInTheDocument();
 
-    // Verify zero open registration links
+    // Verify zero open registration links and no technical implementation copy
     expect(screen.queryByText(/sign up|create account/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/zero emails sent/i)).not.toBeInTheDocument();
   });
 
   it("transitions to 'Set Permanent Password' screen on first login when mustChangePassword is true", async () => {

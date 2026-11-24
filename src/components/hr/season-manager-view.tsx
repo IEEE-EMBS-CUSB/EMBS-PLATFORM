@@ -7,7 +7,6 @@ import {
   CheckCircle,
   CheckSquare,
   Copy,
-  Layers,
   Lock,
   Megaphone,
   Pencil,
@@ -16,12 +15,10 @@ import {
   QrCode,
   RotateCcw,
   Settings2,
-  ShieldCheck,
   Sliders,
   Sparkles,
   Trash2,
   Trophy,
-  Users,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -651,12 +648,10 @@ export function SeasonManagerView({
       <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
-            Seasons & Grading Settings
+            Seasons &amp; Grading Settings
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Each season isolates a chapter term&apos;s roster, committee tracks,
-            attendance points, and grading formulas. Adjust settings directly
-            below or clone into a new term.
+            Manage chapter terms, scoring settings, and season rollovers.
           </p>
         </div>
 
@@ -687,71 +682,6 @@ export function SeasonManagerView({
           </div>
         )}
       </div>
-
-      {/* Clear Explanation of What a Season Entails */}
-      <Card className="border-border bg-[#f8f9fb] shadow-none">
-        <CardContent className="p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-heading text-xs font-bold tracking-wide text-[#002855] uppercase">
-              What a Season Entails
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              Historical seasons freeze permanently once archived
-            </span>
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-lg border border-border/80 bg-white p-3">
-              <div className="flex items-center gap-2 text-[#772583]">
-                <Layers className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="font-heading text-xs font-bold text-[#002855]">
-                  Committee Tracks
-                </span>
-              </div>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                Editable sets (Technical, Creative, Operations, or future tracks)
-                that organize committees and define each Director&apos;s scope.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border/80 bg-white p-3">
-              <div className="flex items-center gap-2 text-[#007377]">
-                <Sliders className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="font-heading text-xs font-bold text-[#002855]">
-                  Attendance & Grading
-                </span>
-              </div>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                Default session points, punctuality cutoffs, check-in windows,
-                and Effort/Quality/Timeliness multipliers used across HR
-                grading.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border/80 bg-white p-3">
-              <div className="flex items-center gap-2 text-[#00629b]">
-                <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="font-heading text-xs font-bold text-[#002855]">
-                  Roster & Permissions
-                </span>
-              </div>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                Whitelisted members, Heads, HR officers, and Track Directors
-                belong exclusively to their season&apos;s operational ledger.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border/80 bg-white p-3">
-              <div className="flex items-center gap-2 text-[#1e6b0a]">
-                <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="font-heading text-xs font-bold text-[#002855]">
-                  Tiers & Archive
-                </span>
-              </div>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                Monthly snapshots, member activity tiers, and point histories
-                stay scoped to the season and lock permanently on rollover.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Season Cards */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

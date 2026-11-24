@@ -84,10 +84,11 @@ describe("HrFeedbackView", () => {
     expect(screen.getByText("+15 pts")).toBeInTheDocument();
     expect(screen.getByText("-10 pts")).toBeInTheDocument();
 
-    // Clear visibility explanation (who can & cannot see hidden feedback)
+    // Clear visibility explanation without SQL/implementation jargon
     expect(
       screen.getByText(/never visible to the member, attendees, or committee heads/i)
     ).toBeInTheDocument();
+    expect(screen.queryByText(/sql query layer/i)).not.toBeInTheDocument();
   });
 
   it("filters items by Sent to Member, Official Warnings, and Hidden HR Notes", async () => {

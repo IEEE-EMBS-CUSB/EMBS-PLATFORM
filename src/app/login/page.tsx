@@ -9,8 +9,7 @@ import heroImage from "../../../public/hero.webp";
 
 export const metadata: Metadata = {
   title: "Login",
-  description:
-    "Whitelist-guarded portal access for IEEE EMBS CUSB members and attendees.",
+  description: "Sign in to the IEEE EMBS CUSB portal.",
 };
 
 interface LoginPageProps {

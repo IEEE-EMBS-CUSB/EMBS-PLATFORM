@@ -79,6 +79,7 @@ describe("TaskDelegationView Component", () => {
 
     expect(screen.getByText(/Delegate Assignments/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^task$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/assignments only/i)).not.toBeInTheDocument();
 
     const titleInput = screen.getByLabelText(/assignment title/i);
     await user.type(titleInput, "Finalize Midterm Curriculum");

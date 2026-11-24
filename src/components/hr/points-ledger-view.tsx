@@ -217,12 +217,12 @@ export function PointsLedgerView({
       <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
-            Point Override Ledger
+            Points Ledger
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {readOnly
-              ? "Deterministic read-only audit trail for points across your managed committees."
-              : "Deterministic audit trail for all point transactions and manual adjustments."}
+              ? "Points history across your committees."
+              : "All point transactions and manual adjustments."}
           </p>
         </div>
 
@@ -250,11 +250,11 @@ export function PointsLedgerView({
             aria-hidden="true"
           />
           <div>
-            <span className="font-bold">Read-Only Audit View:</span>{" "}
+            <span className="font-bold">Read-Only View:</span>{" "}
             {scopedTrackName
-              ? `Showing points ledger entries filtered to ${scopedTrackName}. `
-              : "Showing points ledger entries across your managed committees. "}
-            Manual point overrides are managed by HR and Master Admin.
+              ? `Showing points for ${scopedTrackName}. `
+              : "Showing points across your committees. "}
+            Manual adjustments are managed by HR.
           </div>
         </div>
       )}

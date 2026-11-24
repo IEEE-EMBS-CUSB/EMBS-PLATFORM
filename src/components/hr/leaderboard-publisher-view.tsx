@@ -362,7 +362,7 @@ export function LeaderboardPublisherView({
                 {snapshot.publishedByName
                   ? ` by ${snapshot.publishedByName}`
                   : ""}
-                . Public leaderboards serve this snapshot.
+                . Public leaderboards now display these standings.
               </span>
             ) : phase === "due_review" ? (
               <span>

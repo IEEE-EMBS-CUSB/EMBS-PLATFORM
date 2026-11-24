@@ -125,7 +125,7 @@ describe("SeasonManagerView Component", () => {
     );
   });
 
-  it("explains what a season entails and opens season settings in a modal to edit and save rules", async () => {
+  it("opens season settings in a modal to edit and save rules without explanatory architecture boilerplate", async () => {
     const user = userEvent.setup();
     const onUpdateSettings = vi.fn().mockResolvedValue({ ok: true });
 
@@ -136,8 +136,7 @@ describe("SeasonManagerView Component", () => {
       />
     );
 
-    // Clear "What a Season Entails" explanation
-    expect(screen.getByText(/what a season entails/i)).toBeInTheDocument();
+    expect(screen.queryByText(/what a season entails/i)).not.toBeInTheDocument();
 
     // Open active season settings modal
     const activeCard = screen.getByText("Fall 2026").closest("[data-season-card]") as HTMLElement;

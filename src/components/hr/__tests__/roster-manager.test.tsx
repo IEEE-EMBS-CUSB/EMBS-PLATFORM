@@ -63,7 +63,7 @@ describe("RosterManagerView Component", () => {
       />
     );
 
-    expect(screen.getAllByText(/Master Authority/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/Master Authority/i)).not.toBeInTheDocument();
     const roleSelect = screen.getByLabelText("Assign role for Salma El-Sayed");
     await user.selectOptions(roleSelect, "hr_admin");
 
@@ -94,7 +94,7 @@ describe("RosterManagerView Component", () => {
       />
     );
 
-    expect(screen.getByText(/HR Admin Access/i)).toBeInTheDocument();
+    expect(screen.queryByText(/HR Admin Access/i)).not.toBeInTheDocument();
     const commSelect = screen.getByLabelText("Assign committee for Laila Amr");
     await user.selectOptions(commSelect, "comm-ai-ml");
 

@@ -165,7 +165,7 @@ async function CommitteeLeaderboardContent({
           ) : (
             <EmptyState
               title="Committee standings not published for this month"
-              description="Only published monthly snapshots are publicly visible. Return to the latest published month for this committee."
+              description="Only published monthly leaderboards are publicly visible. Return to the latest published month for this committee."
               action={
                 <Link
                   href={`/leaderboards/committees/${committee.slug}`}

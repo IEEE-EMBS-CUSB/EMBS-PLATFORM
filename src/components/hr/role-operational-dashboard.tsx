@@ -5,7 +5,6 @@ import {
   CalendarDays,
   CheckSquare,
   Clock,
-  Crown,
   FileSpreadsheet,
   Layers,
   Megaphone,
@@ -301,16 +300,11 @@ export function RoleOperationalDashboard({
     return (
       <div className="space-y-6">
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-heading text-xl font-bold text-[#002855]">
-                Committee Overseer & Heads Delegation
-              </h2>
-              <Badge className="bg-[#5a1b63] text-white text-xs font-bold border border-[#ffc627]/40">
-                Director Authority
-              </Badge>
-            </div>
+            <h2 className="font-heading text-xl font-bold text-[#002855]">
+              Committee Overseer &amp; Heads Delegation
+            </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Welcome back, Director {userName}. Supervise your {kpis.committeeCount || "chapter"} committees, assign deliverables to Committee Heads and Members, and audit track standings.
+              Welcome back, {userName}. Supervise your {kpis.committeeCount || "chapter"} committees, assign deliverables to Committee Heads and Members, and review track standings.
             </p>
           </div>
 
@@ -372,10 +366,10 @@ export function RoleOperationalDashboard({
                   <FileSpreadsheet className="h-5 w-5" />
                 </div>
                 <h3 className="font-heading text-sm font-bold text-[#002855]">
-                  Points Ledger Audit (Read-Only)
+                  Points Ledger
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Inspect score derivation, bonus logs, and activity records filtered to your committees.
+                  Review point history, bonus logs, and activity records for your committees.
                 </p>
                 <div className="mt-auto pt-2">
                   <Link
@@ -414,16 +408,11 @@ export function RoleOperationalDashboard({
           }
         >
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-heading text-xl font-bold text-[#002855]">
-                Human Resources Operations Console
-              </h2>
-              <Badge className="bg-[#772583] text-white text-xs font-semibold">
-                HR Administration
-              </Badge>
-            </div>
+            <h2 className="font-heading text-xl font-bold text-[#002855]">
+              Human Resources Operations Console
+            </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Welcome back, {userName}. Manage committee HR assignments, assign tasks to HR members, supervise attendance, and publish leaderboards.
+              Welcome back, {userName}. Manage committee HR assignments, assign tasks, supervise attendance, and publish leaderboards.
             </p>
           </div>
 
@@ -463,7 +452,7 @@ export function RoleOperationalDashboard({
                 <p className="mt-1 font-heading text-2xl font-bold text-[#772583] tabular-nums">
                   {kpis.publishedMonthsCount}
                 </p>
-                <p className="mt-1 text-[11px] text-muted-foreground">Frozen leaderboard snapshots</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Published to leaderboards</p>
               </CardContent>
             </Card>
           </div>
@@ -503,7 +492,7 @@ export function RoleOperationalDashboard({
                   Publish Monthly Leaderboard
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Review ended months and permanently freeze deterministic leaderboard snapshots.
+                  Review completed months and publish official rankings to public leaderboards.
                 </p>
                 <div className="mt-auto pt-2">
                   <Link
@@ -556,16 +545,11 @@ export function RoleOperationalDashboard({
     return (
       <div className="space-y-8">
         <div className="border-b border-border pb-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
-              Master Authority &amp; Chapter Governance
-            </h1>
-            <Badge className="gap-1 border border-[#ffc627]/40 bg-[#002855] text-xs font-bold text-[#ffc627]">
-              <Crown className="h-3.5 w-3.5" /> Master Admin
-            </Badge>
-          </div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
+            Chapter Governance
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Welcome back, {userName}. Exclusive authority to manage seasons, access whitelist, and assign roles across all users.
+            Welcome back, {userName}. Manage seasons, chapter roster access, and roles.
           </p>
         </div>
 
@@ -618,7 +602,7 @@ export function RoleOperationalDashboard({
                 Season Lifecycle &amp; Settings
               </h3>
               <p className="text-xs text-muted-foreground">
-                Create new seasons, activate or archive operational terms, and configure scoring rules with zero code edits.
+                Create new seasons, archive past terms, and configure scoring rules.
               </p>
               <div className="mt-auto pt-2">
                 <Link
@@ -640,10 +624,10 @@ export function RoleOperationalDashboard({
                 <Users className="h-5 w-5" />
               </div>
               <h3 className="font-heading text-base font-bold text-[#002855]">
-                Roster Whitelist &amp; Roles
+                Roster &amp; Roles
               </h3>
               <p className="text-xs text-muted-foreground">
-                Grant email whitelist authorization, assign roles (Director, HR Admin, Head), and CSV bulk import.
+                Manage chapter members, assign roles, and run CSV bulk imports.
               </p>
               <div className="mt-auto pt-2">
                 <Link
@@ -653,7 +637,7 @@ export function RoleOperationalDashboard({
                     className: "w-full bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]",
                   })}
                 >
-                  Roster Whitelist &amp; Roles
+                  Roster &amp; Roles
                 </Link>
               </div>
             </CardContent>
@@ -665,10 +649,10 @@ export function RoleOperationalDashboard({
                 <TrendingUp className="h-5 w-5" />
               </div>
               <h3 className="font-heading text-base font-bold text-[#002855]">
-                Leaderboard Snapshots
+                Monthly Leaderboards
               </h3>
               <p className="text-xs text-muted-foreground">
-                Audit monthly rankings and publish permanent historical snapshots to public leaderboards.
+                Review monthly rankings and publish official standings to public leaderboards.
               </p>
               <div className="mt-auto pt-2">
                 <Link

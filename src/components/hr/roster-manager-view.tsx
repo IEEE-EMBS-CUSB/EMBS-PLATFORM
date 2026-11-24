@@ -4,12 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
-  Crown,
   FileSpreadsheet,
   KeyRound,
   Plus,
   Search,
-  Shield,
   Trash2,
   Upload,
   UserCheck,
@@ -880,30 +878,15 @@ export function RosterManagerView({
 
       <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
-              Roster &amp; Whitelist Manager
-            </h1>
-            {isMaster ? (
-              <Badge className="gap-1 border border-[#ffc627]/40 bg-[#002855] text-xs font-bold text-[#ffc627]">
-                <Crown className="h-3 w-3" /> Master Authority
-              </Badge>
-            ) : currentUserRole === "hr_admin" ? (
-              <Badge className="gap-1 bg-[#772583] text-xs font-semibold text-white">
-                <Shield className="h-3 w-3" /> HR Admin Access
-              </Badge>
-            ) : (
-              <Badge className="gap-1 bg-[#5a1b63] text-xs font-semibold text-white">
-                <Shield className="h-3 w-3" /> Director View
-              </Badge>
-            )}
-          </div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-[#002855]">
+            Chapter Roster
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isMaster
-              ? "Manage whitelist access, assign multi-role memberships, and assign HR officers to committees."
+              ? "Manage chapter members, assign roles, and assign HR officers to committees."
               : currentUserRole === "hr_admin"
-                ? "View the full chapter roster and assign HR officers to their tracked committees."
-                : "Inspect active members and leadership across your assigned committees."}
+                ? "View the chapter roster and assign HR officers to committees."
+                : "View active members and leadership across your assigned committees."}
           </p>
         </div>
 

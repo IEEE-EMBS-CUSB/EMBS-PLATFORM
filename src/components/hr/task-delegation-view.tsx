@@ -525,33 +525,15 @@ export function TaskDelegationView({
           <CardHeader className="border-b border-border/70 pb-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <CardTitle className="font-heading text-lg font-bold text-[#002855]">
-                    {formHeading}
-                  </CardTitle>
-                  {!canChooseWorkType && (
-                    <Badge
-                      className={
-                        isAssignment
-                          ? "bg-[#ebf3f8] text-[11px] font-semibold text-[#00629b]"
-                          : "bg-[#f5edf7] text-[11px] font-semibold text-[#5a1b63]"
-                      }
-                    >
-                      {singularLabel}s only
-                    </Badge>
-                  )}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {currentUserRole === "hr_admin"
-                    ? isAssignment
-                      ? "HR Admin assignments go to your HR committee officers. Switch to Task to assign chapter-wide tasks to everyone or heads-only."
-                      : "HR Tasks can be assigned chapter-wide to everyone, heads-only, members, or specific committees."
-                    : currentUserRole === "master_admin"
-                      ? "Master Admin can issue both rubric-graded Assignments and check-off HR Tasks."
-                      : isAssignment
-                        ? "Director and Committee Head deliverables are recorded as rubric-graded Assignments."
-                        : "HR deliverables for your tracked committee are recorded as check-off Tasks."}
-                </p>
+                <CardTitle className="font-heading text-lg font-bold text-[#002855]">
+                  {formHeading}
+                </CardTitle>
+                {currentUserRole === "hr_admin" && isAssignment && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    HR Admin assignments go to HR committee officers. Switch to
+                    Task to assign chapter-wide tasks.
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">

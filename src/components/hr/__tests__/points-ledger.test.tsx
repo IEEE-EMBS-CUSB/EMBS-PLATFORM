@@ -74,7 +74,7 @@ describe("PointsLedgerView", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: /point override ledger/i })
+      screen.getByRole("heading", { name: /points ledger/i })
     ).toBeInTheDocument();
     expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
     expect(screen.getAllByText("Ziad Hany")).toHaveLength(2);
@@ -181,7 +181,8 @@ describe("PointsLedgerView", () => {
     expect(
       screen.queryByRole("button", { name: /adjust points/i })
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/read-only audit view/i)).toBeInTheDocument();
+    expect(screen.getByText(/read-only view/i)).toBeInTheDocument();
+    expect(screen.queryByText(/deterministic/i)).not.toBeInTheDocument();
     expect(screen.getByText(/technical track/i)).toBeInTheDocument();
     expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
   });
