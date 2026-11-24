@@ -84,7 +84,8 @@ describe("AttendanceManagerView Component", () => {
     );
   });
 
-  it("auto-marks sessions with an expired checkinExpiresAt as Closed even if checkinOpen is true", () => {
+  it("auto-marks sessions with an expired checkinExpiresAt as Closed while preserving their persistent QR and code", async () => {
+    const user = userEvent.setup();
     const expiredSession = {
       id: "sess-expired",
       title: "Expired Check-In Meeting",
@@ -92,7 +93,8 @@ describe("AttendanceManagerView Component", () => {
       startsAt: new Date("2026-09-01T10:00:00Z"),
       checkinOpen: true,
       checkinCode: "112233",
-      checkinExpiresAt: new Date("2020-01-01T00:00:00Z"),
+      checkinStartsAt: new Date("2020-01-01T00:00:00Z"),
+      checkinExpiresAt: new Date("2020-01-01T00:30:00Z"),
       basePoints: 10,
       punctualityBonus: 5,
       attendanceCount: 5,
@@ -102,9 +104,53 @@ describe("AttendanceManagerView Component", () => {
 
     expect(screen.getByText("Closed")).toBeInTheDocument();
     expect(screen.queryByText("Check-in Open")).not.toBeInTheDocument();
+    expect(screen.getByText("112233")).toBeInTheDocument();
+
+    const qrBtn = screen.getByRole("button", { name: /view qr & code/i });
+    expect(qrBtn).not.toBeDisabled();
+    await user.click(qrBtn);
+
+    expect(screen.getByText(/check-in window closed/i)).toBeInTheDocument();
+    expect(screen.getAllByText("112233").length).toBeGreaterThanOrEqual(2);
     expect(
-      screen.getByRole("button", { name: /open live check-in/i })
-    ).toBeDisabled();
+      screen.getByRole("button", { name: /re-open \(\+15m\)/i })
+    ).toBeInTheDocument();
+  });
+
+  it("displays Scheduled badge and persistent QR & code before a future session starts", async () => {
+    const user = userEvent.setup();
+    const futureStart = new Date(Date.now() + 2 * 60 * 60_000);
+    const futureEnd = new Date(futureStart.getTime() + 30 * 60_000);
+
+    const scheduledSession = {
+      id: "sess-future",
+      title: "Embedded Systems Intro",
+      committeeName: "Embedded Systems",
+      startsAt: futureStart,
+      checkinOpen: true,
+      checkinCode: "554433",
+      checkinStartsAt: futureStart,
+      checkinExpiresAt: futureEnd,
+      basePoints: 10,
+      punctualityBonus: 5,
+      attendanceCount: 0,
+    };
+
+    render(<AttendanceManagerView sessions={[scheduledSession]} />);
+
+    expect(screen.getByText("Scheduled")).toBeInTheDocument();
+    expect(screen.queryByText("Check-in Open")).not.toBeInTheDocument();
+    expect(screen.getByText("554433")).toBeInTheDocument();
+
+    const qrBtn = screen.getByRole("button", { name: /view qr & code/i });
+    expect(qrBtn).not.toBeDisabled();
+    await user.click(qrBtn);
+
+    expect(screen.getByText(/scheduled auto-open/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/add this qr to your slides/i)
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("554433").length).toBeGreaterThanOrEqual(2);
   });
 
   it("opens the keyboard-friendly attendance roster for a session and allows manual On Time / Late / Excused / Absent toggles", async () => {

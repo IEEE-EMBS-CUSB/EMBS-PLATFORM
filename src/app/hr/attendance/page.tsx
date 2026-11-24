@@ -11,7 +11,7 @@ import {
 } from "@/lib/season-settings";
 import {
   closeExpiredSessionsForSeason,
-  isSessionCheckinLive,
+  getSessionCheckinState,
 } from "@/services/hr-ops/attendance.service";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
@@ -67,6 +67,7 @@ export default async function HrAttendancePage() {
             startsAt: schema.branchSessions.startsAt,
             checkinOpen: schema.branchSessions.checkinOpen,
             checkinCode: schema.branchSessions.checkinCode,
+            checkinStartsAt: schema.branchSessions.checkinStartsAt,
             checkinEndsAt: schema.branchSessions.checkinEndsAt,
             checkinExpiresAt: schema.branchSessions.checkinExpiresAt,
             punctualityCutoffMinutes:
@@ -113,7 +114,7 @@ export default async function HrAttendancePage() {
       dbSessionsList = (
         isCommitteeScoped && !operationalCommitteeId ? [] : dbSessions
       ).map((s) => {
-        const isLive = isSessionCheckinLive(s, now);
+        const state = getSessionCheckinState(s, now);
         return {
           id: s.id,
           title: s.title,
@@ -122,8 +123,9 @@ export default async function HrAttendancePage() {
             ? commMap.get(s.committeeId) ?? "Unknown"
             : "Branch-wide",
           startsAt: s.startsAt,
-          checkinOpen: isLive,
-          checkinCode: isLive ? s.checkinCode : null,
+          checkinOpen: state !== "closed",
+          checkinCode: s.checkinCode,
+          checkinStartsAt: s.checkinStartsAt,
           checkinExpiresAt: s.checkinEndsAt ?? s.checkinExpiresAt,
           punctualityCutoffMinutes: s.punctualityCutoffMinutes,
           basePoints: s.basePoints,

@@ -83,12 +83,10 @@ describe("Checkable tasks, link assignments, and posting scope helpers", () => {
     }
   });
 
-  it("resolves manual ledger posting scope with least privilege", () => {
-    // Committee-scoped actors cannot escalate to org-wide open scope
+  it("always resolves manual ledger posting scope to the member's committee board + global (falling back to open only when unassigned)", () => {
     expect(
       resolveManualLedgerPostingScope({
         actorRole: "hr_member",
-        requestedScope: "open",
         memberCommitteeId: "comm-pr",
       })
     ).toEqual({ postingScope: "committee", committeeId: "comm-pr" });
@@ -96,29 +94,28 @@ describe("Checkable tasks, link assignments, and posting scope helpers", () => {
     expect(
       resolveManualLedgerPostingScope({
         actorRole: "committee_head",
-        requestedScope: "open",
         memberCommitteeId: "comm-ai",
       })
     ).toEqual({ postingScope: "committee", committeeId: "comm-ai" });
 
-    // HR Admin and Master Admin can post open (org-wide) awards
+    // Even HR Admin and Master Admin always post to the member's committee board + global
     expect(
       resolveManualLedgerPostingScope({
         actorRole: "hr_admin",
         requestedScope: "open",
         memberCommitteeId: "comm-pr",
       })
-    ).toEqual({ postingScope: "open", committeeId: null });
+    ).toEqual({ postingScope: "committee", committeeId: "comm-pr" });
 
     expect(
       resolveManualLedgerPostingScope({
         actorRole: "master_admin",
-        requestedScope: "committee",
+        requestedScope: "open",
         memberCommitteeId: "comm-pr",
       })
     ).toEqual({ postingScope: "committee", committeeId: "comm-pr" });
 
-    // Unassigned member defaults to open scope
+    // Unassigned member (no committee) falls back to open scope
     expect(
       resolveManualLedgerPostingScope({
         actorRole: "master_admin",

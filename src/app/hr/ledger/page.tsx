@@ -147,9 +147,6 @@ export default async function HrLedgerPage() {
       defaultMonth={defaultMonth}
       readOnly={isReadOnly}
       scopedTrackName={profile.managedTrackName ?? undefined}
-      canChooseOpenScope={
-        profile.role === "master_admin" || profile.role === "hr_admin"
-      }
       onAddEntry={isReadOnly ? undefined : addManualLedgerEntryAction}
     />
   );

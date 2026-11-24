@@ -48,7 +48,6 @@ interface PointsLedgerViewProps {
   members: MemberOption[];
   currentUserName?: string;
   defaultMonth?: string;
-  canChooseOpenScope?: boolean;
   readOnly?: boolean;
   scopedTrackName?: string;
   onAddEntry?: (input: {
@@ -56,7 +55,6 @@ interface PointsLedgerViewProps {
     points: number;
     month: string;
     reason: string;
-    postingScope?: "committee" | "open";
   }) => Promise<{ ok: boolean; id?: string; error?: string } | void>;
 }
 
@@ -65,7 +63,6 @@ export function PointsLedgerView({
   members,
   currentUserName = "HR Team",
   defaultMonth,
-  canChooseOpenScope = false,
   readOnly = false,
   scopedTrackName,
   onAddEntry,
@@ -87,9 +84,6 @@ export function PointsLedgerView({
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [pointsDelta, setPointsDelta] = useState("10");
   const [month, setMonth] = useState(resolvedDefaultMonth);
-  const [postingScope, setPostingScope] = useState<"committee" | "open">(
-    "committee"
-  );
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -142,7 +136,6 @@ export function PointsLedgerView({
           points: pts,
           month: targetMonth,
           reason: reason.trim(),
-          ...(canChooseOpenScope ? { postingScope } : {}),
         });
         if (res && !res.ok) {
           setFormError(res.error ?? "Failed to save adjustment.");
@@ -468,32 +461,6 @@ export function PointsLedgerView({
                   />
                 </div>
               </div>
-
-              {canChooseOpenScope && (
-                <div>
-                  <label
-                    htmlFor="scopeSelect"
-                    className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-                  >
-                    Board Scope
-                  </label>
-                  <select
-                    id="scopeSelect"
-                    value={postingScope}
-                    onChange={(e) =>
-                      setPostingScope(e.target.value as "committee" | "open")
-                    }
-                    className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-[#00629b]"
-                  >
-                    <option value="committee">
-                      Member&apos;s Committee Board + Global
-                    </option>
-                    <option value="open">
-                      Org-Wide (All Eligible Committee Boards + Global)
-                    </option>
-                  </select>
-                </div>
-              )}
 
               <div>
                 <label

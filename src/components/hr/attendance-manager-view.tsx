@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
+  CalendarClock,
   ClipboardList,
   Clock,
+  Download,
   Plus,
   QrCode,
   Radio,
@@ -43,6 +45,7 @@ export interface SessionItem {
   startsAt: Date;
   checkinOpen: boolean;
   checkinCode: string | null;
+  checkinStartsAt?: Date | null;
   checkinExpiresAt?: Date | null;
   punctualityCutoffMinutes?: number;
   basePoints: number;
@@ -71,7 +74,13 @@ interface AttendanceManagerViewProps {
   onExtendCheckin?: (
     sessionId: string,
     extraMinutes?: number
-  ) => Promise<{ ok: boolean; error?: string; checkinExpiresAt?: Date | null }>;
+  ) => Promise<{
+    ok: boolean;
+    error?: string;
+    checkinCode?: string | null;
+    checkinStartsAt?: Date | null;
+    checkinExpiresAt?: Date | null;
+  }>;
   onLoadSessionRoster?: (sessionId: string) => Promise<{
     ok: boolean;
     error?: string;
@@ -90,29 +99,64 @@ interface AttendanceManagerViewProps {
   }>;
 }
 
-function isSessionLiveAt(sess: SessionItem, nowMs: number): boolean {
-  if (!sess.checkinOpen) return false;
-  if (!sess.checkinExpiresAt) return true;
-  return new Date(sess.checkinExpiresAt).getTime() > nowMs;
+type SessionLifecycleState = "scheduled" | "live" | "closed";
+
+function getSessionStateAt(
+  sess: SessionItem,
+  nowMs: number
+): SessionLifecycleState {
+  if (!sess.checkinOpen) return "closed";
+  if (
+    sess.checkinExpiresAt &&
+    new Date(sess.checkinExpiresAt).getTime() <= nowMs
+  ) {
+    return "closed";
+  }
+  if (
+    sess.checkinStartsAt &&
+    new Date(sess.checkinStartsAt).getTime() > nowMs
+  ) {
+    return "scheduled";
+  }
+  return "live";
 }
 
 function formatRemainingCountdown(
-  expiresAt: Date | null | undefined,
+  targetAt: Date | null | undefined,
   nowMs: number
 ): string | null {
-  if (!expiresAt) return null;
+  if (!targetAt) return null;
   const remainingSec = Math.max(
     0,
-    Math.floor((new Date(expiresAt).getTime() - nowMs) / 1000)
+    Math.floor((new Date(targetAt).getTime() - nowMs) / 1000)
   );
   if (remainingSec <= 0) return "00:00";
-  const hours = Math.floor(remainingSec / 3600);
+  const days = Math.floor(remainingSec / 86400);
+  const hours = Math.floor((remainingSec % 86400) / 3600);
   const mins = Math.floor((remainingSec % 3600) / 60);
   const secs = remainingSec % 60;
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
   if (hours > 0) {
     return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   }
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function formatSessionDateTime(date: Date | null | undefined): string {
+  if (!date) return "";
+  return new Date(date).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function getLocalDatetimeInputValue(date: Date = new Date()): string {
+  const d = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return d.toISOString().slice(0, 16);
 }
 
 const STATUS_META: Record<
@@ -220,11 +264,9 @@ export function AttendanceManagerView({
 
   // Form state
   const [newTitle, setNewTitle] = useState("");
-  const [newStartsAt, setNewStartsAt] = useState(() => {
-    const d = new Date();
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-    return d.toISOString().slice(0, 16);
-  });
+  const [newStartsAt, setNewStartsAt] = useState(() =>
+    getLocalDatetimeInputValue()
+  );
   const [newCommitteeId, setNewCommitteeId] = useState<string>(
     currentUserCommitteeId ?? ""
   );
@@ -250,11 +292,13 @@ export function AttendanceManagerView({
     [liveCheckinSessionId, sessionList]
   );
 
-  // Tick every second while any session has an active countdown
+  // Tick every second while any session is scheduled or live with a timer
   const hasTimedOpenSession = useMemo(
     () =>
       sessionList.some(
-        (s) => s.checkinOpen && Boolean(s.checkinExpiresAt)
+        (s) =>
+          s.checkinOpen &&
+          (Boolean(s.checkinExpiresAt) || Boolean(s.checkinStartsAt))
       ),
     [sessionList]
   );
@@ -298,12 +342,11 @@ export function AttendanceManagerView({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const liveSessionIsActive = liveCheckinSession
-    ? isSessionLiveAt(liveCheckinSession, nowMs)
-    : false;
-  const activeQrCode = liveSessionIsActive
-    ? (liveCheckinSession?.checkinCode ?? null)
-    : null;
+  const liveSessionState: SessionLifecycleState = liveCheckinSession
+    ? getSessionStateAt(liveCheckinSession, nowMs)
+    : "closed";
+  // Persistent QR: always generate when the session has a check-in code (scheduled, live, or closed)
+  const activeQrCode = liveCheckinSession?.checkinCode ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -425,13 +468,14 @@ export function AttendanceManagerView({
               ? {
                   ...item,
                   checkinOpen: open,
-                  checkinCode: open
-                    ? (res.checkinCode ?? item.checkinCode)
-                    : item.checkinCode,
+                  checkinCode: res.checkinCode ?? item.checkinCode,
+                  checkinStartsAt: open
+                    ? (res.checkinStartsAt ?? new Date())
+                    : null,
                   checkinExpiresAt: open
                     ? (res.checkinExpiresAt ??
                       new Date(Date.now() + windowMinutes * 60_000))
-                    : item.checkinExpiresAt,
+                    : null,
                 }
               : item
           )
@@ -464,6 +508,13 @@ export function AttendanceManagerView({
             ? {
                 ...item,
                 checkinOpen: true,
+                checkinCode: res.checkinCode ?? item.checkinCode,
+                checkinStartsAt:
+                  res.checkinStartsAt !== undefined
+                    ? res.checkinStartsAt
+                    : getSessionStateAt(item, Date.now()) === "closed"
+                      ? new Date()
+                      : item.checkinStartsAt,
                 checkinExpiresAt:
                   res.checkinExpiresAt ??
                   new Date(Date.now() + extraMinutes * 60_000),
@@ -695,9 +746,14 @@ export function AttendanceManagerView({
     handleSetRowAttendance,
   ]);
 
-  const liveCountdown = liveCheckinSession
-    ? formatRemainingCountdown(liveCheckinSession.checkinExpiresAt, nowMs)
-    : null;
+  const liveCountdown =
+    liveCheckinSession && liveSessionState === "live"
+      ? formatRemainingCountdown(liveCheckinSession.checkinExpiresAt, nowMs)
+      : null;
+  const scheduledCountdown =
+    liveCheckinSession && liveSessionState === "scheduled"
+      ? formatRemainingCountdown(liveCheckinSession.checkinStartsAt, nowMs)
+      : null;
 
   return (
     <div className="space-y-6">
@@ -726,6 +782,7 @@ export function AttendanceManagerView({
             type="button"
             onClick={() => {
               setErrorMessage(null);
+              setNewStartsAt(getLocalDatetimeInputValue());
               setShowCreateModal(true);
             }}
             className="h-10 shrink-0 gap-2 bg-[#772583] px-4 text-xs font-semibold text-white shadow-xs hover:bg-[#5a1b63]"
@@ -934,20 +991,27 @@ export function AttendanceManagerView({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="session-immediate-checkin"
-                  checked={newOpenImmediately}
-                  onChange={(e) => setNewOpenImmediately(e.target.checked)}
-                  className="h-4 w-4 rounded border-border text-[#772583] focus:ring-[#772583]"
-                />
-                <label
-                  htmlFor="session-immediate-checkin"
-                  className="text-xs font-medium text-foreground"
-                >
-                  Open check-in immediately upon creation
-                </label>
+              <div className="space-y-1 pt-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="session-immediate-checkin"
+                    checked={newOpenImmediately}
+                    onChange={(e) => setNewOpenImmediately(e.target.checked)}
+                    className="h-4 w-4 rounded border-border text-[#772583] focus:ring-[#772583]"
+                  />
+                  <label
+                    htmlFor="session-immediate-checkin"
+                    className="text-xs font-medium text-foreground"
+                  >
+                    Auto-open check-in at session date &amp; time
+                  </label>
+                </div>
+                <p className="pl-6 text-[11px] text-muted-foreground">
+                  Assigns 1 persistent QR &amp; code immediately for slides.
+                  Future times open automatically at start; past times use the
+                  remaining window.
+                </p>
               </div>
 
               <div className="flex items-center justify-end gap-2 border-t border-border/70 pt-4">
@@ -982,12 +1046,16 @@ export function AttendanceManagerView({
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {sessionList.map((sess) => {
-            const isLive = isSessionLiveAt(sess, nowMs);
+            const state = getSessionStateAt(sess, nowMs);
+            const isLive = state === "live";
+            const isScheduled = state === "scheduled";
             const canManageThis = canManageSession(sess);
-            const canProject = isLive && Boolean(sess.checkinCode);
+            const hasCode = Boolean(sess.checkinCode);
             const countdown = isLive
               ? formatRemainingCountdown(sess.checkinExpiresAt, nowMs)
-              : null;
+              : isScheduled
+                ? formatRemainingCountdown(sess.checkinStartsAt, nowMs)
+                : null;
 
             return (
               <Card
@@ -1001,15 +1069,27 @@ export function AttendanceManagerView({
                         className={
                           isLive
                             ? "bg-[#78be20] font-semibold text-[11px] text-white"
-                            : "bg-muted font-semibold text-[11px] text-muted-foreground"
+                            : isScheduled
+                              ? "bg-[#00629b] font-semibold text-[11px] text-white"
+                              : "bg-muted font-semibold text-[11px] text-muted-foreground"
                         }
                       >
-                        {isLive ? "Check-in Open" : "Closed"}
+                        {isLive
+                          ? "Check-in Open"
+                          : isScheduled
+                            ? "Scheduled"
+                            : "Closed"}
                       </Badge>
                       {countdown && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[#f5edf7] px-2 py-0.5 font-mono text-[11px] font-bold text-[#772583]">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[11px] font-bold ${
+                            isScheduled
+                              ? "bg-[#00629b]/10 text-[#00629b]"
+                              : "bg-[#f5edf7] text-[#772583]"
+                          }`}
+                        >
                           <Timer className="h-3 w-3" aria-hidden="true" />
-                          {countdown}
+                          {isScheduled ? `Opens in ${countdown}` : countdown}
                         </span>
                       )}
                     </div>
@@ -1044,7 +1124,7 @@ export function AttendanceManagerView({
                       </div>
                     </div>
 
-                    {canProject && (
+                    {hasCode && (
                       <div className="flex items-center justify-between rounded-lg bg-[#002855]/5 px-3 py-1.5 text-xs">
                         <span className="font-semibold text-muted-foreground">
                           Code:
@@ -1060,12 +1140,16 @@ export function AttendanceManagerView({
                     <div className="grid grid-cols-2 gap-2">
                       <Button
                         type="button"
-                        disabled={!canProject}
+                        disabled={!hasCode}
                         onClick={() => setLiveCheckinSessionId(sess.id)}
                         className="h-9 gap-1.5 bg-[#772583] px-2.5 text-xs font-semibold text-white hover:bg-[#5a1b63] disabled:opacity-45"
                       >
                         <QrCode className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                        <span className="truncate">Open Live Check-In</span>
+                        <span className="truncate">
+                          {isLive || !hasCode
+                            ? "Open Live Check-In"
+                            : "View QR & Code"}
+                        </span>
                       </Button>
 
                       <Button
@@ -1105,6 +1189,12 @@ export function AttendanceManagerView({
                           <>
                             <StopCircle className="mr-1.5 h-3.5 w-3.5" />
                             Close Check-In
+                          </>
+                        ) : isScheduled ? (
+                          <>
+                            <Radio className="mr-1.5 h-3.5 w-3.5" />
+                            Open Now (
+                            {attendanceDefaults.defaultCheckinWindowMinutes}m)
                           </>
                         ) : (
                           <>
@@ -1405,18 +1495,44 @@ export function AttendanceManagerView({
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
 
-            {liveSessionIsActive && liveCheckinSession.checkinCode ? (
+            {liveCheckinSession.checkinCode ? (
               <>
                 <div className="flex flex-wrap items-center justify-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f5edf7] px-3 py-1 font-heading text-xs font-bold text-[#772583]">
-                    <Radio className="h-3.5 w-3.5 animate-pulse text-[#772583]" />
-                    Live Check-In Active
-                  </span>
-                  {liveCountdown && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#002855]/10 px-3 py-1 font-mono text-xs font-bold text-[#002855]">
-                      <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                      Closes in {liveCountdown}
-                    </span>
+                  {liveSessionState === "live" && (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f5edf7] px-3 py-1 font-heading text-xs font-bold text-[#772583]">
+                        <Radio className="h-3.5 w-3.5 animate-pulse text-[#772583]" />
+                        Live Check-In Active
+                      </span>
+                      {liveCountdown && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#002855]/10 px-3 py-1 font-mono text-xs font-bold text-[#002855]">
+                          <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                          Closes in {liveCountdown}
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {liveSessionState === "scheduled" && (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#00629b]/10 px-3 py-1 font-heading text-xs font-bold text-[#00629b]">
+                        <CalendarClock
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
+                        Scheduled Auto-Open
+                      </span>
+                      {scheduledCountdown && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#002855]/10 px-3 py-1 font-mono text-xs font-bold text-[#002855]">
+                          <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                          Opens in {scheduledCountdown}
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {liveSessionState === "closed" && (
+                    <Badge className="bg-muted text-xs font-bold text-muted-foreground">
+                      Check-In Window Closed
+                    </Badge>
                   )}
                 </div>
 
@@ -1429,8 +1545,28 @@ export function AttendanceManagerView({
                   {liveCheckinSession.punctualityBonus} punctuality bonus
                 </p>
 
-                {/* High-contrast QR display */}
-                <div className="mt-6 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#772583]/40 bg-[#f8f9fb] p-6">
+                {liveSessionState === "scheduled" && (
+                  <p className="mt-3 rounded-lg border border-[#00629b]/25 bg-[#f0f6fa] px-3 py-2 text-xs text-[#002855]">
+                    Add this QR to your slides. Check-in opens automatically on{" "}
+                    <span className="font-bold">
+                      {formatSessionDateTime(liveCheckinSession.checkinStartsAt)}
+                    </span>
+                    {liveCheckinSession.checkinExpiresAt
+                      ? ` and closes on ${formatSessionDateTime(liveCheckinSession.checkinExpiresAt)}`
+                      : ""}
+                    .
+                  </p>
+                )}
+
+                {liveSessionState === "closed" && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Check-in is currently closed, but this QR and code stay the
+                    same when you re-open check-in later.
+                  </p>
+                )}
+
+                {/* High-contrast persistent QR display */}
+                <div className="mt-5 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#772583]/40 bg-[#f8f9fb] p-6">
                   <div className="flex h-48 w-48 items-center justify-center rounded-lg border border-border bg-white p-2 shadow-sm">
                     {qrDataUrl ? (
                       <Image
@@ -1455,35 +1591,127 @@ export function AttendanceManagerView({
                   <div className="mt-2 inline-flex items-center gap-2 rounded-lg bg-[#002855] px-4 py-2 font-mono text-2xl font-extrabold tracking-widest text-white shadow-inner">
                     {liveCheckinSession.checkinCode}
                   </div>
+
+                  {qrDataUrl && (
+                    <a
+                      href={qrDataUrl}
+                      download={`${liveCheckinSession.title
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, "-")
+                        .replace(/^-|-$/g, "") || "session"}-qr.png`}
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#772583] hover:underline"
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                      Download QR for slides (PNG)
+                    </a>
+                  )}
                 </div>
 
-                {canManageSession(liveCheckinSession) && (
+                {liveSessionState === "live" &&
+                  canManageSession(liveCheckinSession) && (
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={extendingId === liveCheckinSession.id}
+                        onClick={() =>
+                          handleExtendWindow(liveCheckinSession.id, 15)
+                        }
+                        className="h-9 gap-1.5 border-[#772583]/30 text-xs font-semibold text-[#772583] hover:bg-[#f5edf7]"
+                      >
+                        <Timer className="h-3.5 w-3.5" aria-hidden="true" />
+                        {extendingId === liveCheckinSession.id
+                          ? "Extending…"
+                          : "+15m Extend Window"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          void handleToggleCheckin(
+                            liveCheckinSession.id,
+                            false
+                          );
+                          setLiveCheckinSessionId(null);
+                        }}
+                        className="h-9 gap-1.5 text-xs font-semibold text-[#ba0c2f] hover:bg-[#ba0c2f]/10"
+                      >
+                        <StopCircle
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
+                        Close Now
+                      </Button>
+                    </div>
+                  )}
+
+                {liveSessionState === "scheduled" &&
+                  canManageSession(liveCheckinSession) && (
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                      <Button
+                        type="button"
+                        disabled={togglingId === liveCheckinSession.id}
+                        onClick={() =>
+                          handleToggleCheckin(
+                            liveCheckinSession.id,
+                            true,
+                            attendanceDefaults.defaultCheckinWindowMinutes
+                          )
+                        }
+                        className="h-9 gap-1.5 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
+                      >
+                        <Radio className="h-3.5 w-3.5" aria-hidden="true" />
+                        Open Now (
+                        {attendanceDefaults.defaultCheckinWindowMinutes}m)
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={togglingId === liveCheckinSession.id}
+                        onClick={() =>
+                          handleToggleCheckin(liveCheckinSession.id, false)
+                        }
+                        className="h-9 gap-1.5 text-xs font-semibold text-[#ba0c2f] hover:bg-[#ba0c2f]/10"
+                      >
+                        <StopCircle
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
+                        Cancel Auto-Open
+                      </Button>
+                    </div>
+                  )}
+
+                {liveSessionState === "closed" && (
                   <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={extendingId === liveCheckinSession.id}
-                      onClick={() =>
-                        handleExtendWindow(liveCheckinSession.id, 15)
-                      }
-                      className="h-9 gap-1.5 border-[#772583]/30 text-xs font-semibold text-[#772583] hover:bg-[#f5edf7]"
-                    >
-                      <Timer className="h-3.5 w-3.5" aria-hidden="true" />
-                      {extendingId === liveCheckinSession.id
-                        ? "Extending…"
-                        : "+15m Extend Window"}
-                    </Button>
+                    {canManageSession(liveCheckinSession) && (
+                      <Button
+                        type="button"
+                        disabled={extendingId === liveCheckinSession.id}
+                        onClick={() =>
+                          handleExtendWindow(liveCheckinSession.id, 15)
+                        }
+                        className="h-9 gap-1.5 bg-[#772583] text-xs font-semibold text-white hover:bg-[#5a1b63]"
+                      >
+                        <Timer className="h-3.5 w-3.5" aria-hidden="true" />
+                        Re-open (+15m)
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => {
-                        void handleToggleCheckin(liveCheckinSession.id, false);
+                        const target = liveCheckinSession;
                         setLiveCheckinSessionId(null);
+                        void openAttendanceSheet(target);
                       }}
-                      className="h-9 gap-1.5 text-xs font-semibold text-[#ba0c2f] hover:bg-[#ba0c2f]/10"
+                      className="h-9 gap-1.5 text-xs font-semibold text-[#002855]"
                     >
-                      <StopCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                      Close Now
+                      <ClipboardList
+                        className="h-3.5 w-3.5"
+                        aria-hidden="true"
+                      />
+                      Open Attendance Sheet
                     </Button>
                   </div>
                 )}
@@ -1497,8 +1725,8 @@ export function AttendanceManagerView({
                   {liveCheckinSession.title}
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  The live check-in timer has ended and check-in automatically
-                  closed. You can extend the window or mark late arrivals in the
+                  This session does not have a check-in code yet. Open check-in
+                  to assign its persistent QR and code, or mark arrivals in the
                   Attendance Sheet.
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-2">

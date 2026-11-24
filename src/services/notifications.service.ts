@@ -191,6 +191,8 @@ export async function getMemberNavNotifications(
             id: schema.branchSessions.id,
             committeeId: schema.branchSessions.committeeId,
             checkinOpen: schema.branchSessions.checkinOpen,
+            checkinStartsAt: schema.branchSessions.checkinStartsAt,
+            checkinEndsAt: schema.branchSessions.checkinEndsAt,
             checkinExpiresAt: schema.branchSessions.checkinExpiresAt,
           })
           .from(schema.branchSessions)
@@ -326,6 +328,8 @@ export async function getAttendeeNavNotifications(
           id: schema.branchSessions.id,
           committeeId: schema.branchSessions.committeeId,
           checkinOpen: schema.branchSessions.checkinOpen,
+          checkinStartsAt: schema.branchSessions.checkinStartsAt,
+          checkinEndsAt: schema.branchSessions.checkinEndsAt,
           checkinExpiresAt: schema.branchSessions.checkinExpiresAt,
         })
         .from(schema.branchSessions)
@@ -481,6 +485,8 @@ export async function getHrNavNotifications(
               id: schema.branchSessions.id,
               committeeId: schema.branchSessions.committeeId,
               checkinOpen: schema.branchSessions.checkinOpen,
+              checkinStartsAt: schema.branchSessions.checkinStartsAt,
+              checkinEndsAt: schema.branchSessions.checkinEndsAt,
               checkinExpiresAt: schema.branchSessions.checkinExpiresAt,
             })
             .from(schema.branchSessions)

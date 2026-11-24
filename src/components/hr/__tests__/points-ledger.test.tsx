@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -109,22 +109,26 @@ describe("PointsLedgerView", () => {
     expect(screen.getByText("Late submission without prior notice")).toBeInTheDocument();
   });
 
-  it("opens modal and allows logging a new manual points adjustment", async () => {
+  it("opens modal without Board Scope dropdown and posts directly to member's committee board + global", async () => {
     const user = userEvent.setup();
+    const onAddEntry = vi.fn().mockResolvedValue({ ok: true, id: "led-new" });
     render(
       <PointsLedgerView
         entries={mockEntries}
         members={mockMembers}
+        onAddEntry={onAddEntry}
       />
     );
 
     const adjustBtn = screen.getByRole("button", { name: /adjust points/i });
     await user.click(adjustBtn);
 
-    // Dialog opens
+    // Dialog opens and never renders a Board Scope dropdown
     expect(
       screen.getByRole("heading", { name: /log point adjustment/i })
     ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/board scope/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/org-wide/i)).not.toBeInTheDocument();
 
     // Select member via searchable combobox
     const combo = screen.getByRole("combobox", { name: /select member/i });
@@ -144,6 +148,15 @@ describe("PointsLedgerView", () => {
     // Submit adjustment
     const submitBtn = screen.getByRole("button", { name: /save adjustment/i });
     await user.click(submitBtn);
+
+    expect(onAddEntry).toHaveBeenCalledTimes(1);
+    const payload = onAddEntry.mock.calls[0][0];
+    expect(payload).toMatchObject({
+      membershipId: "mem-1",
+      points: 20,
+      reason: "Exceptional hackathon mentorship",
+    });
+    expect(payload).not.toHaveProperty("postingScope");
 
     // Modal closes and entry is listed
     expect(

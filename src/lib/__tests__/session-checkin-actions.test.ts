@@ -3,6 +3,7 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import {
+  closeExpiredSessionsForSeason,
   createSessionAsActor,
   toggleSessionCheckinAsActor,
   recordMemberCheckin,
@@ -286,5 +287,139 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
     expect(closeRes.ok).toBe(true);
     expect(closeRes.checkinOpen).toBe(false);
     expect(closeRes.checkinExpiresAt).toBeNull();
+    // Persistent 1 code / 1 QR: code is created up front and preserved across open/close/re-open
+    expect(createResult.checkinCode).toMatch(/^\d{6}$/);
+    expect(openRes.checkinCode).toBe(createResult.checkinCode);
+    expect(closeRes.checkinCode).toBe(createResult.checkinCode);
+  });
+
+  it("schedules a future session with persistent code that blocks early check-in until startsAt", async () => {
+    const [omar] = await db
+      .select({
+        id: schema.rosterMemberships.id,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
+      .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
+    expect(omar).toBeDefined();
+
+    const futureStart = new Date(Date.now() + 60 * 60_000); // +60m
+    const createResult = await createSessionAsActor(
+      {
+        title: `Future Slide QR Session ${Date.now()}`,
+        startsAt: futureStart.toISOString(),
+        committeeId: omar.committeeId,
+        checkinWindowMinutes: 30,
+        openCheckinImmediately: true,
+      },
+      { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
+    );
+    expect(createResult.ok).toBe(true);
+    createdSessionIds.push(createResult.sessionId!);
+    expect(createResult.checkinCode).toMatch(/^\d{6}$/);
+    expect(createResult.checkinOpen).toBe(true);
+
+    const [row] = await db
+      .select()
+      .from(schema.branchSessions)
+      .where(eq(schema.branchSessions.id, createResult.sessionId!));
+    expect(row.checkinStartsAt?.getTime()).toBe(futureStart.getTime());
+    expect(row.checkinEndsAt?.getTime()).toBe(futureStart.getTime() + 30 * 60_000);
+
+    // Lazy cleanup must NOT close scheduled future sessions
+    await closeExpiredSessionsForSeason(row.seasonId, new Date());
+    const [afterCleanup] = await db
+      .select()
+      .from(schema.branchSessions)
+      .where(eq(schema.branchSessions.id, createResult.sessionId!));
+    expect(afterCleanup.checkinOpen).toBe(true);
+    expect(afterCleanup.checkinCode).toBe(createResult.checkinCode);
+
+    // Member attempting to check in before startsAt is rejected
+    const earlyCheckin = await recordMemberCheckin(createResult.checkinCode!, omar.id);
+    expect(earlyCheckin.ok).toBe(false);
+    expect(earlyCheckin.error).toMatch(/not started yet/i);
+  });
+
+  it("cuts from the check-in window when startsAt is in the past and preserves code when elapsed or re-opened", async () => {
+    const [omar] = await db
+      .select({
+        id: schema.rosterMemberships.id,
+        committeeId: schema.rosterMemberships.committeeId,
+      })
+      .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
+    expect(omar).toBeDefined();
+
+    // Case A: started 10m ago with 30m window -> ~20m remaining, live immediately
+    const recentPastStart = new Date(Date.now() - 10 * 60_000);
+    const partialRes = await createSessionAsActor(
+      {
+        title: `Recent Past Window Session ${Date.now()}`,
+        startsAt: recentPastStart.toISOString(),
+        committeeId: omar.committeeId,
+        checkinWindowMinutes: 30,
+        openCheckinImmediately: true,
+      },
+      { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
+    );
+    expect(partialRes.ok).toBe(true);
+    createdSessionIds.push(partialRes.sessionId!);
+    expect(partialRes.checkinOpen).toBe(true);
+    expect(partialRes.checkinExpiresAt?.getTime()).toBe(
+      recentPastStart.getTime() + 30 * 60_000
+    );
+
+    // Case B: started 60m ago with 30m window -> initial window already elapsed, still gets persistent code, can be re-opened later with same code
+    const oldPastStart = new Date(Date.now() - 60 * 60_000);
+    const elapsedRes = await createSessionAsActor(
+      {
+        title: `Elapsed Past Window Session ${Date.now()}`,
+        startsAt: oldPastStart.toISOString(),
+        committeeId: omar.committeeId,
+        checkinWindowMinutes: 30,
+        openCheckinImmediately: true,
+      },
+      { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
+    );
+    expect(elapsedRes.ok).toBe(true);
+    createdSessionIds.push(elapsedRes.sessionId!);
+    expect(elapsedRes.checkinOpen).toBe(false);
+    expect(elapsedRes.checkinCode).toMatch(/^\d{6}$/);
+
+    // Re-opening later keeps the exact same 6-digit code
+    const reopenRes = await toggleSessionCheckinAsActor(
+      elapsedRes.sessionId!,
+      true,
+      20,
+      { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
+    );
+    expect(reopenRes.ok).toBe(true);
+    expect(reopenRes.checkinOpen).toBe(true);
+    expect(reopenRes.checkinCode).toBe(elapsedRes.checkinCode);
+
+    // Lazy expiration must preserve checkinCode when closing an expired session
+    const [row] = await db
+      .select()
+      .from(schema.branchSessions)
+      .where(eq(schema.branchSessions.id, elapsedRes.sessionId!));
+    await closeExpiredSessionsForSeason(
+      row.seasonId,
+      new Date(Date.now() + 30 * 60_000)
+    );
+    const [expiredRow] = await db
+      .select()
+      .from(schema.branchSessions)
+      .where(eq(schema.branchSessions.id, elapsedRes.sessionId!));
+    expect(expiredRow.checkinOpen).toBe(false);
+    expect(expiredRow.checkinCode).toBe(elapsedRes.checkinCode);
   });
 });

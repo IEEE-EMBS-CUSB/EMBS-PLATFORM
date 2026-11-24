@@ -20,7 +20,6 @@ export async function addManualLedgerEntryAction(input: {
   points: number;
   month: string;
   reason: string;
-  postingScope?: "committee" | "open";
 }) {
   const actor = await getActorContext();
   if (!actor) return unauthorizedResult();

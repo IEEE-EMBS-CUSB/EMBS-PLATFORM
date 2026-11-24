@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { db, withTransaction } from "@/db";
 import * as schema from "@/db/schema";
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canManageCommitteeSessions,
@@ -33,26 +33,59 @@ export interface SessionRosterRow {
   overrideReason: string | null;
 }
 
+export type SessionCheckinState = "scheduled" | "live" | "closed";
+
+/**
+ * Pure source-of-truth check for a session's check-in lifecycle state:
+ * - "closed": `checkinOpen` is false, or `checkinEndsAt` / `checkinExpiresAt` has passed.
+ * - "scheduled": `checkinOpen` is armed, deadline is in the future, and `now < checkinStartsAt`.
+ * - "live": `checkinOpen` is true and `now` is inside `[checkinStartsAt, checkinEndsAt]`.
+ */
+export function getSessionCheckinState(
+  session: {
+    checkinOpen: boolean;
+    checkinStartsAt?: Date | string | null;
+    checkinEndsAt?: Date | string | null;
+    checkinExpiresAt?: Date | string | null;
+  },
+  now: Date = new Date()
+): SessionCheckinState {
+  if (!session.checkinOpen) return "closed";
+  const nowMs = now.getTime();
+  const deadlineRaw = session.checkinEndsAt ?? session.checkinExpiresAt;
+  if (deadlineRaw) {
+    const deadline =
+      deadlineRaw instanceof Date ? deadlineRaw : new Date(deadlineRaw);
+    if (!Number.isNaN(deadline.getTime()) && nowMs > deadline.getTime()) {
+      return "closed";
+    }
+  }
+  if (session.checkinStartsAt) {
+    const start =
+      session.checkinStartsAt instanceof Date
+        ? session.checkinStartsAt
+        : new Date(session.checkinStartsAt);
+    if (!Number.isNaN(start.getTime()) && nowMs < start.getTime()) {
+      return "scheduled";
+    }
+  }
+  return "live";
+}
+
 /**
  * Pure source-of-truth check for whether a session's check-in window is currently live.
- * Returns false immediately once `checkinEndsAt` / `checkinExpiresAt` has passed,
- * even if the raw database `checkin_open` boolean has not been lazily closed yet.
+ * Returns false when scheduled for the future or once `checkinEndsAt` / `checkinExpiresAt` has passed.
  */
 export function isSessionCheckinLive(
   session: {
     checkinOpen: boolean;
+    checkinStartsAt?: Date | string | null;
     checkinEndsAt?: Date | string | null;
     checkinExpiresAt?: Date | string | null;
   },
   now: Date = new Date()
 ): boolean {
-  if (!session.checkinOpen) return false;
-  const deadlineRaw = session.checkinEndsAt ?? session.checkinExpiresAt;
-  if (!deadlineRaw) return true;
-  const deadline =
-    deadlineRaw instanceof Date ? deadlineRaw : new Date(deadlineRaw);
-  if (Number.isNaN(deadline.getTime())) return true;
-  return now.getTime() <= deadline.getTime();
+  return getSessionCheckinState(session, now) === "live";
 }
 
 /**
@@ -99,8 +132,9 @@ export function computePointsForAttendanceStatus(input: {
 }
 
 /**
- * Lazily closes any expired live check-ins for a season so DB state stays consistent
- * without needing an external cron daemon.
+ * Lazily closes any expired check-in windows for a season so DB state stays consistent
+ * without needing an external cron daemon. Preserves `checkinCode` so the session's
+ * 1 persistent QR code stays valid if HR re-opens check-in later.
  */
 export async function closeExpiredSessionsForSeason(
   seasonId: string,
@@ -111,13 +145,22 @@ export async function closeExpiredSessionsForSeason(
       .update(schema.branchSessions)
       .set({
         checkinOpen: false,
-        checkinCode: null,
       })
       .where(
         and(
           eq(schema.branchSessions.seasonId, seasonId),
           eq(schema.branchSessions.checkinOpen, true),
-          sql`COALESCE(${schema.branchSessions.checkinEndsAt}, ${schema.branchSessions.checkinExpiresAt}) < ${now}`
+          or(
+            and(
+              isNotNull(schema.branchSessions.checkinEndsAt),
+              lt(schema.branchSessions.checkinEndsAt, now)
+            ),
+            and(
+              isNull(schema.branchSessions.checkinEndsAt),
+              isNotNull(schema.branchSessions.checkinExpiresAt),
+              lt(schema.branchSessions.checkinExpiresAt, now)
+            )
+          )
         )
       );
   } catch {
@@ -129,11 +172,30 @@ function generate6DigitCode(): string {
   return crypto.randomInt(100000, 1000000).toString();
 }
 
+async function generateUnique6DigitCode(seasonId: string): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const candidate = generate6DigitCode();
+    const [existing] = await db
+      .select({ id: schema.branchSessions.id })
+      .from(schema.branchSessions)
+      .where(
+        and(
+          eq(schema.branchSessions.seasonId, seasonId),
+          eq(schema.branchSessions.checkinCode, candidate)
+        )
+      )
+      .limit(1);
+    if (!existing) return candidate;
+  }
+  return generate6DigitCode();
+}
+
 export interface CreateSessionResult {
   ok: boolean;
   error?: string;
   sessionId?: string;
   checkinCode?: string | null;
+  checkinStartsAt?: Date | null;
   checkinExpiresAt?: Date | null;
   checkinOpen?: boolean;
 }
@@ -239,12 +301,26 @@ export async function createSessionAsActor(
       }
     }
 
-    const openCheckin = input.openCheckinImmediately ?? false;
-    const code = openCheckin ? generate6DigitCode() : null;
+    const startsAtDate = new Date(input.startsAt);
     const now = new Date();
-    const expiresAt = openCheckin
-      ? new Date(now.getTime() + windowMinutes * 60_000)
-      : null;
+    const scheduleInitialWindow = input.openCheckinImmediately ?? false;
+    // Always assign 1 persistent 6-digit code / QR at creation so presenters can add it to slides early
+    const code = await generateUnique6DigitCode(seasonId);
+
+    let checkinOpen = false;
+    let checkinStartsAt: Date | null = null;
+    let checkinEndsAt: Date | null = null;
+
+    if (scheduleInitialWindow) {
+      const initialEndsAt = new Date(
+        startsAtDate.getTime() + windowMinutes * 60_000
+      );
+      checkinStartsAt = startsAtDate;
+      checkinEndsAt = initialEndsAt;
+      // Future start -> armed/scheduled; recent past with time left -> live for remaining window;
+      // older past whose full window already elapsed -> closed (can still be re-opened later).
+      checkinOpen = initialEndsAt.getTime() > now.getTime();
+    }
 
     const [session] = await db
       .insert(schema.branchSessions)
@@ -252,12 +328,12 @@ export async function createSessionAsActor(
         seasonId,
         committeeId: targetCommitteeId || null,
         title: trimmedTitle,
-        startsAt: new Date(input.startsAt),
-        checkinOpen: openCheckin,
+        startsAt: startsAtDate,
+        checkinOpen,
         checkinCode: code,
-        checkinStartsAt: openCheckin ? now : null,
-        checkinEndsAt: expiresAt,
-        checkinExpiresAt: expiresAt,
+        checkinStartsAt,
+        checkinEndsAt,
+        checkinExpiresAt: checkinEndsAt,
         punctualityCutoffMinutes: punctualityCutoff,
         basePoints,
         punctualityBonus,
@@ -268,7 +344,8 @@ export async function createSessionAsActor(
       ok: true,
       sessionId: session.id,
       checkinCode: session.checkinCode,
-      checkinExpiresAt: session.checkinExpiresAt,
+      checkinStartsAt: session.checkinStartsAt,
+      checkinExpiresAt: session.checkinEndsAt ?? session.checkinExpiresAt,
       checkinOpen: session.checkinOpen,
     };
   } catch (err: unknown) {
@@ -311,7 +388,9 @@ export async function toggleSessionCheckinAsActor(
       };
     }
 
-    const code = open ? generate6DigitCode() : null;
+    // Preserve the session's 1 persistent check-in code across close and re-open cycles
+    const code =
+      session.checkinCode ?? (await generateUnique6DigitCode(session.seasonId));
     const now = new Date();
     const expiresAt = open
       ? new Date(now.getTime() + windowMinutes * 60_000)
@@ -333,7 +412,8 @@ export async function toggleSessionCheckinAsActor(
       ok: true,
       checkinOpen: updated.checkinOpen,
       checkinCode: updated.checkinCode,
-      checkinExpiresAt: updated.checkinExpiresAt,
+      checkinStartsAt: updated.checkinStartsAt,
+      checkinExpiresAt: updated.checkinEndsAt ?? updated.checkinExpiresAt,
     };
   } catch (err: unknown) {
     return {
@@ -379,19 +459,24 @@ export async function extendSessionCheckinWindowAsActor(
 
     const now = new Date();
     const currentEnd = session.checkinEndsAt ?? session.checkinExpiresAt;
-    const baseTime =
-      currentEnd && currentEnd.getTime() > now.getTime()
-        ? currentEnd.getTime()
-        : now.getTime();
+    const isActiveOrScheduled =
+      session.checkinOpen &&
+      currentEnd !== null &&
+      currentEnd.getTime() > now.getTime();
+    const baseTime = isActiveOrScheduled ? currentEnd.getTime() : now.getTime();
     const nextEnd = new Date(baseTime + extraMinutes * 60_000);
-    const code = session.checkinCode ?? generate6DigitCode();
+    const nextStart = isActiveOrScheduled
+      ? (session.checkinStartsAt ?? now)
+      : now;
+    const code =
+      session.checkinCode ?? (await generateUnique6DigitCode(session.seasonId));
 
     const [updated] = await db
       .update(schema.branchSessions)
       .set({
         checkinOpen: true,
         checkinCode: code,
-        checkinStartsAt: session.checkinStartsAt ?? now,
+        checkinStartsAt: nextStart,
         checkinEndsAt: nextEnd,
         checkinExpiresAt: nextEnd,
       })
@@ -402,6 +487,7 @@ export async function extendSessionCheckinWindowAsActor(
       ok: true,
       checkinOpen: updated.checkinOpen,
       checkinCode: updated.checkinCode,
+      checkinStartsAt: updated.checkinStartsAt,
       checkinExpiresAt: updated.checkinEndsAt ?? updated.checkinExpiresAt,
     };
   } catch (err: unknown) {
@@ -738,11 +824,17 @@ export async function recordMemberCheckin(
   }
 
   try {
+    const seasonRes = await resolveActiveSeason();
+    if (!seasonRes.ok) {
+      return { ok: false, error: seasonRes.error };
+    }
+
     const [sessionRow] = await db
       .select()
       .from(schema.branchSessions)
       .where(
         and(
+          eq(schema.branchSessions.seasonId, seasonRes.season.id),
           eq(schema.branchSessions.checkinCode, code),
           eq(schema.branchSessions.checkinOpen, true)
         )
@@ -754,11 +846,6 @@ export async function recordMemberCheckin(
         ok: false,
         error: "Invalid check-in code or check-in is not currently open.",
       };
-    }
-
-    const seasonRes = await resolveActiveSeason(sessionRow.seasonId);
-    if (!seasonRes.ok) {
-      return { ok: false, error: "This session does not belong to the active season." };
     }
 
     const now = new Date();

@@ -18,24 +18,17 @@ import {
 } from "./helpers";
 
 /**
- * Resolves manual ledger posting scope with least privilege:
- * - Only `master_admin` and `hr_admin` can explicitly award org-wide `"open"` points.
- * - Committee-scoped roles (`committee_head`, `hr_member`, track `director`) post to
- *   the recipient's committee board (unless the recipient has no committee, in which case `"open"`).
+ * Resolves manual ledger posting scope:
+ * - Always posts to the recipient's committee board + global (`"committee"`) when
+ *   the recipient belongs to a committee.
+ * - Falls back to `"open"` only when the recipient has no assigned committee.
  */
 export function resolveManualLedgerPostingScope(input: {
-  actorRole: MembershipRole;
+  actorRole?: MembershipRole;
   requestedScope?: LedgerPostingScope;
   memberCommitteeId: string | null;
 }): { postingScope: LedgerPostingScope; committeeId: string | null } {
-  const canAwardOrgWide =
-    input.actorRole === "master_admin" || input.actorRole === "hr_admin";
-
   if (!input.memberCommitteeId) {
-    return { postingScope: "open", committeeId: null };
-  }
-
-  if (canAwardOrgWide && input.requestedScope === "open") {
     return { postingScope: "open", committeeId: null };
   }
 
