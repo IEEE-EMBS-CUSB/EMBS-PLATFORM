@@ -626,10 +626,9 @@ describe("AttendanceManagerView Component", () => {
     const sheetDialog = screen.getByRole("dialog", {
       name: /attendance sheet: ai & ml workshop 1/i,
     });
-    expect(
-      await within(sheetDialog).findByText("Salma El-Sayed")
-    ).toBeInTheDocument();
-    expect(within(sheetDialog).getByText("Omar Tarek")).toBeInTheDocument();
+    const rosterTable = await within(sheetDialog).findByRole("table");
+    expect(within(rosterTable).getByText("Salma El-Sayed")).toBeInTheDocument();
+    expect(within(rosterTable).getByText("Omar Tarek")).toBeInTheDocument();
 
     expect(screen.getByText(/status updated/i)).toBeInTheDocument();
     expect(screen.getAllByText(/not recorded/i).length).toBeGreaterThanOrEqual(
@@ -683,5 +682,96 @@ describe("AttendanceManagerView Component", () => {
         status: "excused",
       })
     );
+  });
+
+  it("displays all recorded session details (date & time, format, code, cutoff, scoring, instructors, slide deck, and location/meeting link) at the top of the attendance sheet and keeps status buttons in a single row", async () => {
+    const user = userEvent.setup();
+    const onLoadRoster = vi.fn().mockResolvedValue({
+      ok: true,
+      roster: [
+        {
+          membershipId: "m-1",
+          fullName: "Belal Ahmed Mohamed Abd Elmohsen",
+          email: "mybelalakabawy@gmail.com",
+          committeeName: "Web Development",
+          role: "member",
+          status: "absent",
+          pointsAwarded: 0,
+          checkedInAt: null,
+          statusUpdatedAt: null,
+          overrideReason: null,
+        },
+      ],
+    });
+
+    const richOfflineSession = {
+      id: "sess-rich-offline",
+      title: "Web Dev Architecture Workshop",
+      committeeId: "comm-web",
+      committeeName: "Web Development",
+      startsAt: new Date("2026-11-25T15:00:00Z"),
+      checkinOpen: true,
+      checkinCode: "654321",
+      checkinStartsAt: new Date("2026-11-25T15:00:00Z"),
+      checkinEndsAt: new Date("2026-11-25T15:30:00Z"),
+      punctualityCutoffMinutes: 20,
+      basePoints: 12,
+      punctualityBonus: 6,
+      sessionMode: "offline" as const,
+      slideDeckUrl: "https://docs.google.com/presentation/d/web-arch",
+      webConferencingUrl: null,
+      locationUrl: "https://maps.google.com/?q=Cairo+University+Hall+204",
+      locationAddress: "Faculty of Engineering, Hall 204",
+      instructors: [
+        {
+          membershipId: "inst-web-1",
+          fullName: "Ziad Hany",
+          role: "committee_head" as const,
+        },
+      ],
+      attendanceCount: 1,
+    };
+
+    render(
+      <AttendanceManagerView
+        sessions={[richOfflineSession]}
+        onLoadSessionRoster={onLoadRoster}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /^sheet$/i }));
+
+    const sheetDialog = screen.getByRole("dialog", {
+      name: /attendance sheet: web dev architecture workshop/i,
+    });
+    await within(sheetDialog).findByText("Belal Ahmed Mohamed Abd Elmohsen");
+
+    // Full session details summary panel at top of sheet
+    const detailsRegion = within(sheetDialog).getByRole("region", {
+      name: /session details/i,
+    });
+    expect(detailsRegion).toHaveTextContent(/date & time/i);
+    expect(detailsRegion).toHaveTextContent(/654321/);
+    expect(detailsRegion).toHaveTextContent(/20m cutoff/i);
+    expect(detailsRegion).toHaveTextContent(/ziad hany/i);
+    expect(detailsRegion).toHaveTextContent(/faculty of engineering, hall 204/i);
+    expect(
+      within(detailsRegion).getByRole("link", { name: /open map/i })
+    ).toHaveAttribute(
+      "href",
+      "https://maps.google.com/?q=Cairo+University+Hall+204"
+    );
+    expect(
+      within(detailsRegion).getByRole("link", { name: /slide deck/i })
+    ).toHaveAttribute(
+      "href",
+      "https://docs.google.com/presentation/d/web-arch"
+    );
+
+    // Status button group prevents wrapping Absent onto a second row on sm+
+    const statusGroup = within(sheetDialog).getByRole("group", {
+      name: /attendance status for belal ahmed mohamed abd elmohsen/i,
+    });
+    expect(statusGroup.className).toContain("sm:flex-nowrap");
   });
 });

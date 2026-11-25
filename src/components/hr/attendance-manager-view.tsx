@@ -9,8 +9,10 @@ import {
   ClipboardList,
   Clock,
   Download,
+  ExternalLink,
   MapPin,
   Plus,
+  Presentation,
   QrCode,
   Radio,
   Search,
@@ -185,6 +187,20 @@ function formatSessionDateTime(date: Date | null | undefined): string {
   return new Date(date).toLocaleString("en-US", {
     month: "short",
     day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatFullSessionDateTime(date: Date | null | undefined): string {
+  if (!date) return "Not scheduled";
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "Not scheduled";
+  return d.toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
     hour: "numeric",
     minute: "2-digit",
   });
@@ -1816,7 +1832,31 @@ export function AttendanceManagerView({
       )}
 
       {/* Per-Session Keyboard-Friendly Attendance Sheet Modal */}
-      {sheetSession && (
+      {sheetSession && (() => {
+        const sheetState = getSessionStateAt(sheetSession, nowMs);
+        const sheetCutoff =
+          sheetSession.punctualityCutoffMinutes ??
+          attendanceDefaults.punctualityCutoffMinutes;
+        const safeSheetSlideDeck = isSafeHttpUrl(sheetSession.slideDeckUrl)
+          ? sheetSession.slideDeckUrl.trim()
+          : null;
+        const safeSheetMeeting =
+          sheetSession.sessionMode === "online" &&
+          isSafeHttpUrl(sheetSession.webConferencingUrl)
+            ? sheetSession.webConferencingUrl.trim()
+            : null;
+        const safeSheetLocationUrl =
+          sheetSession.sessionMode !== "online" &&
+          isSafeHttpUrl(sheetSession.locationUrl)
+            ? sheetSession.locationUrl.trim()
+            : null;
+        const trimmedSheetAddress =
+          sheetSession.sessionMode !== "online" &&
+          typeof sheetSession.locationAddress === "string"
+            ? sheetSession.locationAddress.trim() || null
+            : null;
+
+        return (
         <div
           role="dialog"
           aria-modal="true"
@@ -1826,57 +1866,191 @@ export function AttendanceManagerView({
           }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 backdrop-blur-xs sm:p-6"
         >
-          <div className="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl">
-            {/* Sheet Header */}
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-[#f8f9fb] px-5 py-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-heading text-lg font-extrabold text-[#002855]">
-                    Attendance Sheet — {sheetSession.title}
-                  </h2>
-                  <Badge className="bg-[#f5edf7] text-[11px] font-bold text-[#772583]">
-                    {sheetSession.committeeName}
-                  </Badge>
-                  <Badge
-                    className={
-                      sheetSession.sessionMode === "online"
-                        ? "bg-[#ebf3f8] text-[11px] font-bold text-[#00629b]"
-                        : "bg-[#f1f5f9] text-[11px] font-bold text-[#002855]"
-                    }
-                  >
-                    {sheetSession.sessionMode === "online" ? "Online" : "Offline"}
-                  </Badge>
+          <div className="relative flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl">
+            {/* Sheet Header & Full Session Details */}
+            <div className="shrink-0 space-y-3 border-b border-border bg-[#f8f9fb] px-5 py-4 max-h-[42vh] overflow-y-auto sm:max-h-none">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-heading text-lg font-extrabold text-[#002855]">
+                      Attendance Sheet — {sheetSession.title}
+                    </h2>
+                    <Badge className="bg-[#f5edf7] text-[11px] font-bold text-[#772583]">
+                      {sheetSession.committeeName}
+                    </Badge>
+                    <Badge
+                      className={
+                        sheetSession.sessionMode === "online"
+                          ? "bg-[#ebf3f8] text-[11px] font-bold text-[#00629b]"
+                          : "bg-[#f1f5f9] text-[11px] font-bold text-[#002855]"
+                      }
+                    >
+                      {sheetSession.sessionMode === "online"
+                        ? "Online"
+                        : "Offline (In-Person)"}
+                    </Badge>
+                    <Badge
+                      className={
+                        sheetState === "live"
+                          ? "bg-[#78be20] text-[11px] font-bold text-white"
+                          : sheetState === "scheduled"
+                            ? "bg-[#00629b] text-[11px] font-bold text-white"
+                            : "bg-muted text-[11px] font-bold text-muted-foreground"
+                      }
+                    >
+                      {sheetState === "live"
+                        ? "Check-in Open"
+                        : sheetState === "scheduled"
+                          ? "Scheduled"
+                          : "Closed"}
+                    </Badge>
+                  </div>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {new Date(sheetSession.startsAt).toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}{" "}
-                  · On Time = +{sheetSession.basePoints + sheetSession.punctualityBonus} pts ·
-                  Late = +{sheetSession.basePoints} pts · Excused / Absent = 0 pts
-                  {sheetSession.instructors && sheetSession.instructors.length > 0
-                    ? ` · Instructor${sheetSession.instructors.length > 1 ? "s" : ""}: ${sheetSession.instructors.map((i) => i.fullName).join(", ")}`
-                    : ""}
-                </p>
-                <SessionResourceLinks
-                  sessionMode={sheetSession.sessionMode}
-                  slideDeckUrl={sheetSession.slideDeckUrl}
-                  webConferencingUrl={sheetSession.webConferencingUrl}
-                  locationUrl={sheetSession.locationUrl}
-                  locationAddress={sheetSession.locationAddress}
-                  className="mt-2"
-                />
+                <button
+                  type="button"
+                  aria-label="Close attendance sheet"
+                  onClick={() => setSheetSession(null)}
+                  className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
               </div>
-              <button
-                type="button"
-                aria-label="Close attendance sheet"
-                onClick={() => setSheetSession(null)}
-                className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+
+              <section
+                aria-label="Session details"
+                className="grid gap-2.5 rounded-xl border border-border bg-white p-3 text-xs sm:grid-cols-2 lg:grid-cols-4"
               >
-                <X className="h-5 w-5" aria-hidden="true" />
-              </button>
+                {/* 1. Date, Time & Check-In Window */}
+                <div className="min-w-0 space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Date &amp; Time
+                  </p>
+                  <p className="font-semibold text-[#002855] tabular-nums">
+                    {formatFullSessionDateTime(sheetSession.startsAt)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground tabular-nums">
+                    {sheetCutoff}m cutoff
+                    {sheetSession.checkinStartsAt && sheetSession.checkinEndsAt
+                      ? ` · Window: ${formatSessionDateTime(sheetSession.checkinStartsAt)} – ${new Date(
+                          sheetSession.checkinEndsAt
+                        ).toLocaleTimeString("en-US", {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}`
+                      : ""}
+                  </p>
+                </div>
+
+                {/* 2. Instructors */}
+                <div className="min-w-0 space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Instructor(s)
+                  </p>
+                  {sheetSession.instructors &&
+                  sheetSession.instructors.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {sheetSession.instructors.map((inst) => (
+                        <span
+                          key={inst.membershipId}
+                          className="inline-flex items-center gap-1 rounded-md bg-[#f5edf7] px-2 py-0.5 text-[11px] font-semibold text-[#5a1b63]"
+                        >
+                          <span>{inst.fullName}</span>
+                          <span className="text-[10px] opacity-75">
+                            ({formatRoleTag(inst.role)})
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      None recorded
+                    </p>
+                  )}
+                </div>
+
+                {/* 3. Location (Offline) or Meeting Link (Online) */}
+                <div className="min-w-0 space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {sheetSession.sessionMode === "online"
+                      ? "Online Conferencing"
+                      : "Location"}
+                  </p>
+                  {sheetSession.sessionMode === "online" ? (
+                    safeSheetMeeting ? (
+                      <a
+                        href={safeSheetMeeting}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-[#00629b]/25 bg-[#ebf3f8] px-2 py-1 text-[11px] font-semibold text-[#00629b] transition-colors hover:bg-[#00629b] hover:text-white"
+                      >
+                        <Video className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span className="truncate">Join Meeting</span>
+                        <ExternalLink className="h-3 w-3 shrink-0 opacity-75" aria-hidden="true" />
+                      </a>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">
+                        No meeting link recorded
+                      </p>
+                    )
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="font-medium text-[#002855] break-words">
+                        {trimmedSheetAddress ?? "No address recorded"}
+                      </p>
+                      {safeSheetLocationUrl ? (
+                        <a
+                          href={safeSheetLocationUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1e6b0a] hover:underline"
+                        >
+                          <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+                          <span>Open Map</span>
+                          <ExternalLink className="h-3 w-3 shrink-0 opacity-75" aria-hidden="true" />
+                        </a>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground">
+                          No map link
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Slide Deck, Scoring & Check-In Code */}
+                <div className="min-w-0 space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Materials, Scoring &amp; Code
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {safeSheetSlideDeck ? (
+                      <a
+                        href={safeSheetSlideDeck}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md border border-[#772583]/25 bg-[#f5edf7] px-2 py-0.5 text-[11px] font-semibold text-[#772583] transition-colors hover:bg-[#772583] hover:text-white"
+                      >
+                        <Presentation className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        <span>Slide Deck</span>
+                        <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-75" aria-hidden="true" />
+                      </a>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">
+                        No slides
+                      </span>
+                    )}
+                    {sheetSession.checkinCode && (
+                      <span className="inline-flex items-center rounded bg-[#002855]/10 px-1.5 py-0.5 font-mono text-[11px] font-bold text-[#002855]">
+                        Code: {sheetSession.checkinCode}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground tabular-nums">
+                    On Time +{sheetSession.basePoints + sheetSession.punctualityBonus} ·
+                    Late +{sheetSession.basePoints} · Excused/Absent 0
+                  </p>
+                </div>
+              </section>
             </div>
 
             {/* Summary & Filter Controls */}
@@ -1993,14 +2167,18 @@ export function AttendanceManagerView({
                   <thead className="sticky top-0 z-10 border-b border-border bg-[#f8f9fb] text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                     <tr>
                       <th className="px-4 py-2.5">Member</th>
-                      <th className="hidden px-3 py-2.5 sm:table-cell">
+                      <th className="hidden whitespace-nowrap px-3 py-2.5 md:table-cell">
                         Committee
                       </th>
-                      <th className="px-3 py-2.5 text-center">Status</th>
+                      <th className="whitespace-nowrap px-3 py-2.5 text-center">
+                        Status
+                      </th>
                       <th className="px-3 py-2.5 whitespace-nowrap">
                         Status Updated
                       </th>
-                      <th className="px-4 py-2.5 text-right">Points</th>
+                      <th className="whitespace-nowrap px-4 py-2.5 text-right">
+                        Points
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/70">
@@ -2023,28 +2201,28 @@ export function AttendanceManagerView({
                           }`}
                         >
                           <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-2">
-                              <span className="font-heading text-sm font-bold text-[#002855]">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="font-heading text-sm font-bold leading-snug text-[#002855]">
                                 {row.fullName}
                               </span>
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
                                 {formatRoleTag(row.role)}
                               </span>
                             </div>
-                            <p className="text-[11px] text-muted-foreground">
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
                               {row.email}
                             </p>
                           </td>
 
-                          <td className="hidden px-3 py-2.5 text-muted-foreground sm:table-cell">
+                          <td className="hidden whitespace-nowrap px-3 py-2.5 text-muted-foreground md:table-cell">
                             {row.committeeName}
                           </td>
 
-                          <td className="px-3 py-2.5">
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap">
                             <div
                               role="group"
                               aria-label={`Attendance status for ${row.fullName}`}
-                              className="flex flex-wrap items-center justify-center gap-1"
+                              className="inline-flex flex-wrap items-center justify-center gap-1 sm:flex-nowrap"
                             >
                               {ALL_STATUSES.map((st) => {
                                 const active = row.status === st;
@@ -2073,7 +2251,7 @@ export function AttendanceManagerView({
                                       setActiveRowIndex(idx);
                                       void handleSetRowAttendance(row, st);
                                     }}
-                                    className={`inline-flex h-8 items-center gap-1 rounded-md border px-2.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                                    className={`inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-2 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                                       active
                                         ? meta.activeClass
                                         : "border-border bg-white text-muted-foreground hover:border-[#772583]/40 hover:text-[#002855]"
@@ -2081,7 +2259,7 @@ export function AttendanceManagerView({
                                   >
                                     <span>{meta.label}</span>
                                     <span
-                                      className={`hidden font-mono text-[9px] sm:inline ${
+                                      className={`hidden font-mono text-[9px] lg:inline ${
                                         active
                                           ? "opacity-85"
                                           : "text-muted-foreground/70"
@@ -2101,7 +2279,7 @@ export function AttendanceManagerView({
                             )}
                           </td>
 
-                          <td className="px-4 py-2.5 text-right font-mono text-xs font-bold tabular-nums text-[#002855]">
+                          <td className="whitespace-nowrap px-4 py-2.5 text-right font-mono text-xs font-bold tabular-nums text-[#002855]">
                             {row.pointsAwarded > 0
                               ? `+${row.pointsAwarded} pts`
                               : "0 pts"}
@@ -2115,7 +2293,8 @@ export function AttendanceManagerView({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Full-Screen Live Check-In Projector View */}
       {liveCheckinSession && (
