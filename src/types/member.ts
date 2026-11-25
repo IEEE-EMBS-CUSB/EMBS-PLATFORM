@@ -6,6 +6,7 @@ import type {
   MonthKey,
   SessionType,
 } from "./common";
+import type { SessionMode } from "@/lib/season-settings";
 
 export type MemberRole =
   | "Master Admin"
@@ -65,6 +66,7 @@ export interface MemberAttendanceRecord {
   date: string;
   title: string;
   sessionType: SessionType;
+  sessionMode?: SessionMode;
   status: AttendanceStatus;
   arrival?: ArrivalStatus;
   excuseReason?: string;
@@ -72,6 +74,9 @@ export interface MemberAttendanceRecord {
   bonusReason?: string;
   slideDeckUrl?: string | null;
   webConferencingUrl?: string | null;
+  locationUrl?: string | null;
+  locationAddress?: string | null;
+  instructors?: string[];
 }
 
 export interface MemberUpcomingSession {
@@ -80,8 +85,12 @@ export interface MemberUpcomingSession {
   committeeName: string;
   startsAt: string;
   checkinState: "scheduled" | "live" | "closed";
+  sessionMode: SessionMode;
   slideDeckUrl: string | null;
   webConferencingUrl: string | null;
+  locationUrl: string | null;
+  locationAddress: string | null;
+  instructors: string[];
 }
 
 export interface MemberTask {

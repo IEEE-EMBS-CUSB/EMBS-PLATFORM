@@ -33,10 +33,44 @@ describe("SessionResourceLinks", () => {
       <SessionResourceLinks
         slideDeckUrl="javascript:alert(1)"
         webConferencingUrl="not-a-valid-url"
+        locationUrl="javascript:alert(3)"
       />
     );
 
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders offline location address and map link cleanly", () => {
+    render(
+      <SessionResourceLinks
+        sessionMode="offline"
+        slideDeckUrl="https://docs.google.com/presentation/d/offline-slides"
+        locationUrl="https://maps.google.com/?q=Cairo+University"
+        locationAddress="Faculty of Engineering, Building B, Room 204"
+      />
+    );
+
+    const mapLink = screen.getByRole("link", {
+      name: /faculty of engineering, building b, room 204/i,
+    });
+    expect(mapLink).toHaveAttribute(
+      "href",
+      "https://maps.google.com/?q=Cairo+University"
+    );
+    expect(mapLink).toHaveAttribute("target", "_blank");
+    expect(mapLink).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("renders offline address text as a non-link label when no map link is provided", () => {
+    render(
+      <SessionResourceLinks
+        sessionMode="offline"
+        locationAddress="Main Campus Auditorium"
+      />
+    );
+
+    expect(screen.getByText("Main Campus Auditorium")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 });

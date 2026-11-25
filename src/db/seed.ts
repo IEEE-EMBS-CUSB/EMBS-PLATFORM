@@ -372,6 +372,28 @@ export async function seedDatabase() {
       .returning();
   }
 
+  // Seed default instructors for seeded sessions idempotently
+  if (insertedSessions[0] && salmaMember) {
+    await db
+      .insert(schema.branchSessionInstructors)
+      .values({
+        seasonId,
+        sessionId: insertedSessions[0].id,
+        membershipId: salmaMember.id,
+      })
+      .onConflictDoNothing();
+  }
+  if (insertedSessions[1] && hrAdminMember) {
+    await db
+      .insert(schema.branchSessionInstructors)
+      .values({
+        seasonId,
+        sessionId: insertedSessions[1].id,
+        membershipId: hrAdminMember.id,
+      })
+      .onConflictDoNothing();
+  }
+
   // 7. Seed Tasks (idempotent check by season)
   let insertedTasks = await db
     .select()

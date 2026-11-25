@@ -310,8 +310,11 @@ export const branchSessions = pgTable(
       .default(15),
     basePoints: integer("base_points").notNull().default(10),
     punctualityBonus: integer("punctuality_bonus").notNull().default(5),
+    sessionMode: text("session_mode").notNull().default("offline"), // offline | online
     slideDeckUrl: text("slide_deck_url"),
     webConferencingUrl: text("web_conferencing_url"),
+    locationUrl: text("location_url"),
+    locationAddress: text("location_address"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -320,6 +323,40 @@ export const branchSessions = pgTable(
     index("branch_sessions_season_id_idx").on(table.seasonId),
     index("branch_sessions_committee_id_idx").on(table.committeeId),
     index("branch_sessions_starts_at_idx").on(table.startsAt),
+  ]
+);
+
+// ============================================================================
+// 5b. Branch Session Instructors
+// One or more instructors assigned per session (committee heads for committee
+// sessions; master_admin / director / hr_admin for branch-wide sessions).
+// ============================================================================
+
+export const branchSessionInstructors = pgTable(
+  "branch_session_instructors",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    seasonId: uuid("season_id")
+      .notNull()
+      .references(() => seasons.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => branchSessions.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => rosterMemberships.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("branch_session_instructors_session_member_idx").on(
+      table.sessionId,
+      table.membershipId
+    ),
+    index("branch_session_instructors_season_id_idx").on(table.seasonId),
+    index("branch_session_instructors_session_id_idx").on(table.sessionId),
+    index("branch_session_instructors_membership_id_idx").on(table.membershipId),
   ]
 );
 
@@ -734,6 +771,7 @@ export const rosterMembershipsRelations = relations(
       references: [committeeTracks.id],
     }),
     attendance: many(attendanceRecords),
+    instructedSessions: many(branchSessionInstructors),
     taskSubmissions: many(taskSubmissions),
     ledgerEntries: many(scoreLedger),
     feedbackReceived: many(hrFeedback, { relationName: "feedbackRecipient" }),
@@ -760,6 +798,25 @@ export const branchSessionsRelations = relations(
       references: [committees.id],
     }),
     attendance: many(attendanceRecords),
+    instructors: many(branchSessionInstructors),
+  })
+);
+
+export const branchSessionInstructorsRelations = relations(
+  branchSessionInstructors,
+  ({ one }) => ({
+    season: one(seasons, {
+      fields: [branchSessionInstructors.seasonId],
+      references: [seasons.id],
+    }),
+    session: one(branchSessions, {
+      fields: [branchSessionInstructors.sessionId],
+      references: [branchSessions.id],
+    }),
+    membership: one(rosterMemberships, {
+      fields: [branchSessionInstructors.membershipId],
+      references: [rosterMemberships.id],
+    }),
   })
 );
 

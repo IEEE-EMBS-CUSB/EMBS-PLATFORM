@@ -513,6 +513,38 @@ export async function getMemberMonthlyScores(
   return [];
 }
 
+async function loadInstructorNamesBySessionIds(
+  sessionIds: readonly string[]
+): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  const uniqueIds = Array.from(new Set(sessionIds));
+  if (uniqueIds.length === 0) return map;
+
+  const rows = await db
+    .select({
+      sessionId: schema.branchSessionInstructors.sessionId,
+      fullName: schema.persons.fullName,
+    })
+    .from(schema.branchSessionInstructors)
+    .innerJoin(
+      schema.rosterMemberships,
+      eq(schema.branchSessionInstructors.membershipId, schema.rosterMemberships.id)
+    )
+    .innerJoin(
+      schema.persons,
+      eq(schema.rosterMemberships.personId, schema.persons.id)
+    )
+    .where(inArray(schema.branchSessionInstructors.sessionId, uniqueIds))
+    .orderBy(asc(schema.persons.fullName));
+
+  for (const row of rows) {
+    const list = map.get(row.sessionId) ?? [];
+    list.push(row.fullName);
+    map.set(row.sessionId, list);
+  }
+  return map;
+}
+
 export async function getMemberAttendance(
   memberId: string
 ): Promise<MemberAttendanceRecord[]> {
@@ -534,6 +566,9 @@ export async function getMemberAttendance(
       .orderBy(desc(schema.branchSessions.startsAt));
 
     if (records.length > 0) {
+      const instructorsBySession = await loadInstructorNamesBySessionIds(
+        records.map((r) => r.session.id)
+      );
       return records.map(({ record, session }) => {
         const status: MemberAttendanceRecord["status"] =
           record.status === "excused"
@@ -547,6 +582,7 @@ export async function getMemberAttendance(
           title: session.title,
           date: session.startsAt.toISOString().slice(0, 10),
           sessionType: "workshop" as const,
+          sessionMode: session.sessionMode === "online" ? "online" : "offline",
           status,
           arrival:
             status === "attended"
@@ -561,6 +597,9 @@ export async function getMemberAttendance(
           bonusPoints: record.pointsAwarded,
           slideDeckUrl: session.slideDeckUrl ?? null,
           webConferencingUrl: session.webConferencingUrl ?? null,
+          locationUrl: session.locationUrl ?? null,
+          locationAddress: session.locationAddress ?? null,
+          instructors: instructorsBySession.get(session.id) ?? [],
         };
       });
     }
@@ -573,7 +612,7 @@ export async function getMemberAttendance(
 /**
  * Returns upcoming and currently-live sessions in the member's active season
  * scoped strictly to their committee(s) plus branch-wide sessions (committeeId IS NULL),
- * so members can access session slide decks and web conferencing links before or during a session.
+ * so members can access session slide decks, meeting links, locations, and instructors before or during a session.
  */
 export async function getMemberUpcomingSessions(
   memberId: string
@@ -614,6 +653,10 @@ export async function getMemberUpcomingSessions(
       )
       .orderBy(asc(schema.branchSessions.startsAt));
 
+    const instructorsBySession = await loadInstructorNamesBySessionIds(
+      rows.map((r) => r.session.id)
+    );
+
     return rows
       .map(({ session, committeeName }) => {
         const checkinState = getSessionCheckinState(session, now);
@@ -623,8 +666,15 @@ export async function getMemberUpcomingSessions(
           committeeName: committeeName ?? "Branch-wide",
           startsAt: session.startsAt.toISOString(),
           checkinState,
+          sessionMode:
+            session.sessionMode === "online"
+              ? ("online" as const)
+              : ("offline" as const),
           slideDeckUrl: session.slideDeckUrl ?? null,
           webConferencingUrl: session.webConferencingUrl ?? null,
+          locationUrl: session.locationUrl ?? null,
+          locationAddress: session.locationAddress ?? null,
+          instructors: instructorsBySession.get(session.id) ?? [],
         };
       })
       .filter(

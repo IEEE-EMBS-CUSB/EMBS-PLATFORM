@@ -3,6 +3,7 @@ import type {
   AttendanceStatus,
   AttendeeAssignmentStatus,
 } from "./common";
+import type { SessionMode } from "@/lib/season-settings";
 
 export interface AttendeeProfile {
   id: string;
@@ -18,10 +19,13 @@ export interface AttendeeSessionRecord {
   sessionTitle: string;
   committeeName: string;
   deliveredBy: string;
+  sessionMode?: SessionMode;
   status: AttendanceStatus;
   arrival?: ArrivalStatus;
   slideDeckUrl?: string | null;
   webConferencingUrl?: string | null;
+  locationUrl?: string | null;
+  locationAddress?: string | null;
 }
 
 export interface AttendeeAssignment {

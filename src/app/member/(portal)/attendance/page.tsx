@@ -151,14 +151,29 @@ async function MemberAttendanceContent({
                           ? "Check-in Open"
                           : "Scheduled"}
                       </Badge>
+                      <Badge
+                        className={
+                          upcoming.sessionMode === "online"
+                            ? "bg-[#ebf3f8] text-[10px] font-semibold text-[#00629b]"
+                            : "bg-[#f1f5f9] text-[10px] font-semibold text-[#002855]"
+                        }
+                      >
+                        {upcoming.sessionMode === "online" ? "Online" : "Offline"}
+                      </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground tabular-nums">
                       {upcoming.committeeName} · {formattedStart}
+                      {upcoming.instructors.length > 0
+                        ? ` · Instructor${upcoming.instructors.length > 1 ? "s" : ""}: ${upcoming.instructors.join(", ")}`
+                        : ""}
                     </p>
                   </div>
                   <SessionResourceLinks
+                    sessionMode={upcoming.sessionMode}
                     slideDeckUrl={upcoming.slideDeckUrl}
                     webConferencingUrl={upcoming.webConferencingUrl}
+                    locationUrl={upcoming.locationUrl}
+                    locationAddress={upcoming.locationAddress}
                     className="shrink-0"
                   />
                 </li>
@@ -197,8 +212,14 @@ async function MemberAttendanceContent({
                   />
                 </div>
                 <p className="text-xs text-muted-foreground tabular-nums">
-                  {SESSION_TYPE_LABELS[record.sessionType]} ·{" "}
-                  {formatDisplayDate(record.date)}
+                  {SESSION_TYPE_LABELS[record.sessionType]}
+                  {record.sessionMode
+                    ? ` · ${record.sessionMode === "online" ? "Online" : "Offline"}`
+                    : ""}{" "}
+                  · {formatDisplayDate(record.date)}
+                  {record.instructors && record.instructors.length > 0
+                    ? ` · ${record.instructors.join(", ")}`
+                    : ""}
                 </p>
                 {record.excuseReason && (
                   <p className="text-xs text-muted-foreground">
@@ -212,8 +233,11 @@ async function MemberAttendanceContent({
                   </p>
                 )}
                 <SessionResourceLinks
+                  sessionMode={record.sessionMode}
                   slideDeckUrl={record.slideDeckUrl}
                   webConferencingUrl={record.webConferencingUrl}
+                  locationUrl={record.locationUrl}
+                  locationAddress={record.locationAddress}
                   className="pt-0.5"
                 />
               </li>
@@ -246,9 +270,30 @@ async function MemberAttendanceContent({
                       {formatDisplayDate(record.date)}
                     </TableCell>
                     <TableCell className="py-3.5">
-                      <p className="font-semibold text-foreground">
-                        {record.title}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-foreground">
+                          {record.title}
+                        </p>
+                        {record.sessionMode && (
+                          <Badge
+                            className={
+                              record.sessionMode === "online"
+                                ? "bg-[#ebf3f8] text-[10px] font-semibold text-[#00629b]"
+                                : "bg-[#f1f5f9] text-[10px] font-semibold text-[#002855]"
+                            }
+                          >
+                            {record.sessionMode === "online"
+                              ? "Online"
+                              : "Offline"}
+                          </Badge>
+                        )}
+                      </div>
+                      {record.instructors && record.instructors.length > 0 && (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Instructor{record.instructors.length > 1 ? "s" : ""}:{" "}
+                          {record.instructors.join(", ")}
+                        </p>
+                      )}
                       {record.excuseReason && (
                         <p className="mt-0.5 text-xs text-muted-foreground">
                           Reason: {record.excuseReason}
@@ -264,8 +309,11 @@ async function MemberAttendanceContent({
                           </p>
                         )}
                       <SessionResourceLinks
+                        sessionMode={record.sessionMode}
                         slideDeckUrl={record.slideDeckUrl}
                         webConferencingUrl={record.webConferencingUrl}
+                        locationUrl={record.locationUrl}
+                        locationAddress={record.locationAddress}
                         className="mt-1.5"
                       />
                     </TableCell>

@@ -909,7 +909,7 @@ export function SeasonManagerView({
                 )}
 
                 {/* 1. Attendance & Check-in Rules */}
-                <section className="space-y-3 rounded-xl border border-border bg-[#f8f9fb]/60 p-4 sm:p-5">
+                <section className="space-y-4 rounded-xl border border-border bg-[#f8f9fb]/60 p-4 sm:p-5">
                   <div className="flex items-start gap-2.5">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e3f5f6] text-[#007377]">
                       <QrCode className="h-4 w-4" aria-hidden="true" />
@@ -919,17 +919,17 @@ export function SeasonManagerView({
                         Attendance &amp; Check-In Rules
                       </h3>
                       <p className="text-xs text-muted-foreground">
-                        Applied automatically when creating sessions and scoring on-time vs. late arrivals in Attendance.
+                        Configure separate scoring for Offline (in-person) and Online sessions, plus default check-in timing.
                       </p>
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
                       <label
                         htmlFor="setting-base-points"
                         className="block text-xs font-semibold text-foreground/85"
                       >
-                        Base Attendance Points
+                        Offline Base Attendance Points
                       </label>
                       <Input
                         id="setting-base-points"
@@ -949,7 +949,7 @@ export function SeasonManagerView({
                             },
                           }))
                         }
-                        className="mt-1 h-9 text-xs font-semibold tabular-nums"
+                        className="mt-1 h-9 bg-white text-xs font-semibold tabular-nums"
                       />
                     </div>
                     <div>
@@ -957,7 +957,7 @@ export function SeasonManagerView({
                         htmlFor="setting-punctuality-bonus"
                         className="block text-xs font-semibold text-foreground/85"
                       >
-                        Punctuality Bonus
+                        Offline Punctuality Bonus
                       </label>
                       <Input
                         id="setting-punctuality-bonus"
@@ -977,7 +977,63 @@ export function SeasonManagerView({
                             },
                           }))
                         }
-                        className="mt-1 h-9 text-xs font-semibold tabular-nums"
+                        className="mt-1 h-9 bg-white text-xs font-semibold tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="setting-online-base-points"
+                        className="block text-xs font-semibold text-foreground/85"
+                      >
+                        Online Session Base Points
+                      </label>
+                      <Input
+                        id="setting-online-base-points"
+                        type="number"
+                        min={0}
+                        max={500}
+                        disabled={settingsReadOnly}
+                        value={draftSettings.attendance.onlineBasePoints}
+                        onChange={(e) =>
+                          setDraftSettings((prev) => ({
+                            ...prev,
+                            attendance: {
+                              ...prev.attendance,
+                              onlineBasePoints: parseNonNegativeInt(
+                                e.target.value
+                              ),
+                            },
+                          }))
+                        }
+                        className="mt-1 h-9 bg-white text-xs font-semibold tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="setting-online-punctuality-bonus"
+                        className="block text-xs font-semibold text-foreground/85"
+                      >
+                        Online Punctuality Bonus
+                      </label>
+                      <Input
+                        id="setting-online-punctuality-bonus"
+                        type="number"
+                        min={0}
+                        max={200}
+                        disabled={settingsReadOnly}
+                        value={draftSettings.attendance.onlinePunctualityBonus}
+                        onChange={(e) =>
+                          setDraftSettings((prev) => ({
+                            ...prev,
+                            attendance: {
+                              ...prev.attendance,
+                              onlinePunctualityBonus: parseNonNegativeInt(
+                                e.target.value
+                              ),
+                            },
+                          }))
+                        }
+                        className="mt-1 h-9 bg-white text-xs font-semibold tabular-nums"
                       />
                     </div>
                     <div>
@@ -1005,7 +1061,7 @@ export function SeasonManagerView({
                             },
                           }))
                         }
-                        className="mt-1 h-9 text-xs font-semibold tabular-nums"
+                        className="mt-1 h-9 bg-white text-xs font-semibold tabular-nums"
                       />
                     </div>
                     <div>
@@ -1035,7 +1091,7 @@ export function SeasonManagerView({
                             },
                           }))
                         }
-                        className="mt-1 h-9 text-xs font-semibold tabular-nums"
+                        className="mt-1 h-9 bg-white text-xs font-semibold tabular-nums"
                       />
                     </div>
                   </div>

@@ -25,6 +25,8 @@ import {
   canGradeWorkSubmission,
   canTaskHaveGradeableSubmissions,
   resolveWorkScopeCommitteeId,
+  isWebConferencingRequiredForRole,
+  isEligibleSessionInstructor,
   type UserPermissionContext,
 } from "@/lib/permissions";
 
@@ -585,6 +587,92 @@ describe("RBAC Permissions Engine", () => {
           memberCommitteeId: commDesign,
           hrCommitteeId: commHr,
         })
+      ).toBe(false);
+    });
+  });
+
+  describe("Session Online Link Requirements & Instructor Eligibility", () => {
+    it("requires web conferencing link on online sessions only for non-admin operational roles", () => {
+      expect(isWebConferencingRequiredForRole("committee_head", "online")).toBe(true);
+      expect(isWebConferencingRequiredForRole("hr_member", "online")).toBe(true);
+      expect(isWebConferencingRequiredForRole("hr_admin", "online")).toBe(false);
+      expect(isWebConferencingRequiredForRole("director", "online")).toBe(false);
+      expect(isWebConferencingRequiredForRole("master_admin", "online")).toBe(false);
+
+      // Never required on offline sessions
+      expect(isWebConferencingRequiredForRole("committee_head", "offline")).toBe(false);
+      expect(isWebConferencingRequiredForRole("hr_member", "offline")).toBe(false);
+    });
+
+    it("restricts committee session instructors to active heads of that committee and branch-wide instructors to masters, directors, and hr_admins", () => {
+      // Committee session: only committee_head of that committee
+      expect(
+        isEligibleSessionInstructor(
+          { role: "committee_head", committeeId: commAi, isActive: true },
+          commAi
+        )
+      ).toBe(true);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "committee_head", committeeId: commWeb, isActive: true },
+          commAi
+        )
+      ).toBe(false);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "member", committeeId: commAi, isActive: true },
+          commAi
+        )
+      ).toBe(false);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "hr_admin", committeeId: null, isActive: true },
+          commAi
+        )
+      ).toBe(false);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "committee_head", committeeId: commAi, isActive: false },
+          commAi
+        )
+      ).toBe(false);
+
+      // Branch-wide session: master_admin, director, hr_admin only
+      expect(
+        isEligibleSessionInstructor(
+          { role: "master_admin", committeeId: null, isActive: true },
+          null
+        )
+      ).toBe(true);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "director", committeeId: null, isActive: true },
+          null
+        )
+      ).toBe(true);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "hr_admin", committeeId: "comm-hr", isActive: true },
+          null
+        )
+      ).toBe(true);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "committee_head", committeeId: commAi, isActive: true },
+          null
+        )
+      ).toBe(false);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "hr_member", committeeId: "comm-hr", isActive: true },
+          null
+        )
+      ).toBe(false);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "member", committeeId: commAi, isActive: true },
+          null
+        )
       ).toBe(false);
     });
   });

@@ -184,6 +184,15 @@ describe("SeasonManagerView Component", () => {
     await user.clear(effortWeightInput);
     await user.type(effortWeightInput, "12");
 
+    // Edit online session base points & punctuality bonus separately from offline
+    const onlineBaseInput = screen.getByLabelText(/online session base points/i);
+    await user.clear(onlineBaseInput);
+    await user.type(onlineBaseInput, "6");
+
+    const onlineBonusInput = screen.getByLabelText(/online punctuality bonus/i);
+    await user.clear(onlineBonusInput);
+    await user.type(onlineBonusInput, "2");
+
     const saveBtn = screen.getByRole("button", {
       name: /save season settings/i,
     });
@@ -192,7 +201,11 @@ describe("SeasonManagerView Component", () => {
     expect(onUpdateSettings).toHaveBeenCalledWith(
       "s-1",
       expect.objectContaining({
-        attendance: expect.objectContaining({ defaultBasePoints: 15 }),
+        attendance: expect.objectContaining({
+          defaultBasePoints: 15,
+          onlineBasePoints: 6,
+          onlinePunctualityBonus: 2,
+        }),
         grading: expect.objectContaining({ effortWeight: 12 }),
       })
     );

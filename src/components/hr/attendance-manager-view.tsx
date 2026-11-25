@@ -9,27 +9,40 @@ import {
   ClipboardList,
   Clock,
   Download,
+  MapPin,
   Plus,
   QrCode,
   Radio,
   Search,
   StopCircle,
   Timer,
+  Users,
+  Video,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  MemberMultiCombobox,
+  type MemberComboboxOption,
+} from "@/components/ui/member-combobox";
 import QRCode from "qrcode";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import { buildCheckinQrUrl } from "@/lib/checkin-url";
-import { isSlideDeckRequiredForRole } from "@/lib/permissions";
+import {
+  isEligibleSessionInstructor,
+  isSlideDeckRequiredForRole,
+  isWebConferencingRequiredForRole,
+} from "@/lib/permissions";
 import { isSafeHttpUrl } from "@/lib/url";
 import { SessionResourceLinks } from "@/components/data-display/session-resource-links";
 import {
   DEFAULT_SEASON_SETTINGS,
+  getAttendanceScoringForMode,
   type SeasonAttendanceSettings,
+  type SessionMode,
 } from "@/lib/season-settings";
 import {
   createSessionAction,
@@ -40,7 +53,9 @@ import {
   type CheckinOpenOptions,
   type CreateSessionInput,
   type CreateSessionResult,
+  type InstructorCandidate,
   type SessionAttendanceStatus,
+  type SessionInstructorSummary,
   type SessionRosterRow,
 } from "@/app/hr/attendance/actions";
 
@@ -58,8 +73,12 @@ export interface SessionItem {
   punctualityCutoffMinutes?: number;
   basePoints: number;
   punctualityBonus: number;
+  sessionMode?: SessionMode;
   slideDeckUrl?: string | null;
   webConferencingUrl?: string | null;
+  locationUrl?: string | null;
+  locationAddress?: string | null;
+  instructors?: SessionInstructorSummary[];
   attendanceCount: number;
 }
 
@@ -74,6 +93,7 @@ interface AttendanceManagerViewProps {
   currentUserCommitteeId?: string | null;
   currentUserCommitteeName?: string | null;
   committees?: CommitteeRef[];
+  instructorCandidates?: InstructorCandidate[];
   attendanceDefaults?: SeasonAttendanceSettings;
   onCreateSession?: (
     input: CreateSessionInput
@@ -256,12 +276,60 @@ function formatRoleTag(role: string): string {
   }
 }
 
+const ROLE_PRIORITY: Record<MembershipRole, number> = {
+  master_admin: 1,
+  director: 2,
+  hr_admin: 3,
+  committee_head: 4,
+  hr_member: 5,
+  member: 6,
+  attendee: 7,
+};
+
+function selectEligibleInstructorOptions(
+  candidates: readonly InstructorCandidate[],
+  committeeId: string | null
+): MemberComboboxOption[] {
+  const bestByPerson = new Map<string, InstructorCandidate>();
+  for (const cand of candidates) {
+    if (
+      !isEligibleSessionInstructor(
+        {
+          role: cand.role,
+          committeeId: cand.committeeId,
+          isActive: cand.isActive,
+        },
+        committeeId
+      )
+    ) {
+      continue;
+    }
+    const existing = bestByPerson.get(cand.personId);
+    if (
+      !existing ||
+      ROLE_PRIORITY[cand.role] < ROLE_PRIORITY[existing.role]
+    ) {
+      bestByPerson.set(cand.personId, cand);
+    }
+  }
+
+  return Array.from(bestByPerson.values()).map((c) => ({
+    id: c.membershipId,
+    fullName: c.fullName,
+    email: c.email,
+    phoneNumber: c.phoneNumber,
+    committeeName: c.committeeName ?? undefined,
+    roleLabel: formatRoleTag(c.role),
+  }));
+}
+
 export function AttendanceManagerView({
   sessions,
   currentUserRole = "hr_admin",
   currentUserCommitteeId = null,
   currentUserCommitteeName = null,
   committees = [],
+  instructorCandidates = [],
   attendanceDefaults = DEFAULT_SEASON_SETTINGS.attendance,
   onCreateSession,
   onToggleCheckin,
@@ -320,8 +388,12 @@ export function AttendanceManagerView({
   const [newCommitteeId, setNewCommitteeId] = useState<string>(
     currentUserCommitteeId ?? ""
   );
+  const [newSessionMode, setNewSessionMode] = useState<SessionMode>("offline");
   const [newSlideDeckUrl, setNewSlideDeckUrl] = useState("");
   const [newWebConferencingUrl, setNewWebConferencingUrl] = useState("");
+  const [newLocationUrl, setNewLocationUrl] = useState("");
+  const [newLocationAddress, setNewLocationAddress] = useState("");
+  const [newInstructorIds, setNewInstructorIds] = useState<string[]>([]);
   const [newWindowMinutes, setNewWindowMinutes] = useState(
     attendanceDefaults.defaultCheckinWindowMinutes
   );
@@ -461,6 +533,49 @@ export function AttendanceManagerView({
   }, [newStartsAt, newWindowMinutes, nowMs]);
 
   const isSlideDeckRequired = isSlideDeckRequiredForRole(currentUserRole);
+  const isWebConferencingRequired = isWebConferencingRequiredForRole(
+    currentUserRole,
+    newSessionMode
+  );
+  const canOverridePoints =
+    currentUserRole === "master_admin" ||
+    currentUserRole === "hr_admin" ||
+    currentUserRole === "hr_member";
+
+  const effectiveTargetCommitteeId = isCommitteeScoped
+    ? currentUserCommitteeId
+    : newCommitteeId || null;
+
+  const eligibleInstructorOptions = useMemo(
+    () =>
+      selectEligibleInstructorOptions(
+        instructorCandidates,
+        effectiveTargetCommitteeId
+      ),
+    [instructorCandidates, effectiveTargetCommitteeId]
+  );
+
+  const handleModeChange = (nextMode: SessionMode) => {
+    setNewSessionMode(nextMode);
+    const modeScoring = getAttendanceScoringForMode(
+      attendanceDefaults,
+      nextMode
+    );
+    setNewBasePoints(modeScoring.basePoints);
+    setNewPunctualityBonus(modeScoring.punctualityBonus);
+    setErrorMessage(null);
+  };
+
+  const handleCommitteeChange = (nextCommitteeId: string) => {
+    setNewCommitteeId(nextCommitteeId);
+    const nextScope = nextCommitteeId || null;
+    const validIds = new Set(
+      selectEligibleInstructorOptions(instructorCandidates, nextScope).map(
+        (opt) => opt.id
+      )
+    );
+    setNewInstructorIds((prev) => prev.filter((id) => validIds.has(id)));
+  };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -468,6 +583,8 @@ export function AttendanceManagerView({
 
     const trimmedSlideDeck = newSlideDeckUrl.trim();
     const trimmedMeeting = newWebConferencingUrl.trim();
+    const trimmedLocationUrl = newLocationUrl.trim();
+    const trimmedLocationAddress = newLocationAddress.trim();
 
     if (isSlideDeckRequired && !trimmedSlideDeck) {
       setErrorMessage("Slide deck URL is required.");
@@ -477,10 +594,35 @@ export function AttendanceManagerView({
       setErrorMessage("Slide deck must be a valid http:// or https:// URL.");
       return;
     }
-    if (trimmedMeeting && !isSafeHttpUrl(trimmedMeeting)) {
-      setErrorMessage(
-        "Web conferencing link must be a valid http:// or https:// URL."
-      );
+
+    if (newSessionMode === "online") {
+      if (isWebConferencingRequired && !trimmedMeeting) {
+        setErrorMessage(
+          "Web conferencing link is required for online sessions."
+        );
+        return;
+      }
+      if (trimmedMeeting && !isSafeHttpUrl(trimmedMeeting)) {
+        setErrorMessage(
+          "Web conferencing link must be a valid http:// or https:// URL."
+        );
+        return;
+      }
+    } else {
+      if (trimmedLocationUrl && !isSafeHttpUrl(trimmedLocationUrl)) {
+        setErrorMessage(
+          "Location link must be a valid http:// or https:// URL."
+        );
+        return;
+      }
+      if (trimmedLocationAddress.length > 300) {
+        setErrorMessage("Location address must be 300 characters or fewer.");
+        return;
+      }
+    }
+
+    if (newInstructorIds.length === 0) {
+      setErrorMessage("Please assign at least one instructor for this session.");
       return;
     }
 
@@ -490,11 +632,16 @@ export function AttendanceManagerView({
     const input: CreateSessionInput = {
       title: newTitle.trim(),
       startsAt: new Date(newStartsAt).toISOString(),
-      committeeId: isCommitteeScoped
-        ? currentUserCommitteeId
-        : newCommitteeId || null,
+      committeeId: effectiveTargetCommitteeId,
+      sessionMode: newSessionMode,
       slideDeckUrl: trimmedSlideDeck || null,
-      webConferencingUrl: trimmedMeeting || null,
+      webConferencingUrl:
+        newSessionMode === "online" ? trimmedMeeting || null : null,
+      locationUrl:
+        newSessionMode === "offline" ? trimmedLocationUrl || null : null,
+      locationAddress:
+        newSessionMode === "offline" ? trimmedLocationAddress || null : null,
+      instructorMembershipIds: newInstructorIds,
       checkinWindowMinutes: newWindowMinutes,
       punctualityCutoffMinutes: newPunctualityCutoff,
       basePoints: newBasePoints,
@@ -546,8 +693,14 @@ export function AttendanceManagerView({
 
       setShowCreateModal(false);
       setNewTitle("");
+      setNewSessionMode("offline");
       setNewSlideDeckUrl("");
       setNewWebConferencingUrl("");
+      setNewLocationUrl("");
+      setNewLocationAddress("");
+      setNewInstructorIds([]);
+      setNewBasePoints(attendanceDefaults.defaultBasePoints);
+      setNewPunctualityBonus(attendanceDefaults.defaultPunctualityBonus);
     } catch (err: unknown) {
       setErrorMessage(
         err instanceof Error ? err.message : "Error creating session."
@@ -1018,8 +1171,15 @@ export function AttendanceManagerView({
               setErrorMessage(null);
               setNowMs(now.getTime());
               setNewStartsAt(getLocalDatetimeInputValue(now));
+              setNewCommitteeId(currentUserCommitteeId ?? "");
+              setNewSessionMode("offline");
               setNewSlideDeckUrl("");
               setNewWebConferencingUrl("");
+              setNewLocationUrl("");
+              setNewLocationAddress("");
+              setNewInstructorIds([]);
+              setNewBasePoints(attendanceDefaults.defaultBasePoints);
+              setNewPunctualityBonus(attendanceDefaults.defaultPunctualityBonus);
               setShowCreateModal(true);
             }}
             className="h-10 shrink-0 gap-2 bg-[#772583] px-4 text-xs font-semibold text-white shadow-xs hover:bg-[#5a1b63]"
@@ -1107,7 +1267,7 @@ export function AttendanceManagerView({
                   />
                 </div>
 
-                <div>
+                <div className="min-w-0">
                   <label
                     htmlFor="session-committee-select"
                     className="block font-heading text-xs font-bold text-[#002855]"
@@ -1125,7 +1285,7 @@ export function AttendanceManagerView({
                     <select
                       id="session-committee-select"
                       value={newCommitteeId}
-                      onChange={(e) => setNewCommitteeId(e.target.value)}
+                      onChange={(e) => handleCommitteeChange(e.target.value)}
                       className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                     >
                       <option value="">Branch-wide (All Members)</option>
@@ -1139,27 +1299,123 @@ export function AttendanceManagerView({
                 </div>
               </div>
 
-                <div>
-                  <label
-                    htmlFor="session-slide-deck-input"
-                    className="block font-heading text-xs font-bold text-[#002855]"
+              {/* Delivery Mode Switch (Offline vs Online) */}
+              <div>
+                <span className="block font-heading text-xs font-bold text-[#002855]">
+                  Session Format
+                </span>
+                <div
+                  role="radiogroup"
+                  aria-label="Session format"
+                  className="mt-1 grid grid-cols-2 gap-2"
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={newSessionMode === "offline"}
+                    onClick={() => handleModeChange("offline")}
+                    className={`flex min-w-0 flex-col items-start rounded-lg border px-3 py-2 text-left transition-colors ${
+                      newSessionMode === "offline"
+                        ? "border-[#772583] bg-[#f5edf7] text-[#5a1b63]"
+                        : "border-border bg-white text-[#002855] hover:bg-muted/40"
+                    }`}
                   >
-                    Slide Deck URL{" "}
-                    <span className="font-normal text-muted-foreground">
-                      {isSlideDeckRequired ? "(Required)" : "(Optional)"}
+                    <span className="flex max-w-full items-center gap-1.5 text-xs font-bold">
+                      <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">Offline (In-Person)</span>
                     </span>
-                  </label>
-                  <Input
-                    id="session-slide-deck-input"
-                    type="url"
-                    required={isSlideDeckRequired}
-                    placeholder="https://docs.google.com/presentation/d/..."
-                    value={newSlideDeckUrl}
-                    onChange={(e) => setNewSlideDeckUrl(e.target.value)}
-                    className="mt-1 h-10 text-sm"
-                  />
-                </div>
+                    <span className="mt-0.5 text-[11px] font-medium opacity-80 tabular-nums">
+                      {attendanceDefaults.defaultBasePoints} +{" "}
+                      {attendanceDefaults.defaultPunctualityBonus} pts
+                    </span>
+                  </button>
 
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={newSessionMode === "online"}
+                    onClick={() => handleModeChange("online")}
+                    className={`flex min-w-0 flex-col items-start rounded-lg border px-3 py-2 text-left transition-colors ${
+                      newSessionMode === "online"
+                        ? "border-[#772583] bg-[#f5edf7] text-[#5a1b63]"
+                        : "border-border bg-white text-[#002855] hover:bg-muted/40"
+                    }`}
+                  >
+                    <span className="flex max-w-full items-center gap-1.5 text-xs font-bold">
+                      <Video className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">Online</span>
+                    </span>
+                    <span className="mt-0.5 text-[11px] font-medium opacity-80 tabular-nums">
+                      {attendanceDefaults.onlineBasePoints} +{" "}
+                      {attendanceDefaults.onlinePunctualityBonus} pts
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Session Instructors Multi-Selector */}
+              <div className="min-w-0">
+                <label
+                  htmlFor="session-instructors-combobox"
+                  className="block font-heading text-xs font-bold text-[#002855]"
+                >
+                  Session Instructor(s){" "}
+                  <span className="font-normal text-muted-foreground">
+                    (Required — select one or more)
+                  </span>
+                </label>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {effectiveTargetCommitteeId
+                    ? "Choose from this committee's active Committee Heads."
+                    : "Choose from active Master Admins, Directors, or HR Admins."}
+                </p>
+                {eligibleInstructorOptions.length === 0 ? (
+                  <div className="mt-1.5 rounded-lg border border-[#ffc627]/50 bg-[#fffbeb] px-3 py-2 text-xs text-[#92400e]">
+                    {effectiveTargetCommitteeId
+                      ? "No Committee Heads are assigned to this committee yet. Assign a head in Roster first."
+                      : "No eligible branch-wide instructors (Master Admin, Director, or HR Admin) found in the active season."}
+                  </div>
+                ) : (
+                  <MemberMultiCombobox
+                    id="session-instructors-combobox"
+                    options={eligibleInstructorOptions}
+                    values={newInstructorIds}
+                    onChange={setNewInstructorIds}
+                    ariaLabel="Session instructors"
+                    placeholder={
+                      effectiveTargetCommitteeId
+                        ? "Search committee heads..."
+                        : "Search masters, directors, or HR admins..."
+                    }
+                    allSelectedPlaceholder="All eligible instructors selected"
+                    emptyText="No matching eligible instructors found."
+                    className="mt-1.5"
+                  />
+                )}
+              </div>
+
+              <div>
+                <label
+                  htmlFor="session-slide-deck-input"
+                  className="block font-heading text-xs font-bold text-[#002855]"
+                >
+                  Slide Deck URL{" "}
+                  <span className="font-normal text-muted-foreground">
+                    {isSlideDeckRequired ? "(Required)" : "(Optional)"}
+                  </span>
+                </label>
+                <Input
+                  id="session-slide-deck-input"
+                  type="url"
+                  required={isSlideDeckRequired}
+                  placeholder="https://docs.google.com/presentation/d/..."
+                  value={newSlideDeckUrl}
+                  onChange={(e) => setNewSlideDeckUrl(e.target.value)}
+                  className="mt-1 h-10 text-sm"
+                />
+              </div>
+
+              {newSessionMode === "online" ? (
                 <div>
                   <label
                     htmlFor="session-web-conf-input"
@@ -1167,18 +1423,62 @@ export function AttendanceManagerView({
                   >
                     Web Conferencing Link{" "}
                     <span className="font-normal text-muted-foreground">
-                      (Optional)
+                      {isWebConferencingRequired ? "(Required)" : "(Optional)"}
                     </span>
                   </label>
                   <Input
                     id="session-web-conf-input"
                     type="url"
+                    required={isWebConferencingRequired}
                     placeholder="https://meet.google.com/... or Zoom/Teams URL"
                     value={newWebConferencingUrl}
                     onChange={(e) => setNewWebConferencingUrl(e.target.value)}
                     className="mt-1 h-10 text-sm"
                   />
                 </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="min-w-0">
+                    <label
+                      htmlFor="session-location-address-input"
+                      className="block font-heading text-xs font-bold text-[#002855]"
+                    >
+                      Location Address{" "}
+                      <span className="font-normal text-muted-foreground">
+                        (Text)
+                      </span>
+                    </label>
+                    <Input
+                      id="session-location-address-input"
+                      type="text"
+                      maxLength={300}
+                      placeholder="e.g. Faculty of Engineering, Hall 204"
+                      value={newLocationAddress}
+                      onChange={(e) => setNewLocationAddress(e.target.value)}
+                      className="mt-1 h-10 text-sm"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <label
+                      htmlFor="session-location-url-input"
+                      className="block font-heading text-xs font-bold text-[#002855]"
+                    >
+                      Location Link{" "}
+                      <span className="font-normal text-muted-foreground">
+                        (Maps URL)
+                      </span>
+                    </label>
+                    <Input
+                      id="session-location-url-input"
+                      type="url"
+                      placeholder="https://maps.google.com/..."
+                      value={newLocationUrl}
+                      onChange={(e) => setNewLocationUrl(e.target.value)}
+                      className="mt-1 h-10 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>
@@ -1240,12 +1540,13 @@ export function AttendanceManagerView({
                       type="number"
                       min={0}
                       max={500}
+                      disabled={!canOverridePoints}
                       value={newBasePoints}
                       onChange={(e) => {
                         const v = parseInt(e.target.value, 10);
                         setNewBasePoints(Number.isNaN(v) ? 0 : Math.max(0, v));
                       }}
-                      className="h-10 text-xs"
+                      className="h-10 text-xs disabled:bg-muted disabled:opacity-80"
                       aria-label="Base points"
                     />
                     <span className="text-xs font-bold text-muted-foreground">
@@ -1255,6 +1556,7 @@ export function AttendanceManagerView({
                       type="number"
                       min={0}
                       max={500}
+                      disabled={!canOverridePoints}
                       value={newPunctualityBonus}
                       onChange={(e) => {
                         const v = parseInt(e.target.value, 10);
@@ -1262,7 +1564,7 @@ export function AttendanceManagerView({
                           Number.isNaN(v) ? 0 : Math.max(0, v)
                         );
                       }}
-                      className="h-10 text-xs"
+                      className="h-10 text-xs disabled:bg-muted disabled:opacity-80"
                       aria-label="Punctuality bonus points"
                     />
                   </div>
@@ -1351,6 +1653,15 @@ export function AttendanceManagerView({
                             ? "Scheduled"
                             : "Closed"}
                       </Badge>
+                      <Badge
+                        className={
+                          sess.sessionMode === "online"
+                            ? "bg-[#ebf3f8] font-semibold text-[11px] text-[#00629b]"
+                            : "bg-[#f1f5f9] font-semibold text-[11px] text-[#002855]"
+                        }
+                      >
+                        {sess.sessionMode === "online" ? "Online" : "Offline"}
+                      </Badge>
                       {countdown && (
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[11px] font-bold ${
@@ -1377,6 +1688,14 @@ export function AttendanceManagerView({
                   <p className="text-xs font-semibold text-[#00629b]">
                     {sess.committeeName}
                   </p>
+                  {sess.instructors && sess.instructors.length > 0 && (
+                    <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                      <Users className="h-3.5 w-3.5 shrink-0 text-[#772583]" aria-hidden="true" />
+                      <span className="truncate">
+                        {sess.instructors.map((inst) => inst.fullName).join(", ")}
+                      </span>
+                    </p>
+                  )}
                 </CardHeader>
                 <CardContent className="flex flex-1 flex-col justify-between gap-4 pt-0">
                   <div className="space-y-3">
@@ -1407,8 +1726,11 @@ export function AttendanceManagerView({
                     )}
 
                     <SessionResourceLinks
+                      sessionMode={sess.sessionMode}
                       slideDeckUrl={sess.slideDeckUrl}
                       webConferencingUrl={sess.webConferencingUrl}
+                      locationUrl={sess.locationUrl}
+                      locationAddress={sess.locationAddress}
                     />
                   </div>
 
@@ -1515,6 +1837,15 @@ export function AttendanceManagerView({
                   <Badge className="bg-[#f5edf7] text-[11px] font-bold text-[#772583]">
                     {sheetSession.committeeName}
                   </Badge>
+                  <Badge
+                    className={
+                      sheetSession.sessionMode === "online"
+                        ? "bg-[#ebf3f8] text-[11px] font-bold text-[#00629b]"
+                        : "bg-[#f1f5f9] text-[11px] font-bold text-[#002855]"
+                    }
+                  >
+                    {sheetSession.sessionMode === "online" ? "Online" : "Offline"}
+                  </Badge>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {new Date(sheetSession.startsAt).toLocaleDateString("en-US", {
@@ -1525,10 +1856,16 @@ export function AttendanceManagerView({
                   })}{" "}
                   · On Time = +{sheetSession.basePoints + sheetSession.punctualityBonus} pts ·
                   Late = +{sheetSession.basePoints} pts · Excused / Absent = 0 pts
+                  {sheetSession.instructors && sheetSession.instructors.length > 0
+                    ? ` · Instructor${sheetSession.instructors.length > 1 ? "s" : ""}: ${sheetSession.instructors.map((i) => i.fullName).join(", ")}`
+                    : ""}
                 </p>
                 <SessionResourceLinks
+                  sessionMode={sheetSession.sessionMode}
                   slideDeckUrl={sheetSession.slideDeckUrl}
                   webConferencingUrl={sheetSession.webConferencingUrl}
+                  locationUrl={sheetSession.locationUrl}
+                  locationAddress={sheetSession.locationAddress}
                   className="mt-2"
                 />
               </div>

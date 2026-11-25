@@ -6,9 +6,15 @@ import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canManageCommitteeSessions,
   getOperationalCommitteeScope,
+  isEligibleSessionInstructor,
   isSlideDeckRequiredForRole,
+  isWebConferencingRequiredForRole,
 } from "@/lib/permissions";
-import { normalizeSeasonSettings } from "@/lib/season-settings";
+import {
+  getAttendanceScoringForMode,
+  normalizeSeasonSettings,
+  type SessionMode,
+} from "@/lib/season-settings";
 import { upsertScoreLedgerEntry } from "@/db/ledger";
 import { deduplicateRecipientsByPerson } from "./tasks.service";
 import {
@@ -255,6 +261,227 @@ async function generateUnique6DigitCode(seasonId: string): Promise<string> {
   return generate6DigitCode();
 }
 
+export interface SessionInstructorSummary {
+  membershipId: string;
+  fullName: string;
+  role: MembershipRole;
+}
+
+export interface InstructorCandidate {
+  membershipId: string;
+  personId: string;
+  fullName: string;
+  email?: string;
+  phoneNumber?: string | null;
+  role: MembershipRole;
+  committeeId: string | null;
+  committeeName?: string | null;
+  isActive?: boolean;
+}
+
+const INSTRUCTOR_ROLE_PRIORITY: Record<MembershipRole, number> = {
+  master_admin: 1,
+  director: 2,
+  hr_admin: 3,
+  committee_head: 4,
+  hr_member: 5,
+  member: 6,
+  attendee: 7,
+};
+
+/**
+ * Pure validator for session delivery mode, slide deck, online link, and offline location fields.
+ * Enforces role-based requirement for slide deck (all sessions) and web conferencing link (online sessions).
+ */
+export function validateSessionDeliveryFields(input: {
+  role: MembershipRole;
+  sessionMode?: SessionMode | string;
+  slideDeckUrl?: string | null;
+  webConferencingUrl?: string | null;
+  locationUrl?: string | null;
+  locationAddress?: string | null;
+}):
+  | {
+      ok: true;
+      sessionMode: SessionMode;
+      slideDeckUrl: string | null;
+      webConferencingUrl: string | null;
+      locationUrl: string | null;
+      locationAddress: string | null;
+    }
+  | { ok: false; error: string } {
+  const rawMode = input.sessionMode ?? "offline";
+  if (rawMode !== "offline" && rawMode !== "online") {
+    return { ok: false, error: "Session mode must be online or offline." };
+  }
+  const sessionMode: SessionMode = rawMode;
+
+  const trimmedSlideDeckUrl = input.slideDeckUrl?.trim() ?? "";
+  if (isSlideDeckRequiredForRole(input.role) && !trimmedSlideDeckUrl) {
+    return { ok: false, error: "Slide deck URL is required." };
+  }
+  if (trimmedSlideDeckUrl && !isValidHttpUrl(trimmedSlideDeckUrl)) {
+    return {
+      ok: false,
+      error: "Slide deck must be a valid http:// or https:// URL.",
+    };
+  }
+
+  if (sessionMode === "online") {
+    const trimmedWebConferencingUrl = input.webConferencingUrl?.trim() ?? "";
+    if (
+      isWebConferencingRequiredForRole(input.role, "online") &&
+      !trimmedWebConferencingUrl
+    ) {
+      return {
+        ok: false,
+        error: "Web conferencing link is required for online sessions.",
+      };
+    }
+    if (
+      trimmedWebConferencingUrl &&
+      !isValidHttpUrl(trimmedWebConferencingUrl)
+    ) {
+      return {
+        ok: false,
+        error:
+          "Web conferencing link must be a valid http:// or https:// URL.",
+      };
+    }
+    return {
+      ok: true,
+      sessionMode,
+      slideDeckUrl: trimmedSlideDeckUrl || null,
+      webConferencingUrl: trimmedWebConferencingUrl || null,
+      locationUrl: null,
+      locationAddress: null,
+    };
+  }
+
+  const trimmedLocationUrl = input.locationUrl?.trim() ?? "";
+  if (trimmedLocationUrl && !isValidHttpUrl(trimmedLocationUrl)) {
+    return {
+      ok: false,
+      error: "Location link must be a valid http:// or https:// URL.",
+    };
+  }
+  const trimmedLocationAddress = input.locationAddress?.trim() ?? "";
+  if (trimmedLocationAddress.length > 300) {
+    return {
+      ok: false,
+      error: "Location address must be 300 characters or fewer.",
+    };
+  }
+
+  return {
+    ok: true,
+    sessionMode,
+    slideDeckUrl: trimmedSlideDeckUrl || null,
+    webConferencingUrl: null,
+    locationUrl: trimmedLocationUrl || null,
+    locationAddress: trimmedLocationAddress || null,
+  };
+}
+
+/**
+ * Filters a pool of roster candidates to those eligible to instruct a session for
+ * `sessionCommitteeId` (committee heads for committee sessions; master/director/hr_admin
+ * for branch-wide sessions), deduplicating multi-hat leaders by `personId`.
+ */
+export function filterEligibleInstructorCandidates<
+  T extends InstructorCandidate,
+>(candidates: readonly T[], sessionCommitteeId: string | null): T[] {
+  const eligible = candidates.filter((c) =>
+    isEligibleSessionInstructor(
+      {
+        role: c.role,
+        committeeId: c.committeeId,
+        isActive: c.isActive,
+      },
+      sessionCommitteeId
+    )
+  );
+
+  const bestByPerson = new Map<string, T>();
+  for (const cand of eligible) {
+    const existing = bestByPerson.get(cand.personId);
+    if (
+      !existing ||
+      INSTRUCTOR_ROLE_PRIORITY[cand.role] <
+        INSTRUCTOR_ROLE_PRIORITY[existing.role]
+    ) {
+      bestByPerson.set(cand.personId, cand);
+    }
+  }
+  return Array.from(bestByPerson.values());
+}
+
+/**
+ * Validates that at least one eligible instructor is assigned and that every
+ * requested membership ID belongs to an active eligible instructor for the session scope.
+ */
+export function validateSessionInstructors(input: {
+  requestedIds?: readonly string[];
+  resolvedCandidates: readonly InstructorCandidate[];
+  sessionCommitteeId: string | null;
+}):
+  | { ok: true; instructors: SessionInstructorSummary[] }
+  | { ok: false; error: string } {
+  const uniqueRequestedIds = Array.from(
+    new Set(
+      (input.requestedIds ?? [])
+        .map((id) => (typeof id === "string" ? id.trim() : ""))
+        .filter(Boolean)
+    )
+  );
+
+  if (uniqueRequestedIds.length === 0) {
+    return {
+      ok: false,
+      error: "Please assign at least one instructor for this session.",
+    };
+  }
+
+  const candidateById = new Map(
+    input.resolvedCandidates.map((c) => [c.membershipId, c])
+  );
+  const seenPersons = new Set<string>();
+  const instructors: SessionInstructorSummary[] = [];
+
+  const scopeError =
+    input.sessionCommitteeId === null
+      ? "All instructors for a branch-wide session must be active Master Admins, Directors, or HR Admins."
+      : "All instructors for a committee session must be active Committee Heads of that committee.";
+
+  for (const id of uniqueRequestedIds) {
+    const candidate = candidateById.get(id);
+    if (
+      !candidate ||
+      !isEligibleSessionInstructor(
+        {
+          role: candidate.role,
+          committeeId: candidate.committeeId,
+          isActive: candidate.isActive,
+        },
+        input.sessionCommitteeId
+      )
+    ) {
+      return { ok: false, error: scopeError };
+    }
+    if (seenPersons.has(candidate.personId)) {
+      continue;
+    }
+    seenPersons.add(candidate.personId);
+    instructors.push({
+      membershipId: candidate.membershipId,
+      fullName: candidate.fullName,
+      role: candidate.role,
+    });
+  }
+
+  return { ok: true, instructors };
+}
+
 export interface CreatedSessionSummary {
   id: string;
   title: string;
@@ -269,8 +496,12 @@ export interface CreatedSessionSummary {
   punctualityCutoffMinutes: number;
   basePoints: number;
   punctualityBonus: number;
+  sessionMode: SessionMode;
   slideDeckUrl: string | null;
   webConferencingUrl: string | null;
+  locationUrl: string | null;
+  locationAddress: string | null;
+  instructors: SessionInstructorSummary[];
   attendanceCount: number;
 }
 
@@ -290,8 +521,12 @@ export interface CreateSessionInput {
   title: string;
   startsAt: string;
   committeeId?: string | null;
+  sessionMode?: SessionMode;
   slideDeckUrl?: string | null;
   webConferencingUrl?: string | null;
+  locationUrl?: string | null;
+  locationAddress?: string | null;
+  instructorMembershipIds?: string[];
   checkinWindowMinutes?: number;
   punctualityCutoffMinutes?: number;
   basePoints?: number;
@@ -342,30 +577,38 @@ export async function createSessionAsActor(
     return { ok: false, error: "A valid session start date/time is required." };
   }
 
-  const trimmedSlideDeckUrl = input.slideDeckUrl?.trim() ?? "";
-  if (isSlideDeckRequiredForRole(actor.profile.role) && !trimmedSlideDeckUrl) {
-    return { ok: false, error: "Slide deck URL is required." };
+  const deliveryCheck = validateSessionDeliveryFields({
+    role: actor.profile.role,
+    sessionMode: input.sessionMode,
+    slideDeckUrl: input.slideDeckUrl,
+    webConferencingUrl: input.webConferencingUrl,
+    locationUrl: input.locationUrl,
+    locationAddress: input.locationAddress,
+  });
+  if (!deliveryCheck.ok) {
+    return { ok: false, error: deliveryCheck.error };
   }
-  if (trimmedSlideDeckUrl && !isValidHttpUrl(trimmedSlideDeckUrl)) {
+  const {
+    sessionMode,
+    slideDeckUrl,
+    webConferencingUrl,
+    locationUrl,
+    locationAddress,
+  } = deliveryCheck;
+
+  const requestedInstructorIds = Array.from(
+    new Set(
+      (input.instructorMembershipIds ?? [])
+        .map((id) => (typeof id === "string" ? id.trim() : ""))
+        .filter(Boolean)
+    )
+  );
+  if (requestedInstructorIds.length === 0) {
     return {
       ok: false,
-      error: "Slide deck must be a valid http:// or https:// URL.",
+      error: "Please assign at least one instructor for this session.",
     };
   }
-
-  const trimmedWebConferencingUrl = input.webConferencingUrl?.trim() ?? "";
-  if (
-    trimmedWebConferencingUrl &&
-    !isValidHttpUrl(trimmedWebConferencingUrl)
-  ) {
-    return {
-      ok: false,
-      error: "Web conferencing link must be a valid http:// or https:// URL.",
-    };
-  }
-
-  const slideDeckUrl = trimmedSlideDeckUrl || null;
-  const webConferencingUrl = trimmedWebConferencingUrl || null;
 
   try {
     const seasonRes = await resolveActiveSeason(input.seasonId);
@@ -374,14 +617,23 @@ export async function createSessionAsActor(
     const attDefaults = normalizeSeasonSettings(
       seasonRes.season.settingsJson
     ).attendance;
+    const modeScoring = getAttendanceScoringForMode(attDefaults, sessionMode);
 
     const windowMinutes =
       input.checkinWindowMinutes ?? attDefaults.defaultCheckinWindowMinutes;
     const punctualityCutoff =
       input.punctualityCutoffMinutes ?? attDefaults.punctualityCutoffMinutes;
-    const basePoints = input.basePoints ?? attDefaults.defaultBasePoints;
-    const punctualityBonus =
-      input.punctualityBonus ?? attDefaults.defaultPunctualityBonus;
+    // Committee heads always inherit HR's mode-specific scoring; HR/Master roles may override per session
+    const canOverrideSessionPoints =
+      actor.profile.role === "master_admin" ||
+      actor.profile.role === "hr_admin" ||
+      actor.profile.role === "hr_member";
+    const basePoints = canOverrideSessionPoints
+      ? (input.basePoints ?? modeScoring.basePoints)
+      : modeScoring.basePoints;
+    const punctualityBonus = canOverrideSessionPoints
+      ? (input.punctualityBonus ?? modeScoring.punctualityBonus)
+      : modeScoring.punctualityBonus;
 
     if (!Number.isFinite(windowMinutes) || windowMinutes < 1 || windowMinutes > 720) {
       return { ok: false, error: "Check-in window must be between 1 and 720 minutes." };
@@ -415,6 +667,44 @@ export async function createSessionAsActor(
       committeeName = comm.name;
     }
 
+    const dbInstructorRows = await db
+      .select({
+        membershipId: schema.rosterMemberships.id,
+        personId: schema.rosterMemberships.personId,
+        fullName: schema.persons.fullName,
+        role: schema.rosterMemberships.role,
+        committeeId: schema.rosterMemberships.committeeId,
+        membershipActive: schema.rosterMemberships.isActive,
+        personActive: schema.persons.isActive,
+      })
+      .from(schema.rosterMemberships)
+      .innerJoin(
+        schema.persons,
+        eq(schema.rosterMemberships.personId, schema.persons.id)
+      )
+      .where(
+        and(
+          eq(schema.rosterMemberships.seasonId, seasonId),
+          inArray(schema.rosterMemberships.id, requestedInstructorIds)
+        )
+      );
+
+    const instructorCheck = validateSessionInstructors({
+      requestedIds: requestedInstructorIds,
+      resolvedCandidates: dbInstructorRows.map((r) => ({
+        membershipId: r.membershipId,
+        personId: r.personId,
+        fullName: r.fullName,
+        role: r.role as MembershipRole,
+        committeeId: r.committeeId,
+        isActive: r.membershipActive && r.personActive,
+      })),
+      sessionCommitteeId: targetCommitteeId || null,
+    });
+    if (!instructorCheck.ok) {
+      return { ok: false, error: instructorCheck.error };
+    }
+
     const startsAtDate = new Date(input.startsAt);
     const now = new Date();
     // Always assign 1 persistent 6-digit code / QR at creation so presenters can add it to slides early
@@ -422,25 +712,40 @@ export async function createSessionAsActor(
     const { checkinOpen, checkinStartsAt, checkinEndsAt } =
       computeInitialSessionWindow(startsAtDate, windowMinutes, now);
 
-    const [session] = await db
-      .insert(schema.branchSessions)
-      .values({
-        seasonId,
-        committeeId: targetCommitteeId || null,
-        title: trimmedTitle,
-        startsAt: startsAtDate,
-        checkinOpen,
-        checkinCode: code,
-        checkinStartsAt,
-        checkinEndsAt,
-        punctualityStartsAt: null,
-        punctualityCutoffMinutes: punctualityCutoff,
-        basePoints,
-        punctualityBonus,
-        slideDeckUrl,
-        webConferencingUrl,
-      })
-      .returning();
+    const session = await withTransaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(schema.branchSessions)
+        .values({
+          seasonId,
+          committeeId: targetCommitteeId || null,
+          title: trimmedTitle,
+          startsAt: startsAtDate,
+          checkinOpen,
+          checkinCode: code,
+          checkinStartsAt,
+          checkinEndsAt,
+          punctualityStartsAt: null,
+          punctualityCutoffMinutes: punctualityCutoff,
+          basePoints,
+          punctualityBonus,
+          sessionMode,
+          slideDeckUrl,
+          webConferencingUrl,
+          locationUrl,
+          locationAddress,
+        })
+        .returning();
+
+      await tx.insert(schema.branchSessionInstructors).values(
+        instructorCheck.instructors.map((inst) => ({
+          seasonId,
+          sessionId: inserted.id,
+          membershipId: inst.membershipId,
+        }))
+      );
+
+      return inserted;
+    });
 
     const createdSummary: CreatedSessionSummary = {
       id: session.id,
@@ -456,8 +761,12 @@ export async function createSessionAsActor(
       punctualityCutoffMinutes: session.punctualityCutoffMinutes,
       basePoints: session.basePoints,
       punctualityBonus: session.punctualityBonus,
+      sessionMode: (session.sessionMode === "online" ? "online" : "offline"),
       slideDeckUrl: session.slideDeckUrl,
       webConferencingUrl: session.webConferencingUrl,
+      locationUrl: session.locationUrl,
+      locationAddress: session.locationAddress,
+      instructors: instructorCheck.instructors,
       attendanceCount: 0,
     };
 

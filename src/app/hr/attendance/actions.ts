@@ -23,7 +23,9 @@ import {
   type CreatedSessionSummary,
   type CreateSessionInput,
   type CreateSessionResult,
+  type InstructorCandidate,
   type SessionAttendanceStatus,
+  type SessionInstructorSummary,
   type SessionRosterRow,
 } from "@/services/hr-ops/attendance.service";
 
@@ -32,7 +34,9 @@ export type {
   CreatedSessionSummary,
   CreateSessionInput,
   CreateSessionResult,
+  InstructorCandidate,
   SessionAttendanceStatus,
+  SessionInstructorSummary,
   SessionRosterRow,
 };
 

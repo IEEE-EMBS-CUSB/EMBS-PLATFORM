@@ -50,8 +50,11 @@ export function AttendeeSessionTable({ sessions }: AttendeeSessionTableProps) {
               {formatDisplayDate(session.date)}
             </p>
             <SessionResourceLinks
+              sessionMode={session.sessionMode}
               slideDeckUrl={session.slideDeckUrl}
               webConferencingUrl={session.webConferencingUrl}
+              locationUrl={session.locationUrl}
+              locationAddress={session.locationAddress}
               className="pt-0.5"
             />
           </li>
@@ -91,8 +94,11 @@ export function AttendeeSessionTable({ sessions }: AttendeeSessionTableProps) {
                     {session.committeeName}
                   </p>
                   <SessionResourceLinks
+                    sessionMode={session.sessionMode}
                     slideDeckUrl={session.slideDeckUrl}
                     webConferencingUrl={session.webConferencingUrl}
+                    locationUrl={session.locationUrl}
+                    locationAddress={session.locationAddress}
                     className="mt-1.5"
                   />
                 </TableCell>

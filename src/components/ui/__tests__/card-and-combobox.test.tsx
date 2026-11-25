@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MemberCombobox, type MemberComboboxOption } from "@/components/ui/member-combobox";
+import {
+  MemberCombobox,
+  MemberMultiCombobox,
+  type MemberComboboxOption,
+} from "@/components/ui/member-combobox";
 
 const SAMPLE_MEMBERS: MemberComboboxOption[] = [
   {
@@ -139,5 +143,65 @@ describe("CP3 UI Primitives — Card padding & MemberCombobox", () => {
     expect(cardEl.contains(listbox)).toBe(false);
     expect(document.body.contains(listbox)).toBe(true);
     expect(listbox.className).toContain("fixed");
+  });
+
+  it("supports selecting and removing multiple people using MemberMultiCombobox backed by MemberCombobox", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    const { rerender } = render(
+      <MemberMultiCombobox
+        id="multi-instructor-picker"
+        options={SAMPLE_MEMBERS}
+        values={[]}
+        onChange={onChange}
+        ariaLabel="Select session instructors"
+        placeholder="Search instructors..."
+      />
+    );
+
+    const input = screen.getByRole("combobox", {
+      name: /select session instructors/i,
+    });
+    await user.click(input);
+    await user.type(input, "salma");
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    expect(onChange).toHaveBeenLastCalledWith(["m-1"]);
+
+    // Rerender with m-1 selected: chip appears and m-1 is excluded from dropdown options
+    rerender(
+      <MemberMultiCombobox
+        id="multi-instructor-picker"
+        options={SAMPLE_MEMBERS}
+        values={["m-1"]}
+        onChange={onChange}
+        ariaLabel="Select session instructors"
+        placeholder="Search instructors..."
+      />
+    );
+
+    expect(screen.getByText("Salma El-Sayed")).toBeInTheDocument();
+    await user.click(input);
+    expect(screen.queryByRole("option", { name: /salma el-sayed/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: /omar tarek/i }));
+    expect(onChange).toHaveBeenLastCalledWith(["m-1", "m-2"]);
+
+    // Rerender with both selected and remove Salma
+    rerender(
+      <MemberMultiCombobox
+        id="multi-instructor-picker"
+        options={SAMPLE_MEMBERS}
+        values={["m-1", "m-2"]}
+        onChange={onChange}
+        ariaLabel="Select session instructors"
+        placeholder="Search instructors..."
+      />
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /remove salma el-sayed/i })
+    );
+    expect(onChange).toHaveBeenLastCalledWith(["m-2"]);
   });
 });

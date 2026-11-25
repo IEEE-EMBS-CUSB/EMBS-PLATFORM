@@ -316,6 +316,13 @@ export function MemberCombobox({
               setHighlightedIndex(-1);
             }
           }}
+          onClick={() => {
+            if (!disabled && !isOpen) {
+              setQuery("");
+              openDropdown();
+              setHighlightedIndex(-1);
+            }
+          }}
           onChange={(e) => {
             setQuery(e.target.value);
             if (!isOpen) openDropdown();
@@ -370,6 +377,103 @@ export function MemberCombobox({
       {listboxNode && typeof document !== "undefined"
         ? createPortal(listboxNode, document.body)
         : null}
+    </div>
+  );
+}
+
+interface MemberMultiComboboxProps {
+  id?: string;
+  options: readonly MemberComboboxOption[];
+  values: readonly string[];
+  onChange: (memberIds: string[]) => void;
+  placeholder?: string;
+  allSelectedPlaceholder?: string;
+  ariaLabel?: string;
+  disabled?: boolean;
+  className?: string;
+  emptyText?: string;
+}
+
+export function MemberMultiCombobox({
+  id,
+  options,
+  values,
+  onChange,
+  placeholder = "Search and add person...",
+  allSelectedPlaceholder = "All eligible people selected",
+  ariaLabel = "Select people",
+  disabled = false,
+  className,
+  emptyText = "No matching people found.",
+}: MemberMultiComboboxProps) {
+  const selectedSet = useMemo(() => new Set(values), [values]);
+  const optionById = useMemo(
+    () => new Map(options.map((opt) => [opt.id, opt])),
+    [options]
+  );
+  const selectedOptions = useMemo(
+    () =>
+      values
+        .map((val) => optionById.get(val))
+        .filter((opt): opt is MemberComboboxOption => Boolean(opt)),
+    [values, optionById]
+  );
+  const remainingOptions = useMemo(
+    () => options.filter((opt) => !selectedSet.has(opt.id)),
+    [options, selectedSet]
+  );
+
+  const handleAdd = (memberId: string) => {
+    if (!memberId || selectedSet.has(memberId)) return;
+    onChange([...values, memberId]);
+  };
+
+  const handleRemove = (memberId: string) => {
+    onChange(values.filter((val) => val !== memberId));
+  };
+
+  const isExhausted = options.length > 0 && remainingOptions.length === 0;
+
+  return (
+    <div className={cn("min-w-0 space-y-2", className)}>
+      {selectedOptions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selectedOptions.map((opt) => (
+            <span
+              key={opt.id}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#772583]/25 bg-[#f5edf7] py-1 pr-1.5 pl-2.5 text-xs font-semibold text-[#5a1b63]"
+            >
+              <span className="truncate">{opt.fullName}</span>
+              {opt.roleLabel && (
+                <span className="shrink-0 rounded bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-[#772583]">
+                  {opt.roleLabel}
+                </span>
+              )}
+              {!disabled && (
+                <button
+                  type="button"
+                  aria-label={`Remove ${opt.fullName}`}
+                  onClick={() => handleRemove(opt.id)}
+                  className="rounded-full p-0.5 text-[#5a1b63]/80 transition-colors hover:bg-[#772583] hover:text-white"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <MemberCombobox
+        id={id}
+        options={remainingOptions}
+        value=""
+        onChange={handleAdd}
+        placeholder={isExhausted ? allSelectedPlaceholder : placeholder}
+        ariaLabel={ariaLabel}
+        disabled={disabled || isExhausted}
+        emptyText={emptyText}
+      />
     </div>
   );
 }

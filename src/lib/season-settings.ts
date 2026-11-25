@@ -1,6 +1,10 @@
+export type SessionMode = "offline" | "online";
+
 export interface SeasonAttendanceSettings {
   defaultBasePoints: number;
   defaultPunctualityBonus: number;
+  onlineBasePoints: number;
+  onlinePunctualityBonus: number;
   punctualityCutoffMinutes: number;
   defaultCheckinWindowMinutes: number;
 }
@@ -48,6 +52,8 @@ export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
   attendance: {
     defaultBasePoints: 10,
     defaultPunctualityBonus: 5,
+    onlineBasePoints: 5,
+    onlinePunctualityBonus: 5,
     punctualityCutoffMinutes: 15,
     defaultCheckinWindowMinutes: 30,
   },
@@ -152,6 +158,14 @@ export function normalizeSeasonSettings(raw?: unknown): SeasonSettings {
         att.defaultPunctualityBonus,
         DEFAULT_SEASON_SETTINGS.attendance.defaultPunctualityBonus
       ),
+      onlineBasePoints: asFiniteInt(
+        att.onlineBasePoints,
+        DEFAULT_SEASON_SETTINGS.attendance.onlineBasePoints
+      ),
+      onlinePunctualityBonus: asFiniteInt(
+        att.onlinePunctualityBonus,
+        DEFAULT_SEASON_SETTINGS.attendance.onlinePunctualityBonus
+      ),
       punctualityCutoffMinutes: asFiniteInt(
         att.punctualityCutoffMinutes,
         DEFAULT_SEASON_SETTINGS.attendance.punctualityCutoffMinutes
@@ -230,7 +244,10 @@ export function validateSeasonSettings(
   const { attendance, tasks, grading, feedback, leaderboard } = settings;
 
   if (attendance.defaultBasePoints < 0 || attendance.defaultBasePoints > 500) {
-    return { ok: false, error: "Session base points must be between 0 and 500." };
+    return {
+      ok: false,
+      error: "Offline session base points must be between 0 and 500.",
+    };
   }
   if (
     attendance.defaultPunctualityBonus < 0 ||
@@ -238,7 +255,22 @@ export function validateSeasonSettings(
   ) {
     return {
       ok: false,
-      error: "Punctuality bonus must be between 0 and 200.",
+      error: "Offline punctuality bonus must be between 0 and 200.",
+    };
+  }
+  if (attendance.onlineBasePoints < 0 || attendance.onlineBasePoints > 500) {
+    return {
+      ok: false,
+      error: "Online session base points must be between 0 and 500.",
+    };
+  }
+  if (
+    attendance.onlinePunctualityBonus < 0 ||
+    attendance.onlinePunctualityBonus > 200
+  ) {
+    return {
+      ok: false,
+      error: "Online punctuality bonus must be between 0 and 200.",
     };
   }
   if (
@@ -334,6 +366,22 @@ export function validateSeasonSettings(
   }
 
   return { ok: true };
+}
+
+export function getAttendanceScoringForMode(
+  attendance: SeasonAttendanceSettings,
+  mode: SessionMode
+): { basePoints: number; punctualityBonus: number } {
+  if (mode === "online") {
+    return {
+      basePoints: attendance.onlineBasePoints,
+      punctualityBonus: attendance.onlinePunctualityBonus,
+    };
+  }
+  return {
+    basePoints: attendance.defaultBasePoints,
+    punctualityBonus: attendance.defaultPunctualityBonus,
+  };
 }
 
 export function calculateRubricPoints(params: {

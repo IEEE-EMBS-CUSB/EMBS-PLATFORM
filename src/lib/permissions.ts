@@ -174,6 +174,53 @@ export function isSlideDeckRequiredForRole(role: MembershipRole): boolean {
 }
 
 /**
+ * Web conferencing links are required when creating an ONLINE attendance session
+ * for non-admin operational roles (committee_head, hr_member), and optional for
+ * HR Admin, Director, and Master Admin — matching slide deck requirements.
+ */
+export function isWebConferencingRequiredForRole(
+  role: MembershipRole,
+  sessionMode: "offline" | "online"
+): boolean {
+  if (sessionMode !== "online") return false;
+  return isSlideDeckRequiredForRole(role);
+}
+
+export const BRANCH_WIDE_INSTRUCTOR_ROLES: readonly MembershipRole[] = [
+  "master_admin",
+  "director",
+  "hr_admin",
+];
+
+/**
+ * Determines whether a roster membership can be assigned as a session instructor:
+ * - Committee session (`sessionCommitteeId !== null`): active `committee_head` of that exact committee.
+ * - Branch-wide session (`sessionCommitteeId === null`): active `master_admin`, `director`, or `hr_admin`.
+ */
+export function isEligibleSessionInstructor(
+  candidate: {
+    role: MembershipRole;
+    committeeId: string | null;
+    isActive?: boolean;
+  },
+  sessionCommitteeId: string | null
+): boolean {
+  if (candidate.isActive === false) return false;
+  if (sessionCommitteeId === null) {
+    return (
+      candidate.role === "master_admin" ||
+      candidate.role === "director" ||
+      candidate.role === "hr_admin"
+    );
+  }
+  return (
+    candidate.role === "committee_head" &&
+    candidate.committeeId !== null &&
+    candidate.committeeId === sessionCommitteeId
+  );
+}
+
+/**
  * Manage attendance & live QR check-ins for a committee session.
  * Master and HR Admin can manage for all committees.
  * HR Member can manage only for their assigned tracked committee.

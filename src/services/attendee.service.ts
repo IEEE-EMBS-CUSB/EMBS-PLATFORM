@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type {
   AttendeeAssignment,
   AttendeeDashboardData,
@@ -85,17 +85,58 @@ export async function getAttendeeAttendance(
       .orderBy(desc(schema.branchSessions.startsAt));
 
     if (records.length > 0) {
-      return records.map(({ record, session, committee }) => ({
-        id: record.id,
-        date: session.startsAt.toISOString().slice(0, 10),
-        sessionTitle: session.title,
-        committeeName: committee?.name ?? "General Chapter",
-        deliveredBy: "EMBS Chapter Lead",
-        status: "attended" as const,
-        arrival: record.isPunctual ? ("on_time" as const) : ("late" as const),
-        slideDeckUrl: session.slideDeckUrl ?? null,
-        webConferencingUrl: session.webConferencingUrl ?? null,
-      }));
+      const sessionIds = Array.from(new Set(records.map((r) => r.session.id)));
+      const instructorRows =
+        sessionIds.length > 0
+          ? await db
+              .select({
+                sessionId: schema.branchSessionInstructors.sessionId,
+                fullName: schema.persons.fullName,
+              })
+              .from(schema.branchSessionInstructors)
+              .innerJoin(
+                schema.rosterMemberships,
+                eq(
+                  schema.branchSessionInstructors.membershipId,
+                  schema.rosterMemberships.id
+                )
+              )
+              .innerJoin(
+                schema.persons,
+                eq(schema.rosterMemberships.personId, schema.persons.id)
+              )
+              .where(
+                inArray(schema.branchSessionInstructors.sessionId, sessionIds)
+              )
+              .orderBy(asc(schema.persons.fullName))
+          : [];
+      const instructorsBySession = new Map<string, string[]>();
+      for (const row of instructorRows) {
+        const list = instructorsBySession.get(row.sessionId) ?? [];
+        list.push(row.fullName);
+        instructorsBySession.set(row.sessionId, list);
+      }
+
+      return records.map(({ record, session, committee }) => {
+        const instructorNames = instructorsBySession.get(session.id) ?? [];
+        return {
+          id: record.id,
+          date: session.startsAt.toISOString().slice(0, 10),
+          sessionTitle: session.title,
+          committeeName: committee?.name ?? "General Chapter",
+          deliveredBy:
+            instructorNames.length > 0
+              ? instructorNames.join(", ")
+              : "EMBS Chapter Lead",
+          sessionMode: session.sessionMode === "online" ? "online" : "offline",
+          status: "attended" as const,
+          arrival: record.isPunctual ? ("on_time" as const) : ("late" as const),
+          slideDeckUrl: session.slideDeckUrl ?? null,
+          webConferencingUrl: session.webConferencingUrl ?? null,
+          locationUrl: session.locationUrl ?? null,
+          locationAddress: session.locationAddress ?? null,
+        };
+      });
     }
   } catch {
     // Graceful fallback

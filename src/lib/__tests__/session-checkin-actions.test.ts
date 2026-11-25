@@ -11,6 +11,8 @@ import {
 
 describe("Session & Live Check-in Actions (Database-backed)", () => {
   const createdSessionIds: string[] = [];
+  const createdMembershipIds: string[] = [];
+  const createdPersonIds: string[] = [];
 
   afterEach(async () => {
     for (const sessionId of createdSessionIds.splice(0)) {
@@ -27,10 +29,60 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         .delete(schema.attendanceRecords)
         .where(eq(schema.attendanceRecords.sessionId, sessionId));
       await db
+        .delete(schema.branchSessionInstructors)
+        .where(eq(schema.branchSessionInstructors.sessionId, sessionId));
+      await db
         .delete(schema.branchSessions)
         .where(eq(schema.branchSessions.id, sessionId));
     }
+    for (const membershipId of createdMembershipIds.splice(0)) {
+      await db
+        .delete(schema.rosterMemberships)
+        .where(eq(schema.rosterMemberships.id, membershipId));
+    }
+    for (const personId of createdPersonIds.splice(0)) {
+      await db.delete(schema.persons).where(eq(schema.persons.id, personId));
+    }
   });
+
+  async function ensureCommitteeHead(seasonId: string, committeeId: string) {
+    const [existing] = await db
+      .select({ id: schema.rosterMemberships.id })
+      .from(schema.rosterMemberships)
+      .where(
+        and(
+          eq(schema.rosterMemberships.seasonId, seasonId),
+          eq(schema.rosterMemberships.committeeId, committeeId),
+          eq(schema.rosterMemberships.role, "committee_head"),
+          eq(schema.rosterMemberships.isActive, true)
+        )
+      )
+      .limit(1);
+    if (existing) return existing.id;
+
+    const [person] = await db
+      .insert(schema.persons)
+      .values({
+        email: `checkin.head.${Date.now()}.${Math.random().toString(36).slice(2)}@cu.edu.eg`,
+        fullName: "Checkin Test Head",
+        isActive: true,
+      })
+      .returning();
+    createdPersonIds.push(person.id);
+
+    const [membership] = await db
+      .insert(schema.rosterMemberships)
+      .values({
+        seasonId,
+        personId: person.id,
+        committeeId,
+        role: "committee_head",
+        isActive: true,
+      })
+      .returning();
+    createdMembershipIds.push(membership.id);
+    return membership.id;
+  }
 
   it("allows a committee head to create a session with a valid check-in window for their committee", async () => {
     const [activeSeason] = await db
@@ -48,13 +100,16 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
       );
     expect(robotics).toBeDefined();
 
+    const headId = await ensureCommitteeHead(activeSeason.id, robotics.id);
     const title = `Robotics Workshop ${Date.now()}`;
     const result = await createSessionAsActor(
       {
         title,
         startsAt: new Date(Date.now() + 3600000).toISOString(),
         committeeId: robotics.id,
+        sessionMode: "offline",
         slideDeckUrl: "https://docs.google.com/presentation/d/robotics-workshop",
+        instructorMembershipIds: [headId],
         checkinWindowMinutes: 30,
         punctualityCutoffMinutes: 15,
         basePoints: 10,
@@ -142,6 +197,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
       .select({
         id: schema.rosterMemberships.id,
         committeeId: schema.rosterMemberships.committeeId,
+        seasonId: schema.rosterMemberships.seasonId,
       })
       .from(schema.rosterMemberships)
       .innerJoin(
@@ -151,12 +207,19 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
       .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
     expect(omar).toBeDefined();
 
+    const omarHeadId = await ensureCommitteeHead(
+      omar.seasonId,
+      omar.committeeId!
+    );
+
     const createResult = await createSessionAsActor(
       {
         title: `Live Testing Session ${Date.now()}`,
         startsAt: new Date(Date.now() - 300000).toISOString(),
         committeeId: omar.committeeId,
+        sessionMode: "offline",
         slideDeckUrl: "https://docs.google.com/presentation/d/live-testing",
+        instructorMembershipIds: [omarHeadId],
         checkinWindowMinutes: 30,
         punctualityCutoffMinutes: 15,
         basePoints: 10,
@@ -257,12 +320,18 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         )
       );
 
+    const roboticsHeadId = await ensureCommitteeHead(
+      activeSeason.id,
+      robotics.id
+    );
     const createResult = await createSessionAsActor(
       {
         title: "Toggle Checkin Test Session",
         startsAt: new Date().toISOString(),
         committeeId: robotics.id,
+        sessionMode: "offline",
         slideDeckUrl: "https://docs.google.com/presentation/d/toggle-test",
+        instructorMembershipIds: [roboticsHeadId],
       },
       { profile: { role: "committee_head", committeeId: robotics.id, id: "test" } }
     );
@@ -299,6 +368,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
       .select({
         id: schema.rosterMemberships.id,
         committeeId: schema.rosterMemberships.committeeId,
+        seasonId: schema.rosterMemberships.seasonId,
       })
       .from(schema.rosterMemberships)
       .innerJoin(
@@ -308,13 +378,19 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
       .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
     expect(omar).toBeDefined();
 
+    const omarHeadId = await ensureCommitteeHead(
+      omar.seasonId,
+      omar.committeeId!
+    );
     const futureStart = new Date(Date.now() + 60 * 60_000); // +60m
     const createResult = await createSessionAsActor(
       {
         title: `Future Slide QR Session ${Date.now()}`,
         startsAt: futureStart.toISOString(),
         committeeId: omar.committeeId,
+        sessionMode: "offline",
         slideDeckUrl: "https://docs.google.com/presentation/d/future-qr",
+        instructorMembershipIds: [omarHeadId],
         checkinWindowMinutes: 30,
       },
       { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
@@ -351,6 +427,7 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
       .select({
         id: schema.rosterMemberships.id,
         committeeId: schema.rosterMemberships.committeeId,
+        seasonId: schema.rosterMemberships.seasonId,
       })
       .from(schema.rosterMemberships)
       .innerJoin(
@@ -360,6 +437,11 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
       .where(eq(schema.persons.email, "omar.tarek@cu.edu.eg"));
     expect(omar).toBeDefined();
 
+    const omarHeadId = await ensureCommitteeHead(
+      omar.seasonId,
+      omar.committeeId!
+    );
+
     // Case A: started 10m ago with 30m window -> ~20m remaining, live immediately
     const recentPastStart = new Date(Date.now() - 10 * 60_000);
     const partialRes = await createSessionAsActor(
@@ -367,7 +449,9 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         title: `Recent Past Window Session ${Date.now()}`,
         startsAt: recentPastStart.toISOString(),
         committeeId: omar.committeeId,
+        sessionMode: "offline",
         slideDeckUrl: "https://docs.google.com/presentation/d/recent-past",
+        instructorMembershipIds: [omarHeadId],
         checkinWindowMinutes: 30,
       },
       { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }
@@ -386,7 +470,9 @@ describe("Session & Live Check-in Actions (Database-backed)", () => {
         title: `Elapsed Past Window Session ${Date.now()}`,
         startsAt: oldPastStart.toISOString(),
         committeeId: omar.committeeId,
+        sessionMode: "offline",
         slideDeckUrl: "https://docs.google.com/presentation/d/elapsed-past",
+        instructorMembershipIds: [omarHeadId],
         checkinWindowMinutes: 30,
       },
       { profile: { role: "committee_head", committeeId: omar.committeeId, id: "test" } }

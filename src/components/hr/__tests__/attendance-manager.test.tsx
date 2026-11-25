@@ -1,9 +1,73 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AttendanceManagerView } from "@/components/hr/attendance-manager-view";
+import type { InstructorCandidate } from "@/services/hr-ops/attendance.service";
 
 describe("AttendanceManagerView Component", () => {
+  const sampleInstructorCandidates: InstructorCandidate[] = [
+    {
+      membershipId: "inst-ai-1",
+      personId: "p-salma",
+      fullName: "Salma El-Sayed",
+      email: "salma@cu.edu.eg",
+      role: "committee_head",
+      committeeId: "comm-ai",
+      committeeName: "AI and Machine Learning",
+      isActive: true,
+    },
+    {
+      membershipId: "inst-ai-2",
+      personId: "p-youssef",
+      fullName: "Youssef Adel",
+      email: "youssef@cu.edu.eg",
+      role: "committee_head",
+      committeeId: "comm-ai",
+      committeeName: "AI and Machine Learning",
+      isActive: true,
+    },
+    {
+      membershipId: "inst-web-1",
+      personId: "p-ziad",
+      fullName: "Ziad Hany",
+      email: "ziad@cu.edu.eg",
+      role: "committee_head",
+      committeeId: "comm-web",
+      committeeName: "Web Development",
+      isActive: true,
+    },
+    {
+      membershipId: "inst-master",
+      personId: "p-master",
+      fullName: "Master Administrator",
+      email: "master@cu.edu.eg",
+      role: "master_admin",
+      committeeId: null,
+      committeeName: null,
+      isActive: true,
+    },
+    {
+      membershipId: "inst-director",
+      personId: "p-khaled",
+      fullName: "Khaled Mansour",
+      email: "director@cu.edu.eg",
+      role: "director",
+      committeeId: null,
+      committeeName: null,
+      isActive: true,
+    },
+    {
+      membershipId: "inst-hr-admin",
+      personId: "p-sara",
+      fullName: "Sara Hassan",
+      email: "hr.lead@cu.edu.eg",
+      role: "hr_admin",
+      committeeId: "comm-hr",
+      committeeName: "Human Resources",
+      isActive: true,
+    },
+  ];
+
   const sampleSessions = [
     {
       id: "sess-1",
@@ -14,6 +78,16 @@ describe("AttendanceManagerView Component", () => {
       checkinCode: "847291",
       basePoints: 10,
       punctualityBonus: 5,
+      sessionMode: "offline" as const,
+      locationAddress: "Main Campus Hall 1",
+      locationUrl: "https://maps.google.com/?q=Cairo+University",
+      instructors: [
+        {
+          membershipId: "inst-director",
+          fullName: "Khaled Mansour",
+          role: "director" as const,
+        },
+      ],
       attendanceCount: 42,
     },
     {
@@ -23,13 +97,22 @@ describe("AttendanceManagerView Component", () => {
       startsAt: new Date("2026-09-12T16:00:00Z"),
       checkinOpen: false,
       checkinCode: null,
-      basePoints: 10,
+      basePoints: 5,
       punctualityBonus: 5,
+      sessionMode: "online" as const,
+      webConferencingUrl: "https://meet.google.com/ai-ml-one",
+      instructors: [
+        {
+          membershipId: "inst-ai-1",
+          fullName: "Salma El-Sayed",
+          role: "committee_head" as const,
+        },
+      ],
       attendanceCount: 14,
     },
   ];
 
-  it("renders branch sessions and opens the live check-in screen", async () => {
+  it("renders branch sessions with mode badges, instructors, location/meeting links, and opens the live check-in screen", async () => {
     const user = userEvent.setup();
     render(<AttendanceManagerView sessions={sampleSessions} />);
 
@@ -37,6 +120,13 @@ describe("AttendanceManagerView Component", () => {
       screen.getByText("Season Opening General Meeting")
     ).toBeInTheDocument();
     expect(screen.getByText("AI & ML Workshop 1")).toBeInTheDocument();
+    expect(screen.getByText("Offline")).toBeInTheDocument();
+    expect(screen.getByText("Online")).toBeInTheDocument();
+    expect(screen.getByText(/Khaled Mansour/)).toBeInTheDocument();
+    expect(screen.getByText(/Salma El-Sayed/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /main campus hall 1/i })
+    ).toHaveAttribute("href", "https://maps.google.com/?q=Cairo+University");
 
     const liveCheckinBtns = screen.getAllByRole("button", {
       name: /open live check-in/i,
@@ -47,7 +137,7 @@ describe("AttendanceManagerView Component", () => {
     expect(screen.getByText(/scan qr or enter code/i)).toBeInTheDocument();
   });
 
-  it("creates a session with auto-start as default (no checkbox), immediately inserts it into the list, and shows confirmation", async () => {
+  it("switches between offline and online modes, applies HR mode-specific scoring, enforces required conferencing link for committee_head on online sessions, and picks a subset of committee heads via MemberCombobox", async () => {
     const user = userEvent.setup();
     const createdStart = new Date(Date.now() + 60 * 60_000);
     const createdEnd = new Date(createdStart.getTime() + 45 * 60_000);
@@ -66,10 +156,25 @@ describe("AttendanceManagerView Component", () => {
         checkinEndsAt: createdEnd,
         punctualityStartsAt: null,
         punctualityCutoffMinutes: 15,
-        basePoints: 10,
-        punctualityBonus: 5,
+        basePoints: 6,
+        punctualityBonus: 2,
+        sessionMode: "online",
         slideDeckUrl: "https://docs.google.com/presentation/d/dl-lab-1",
         webConferencingUrl: "https://meet.google.com/lab-one-meet",
+        locationUrl: null,
+        locationAddress: null,
+        instructors: [
+          {
+            membershipId: "inst-ai-1",
+            fullName: "Salma El-Sayed",
+            role: "committee_head",
+          },
+          {
+            membershipId: "inst-ai-2",
+            fullName: "Youssef Adel",
+            role: "committee_head",
+          },
+        ],
         attendanceCount: 0,
       },
     });
@@ -80,19 +185,49 @@ describe("AttendanceManagerView Component", () => {
         currentUserRole="committee_head"
         currentUserCommitteeId="comm-ai"
         currentUserCommitteeName="AI and Machine Learning"
+        instructorCandidates={sampleInstructorCandidates}
+        attendanceDefaults={{
+          defaultBasePoints: 12,
+          defaultPunctualityBonus: 6,
+          onlineBasePoints: 6,
+          onlinePunctualityBonus: 2,
+          punctualityCutoffMinutes: 15,
+          defaultCheckinWindowMinutes: 30,
+        }}
         onCreateSession={handleCreateSession}
       />
     );
 
-    const createBtn = screen.getByRole("button", { name: /create session/i });
-    await user.click(createBtn);
+    await user.click(screen.getByRole("button", { name: /create session/i }));
 
     expect(screen.getByText(/create new session/i)).toBeInTheDocument();
     // Auto-start is always default behavior — no checkbox should exist
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 
-    const titleInput = screen.getByLabelText(/session title/i);
-    await user.type(titleInput, "Deep Learning Lab 1");
+    // Default mode is Offline: shows Location Address & Location Link, hides Web Conferencing Link, and reflects Offline HR points (12 + 6)
+    expect(screen.getByLabelText(/location address/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/location link/i)).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/web conferencing link/i)
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/base points/i)).toHaveValue(12);
+    expect(screen.getByLabelText(/punctuality bonus points/i)).toHaveValue(6);
+
+    // Switch to Online: swaps to Web Conferencing Link (Required for committee_head) and updates points to Online HR defaults (6 + 2)
+    await user.click(screen.getByRole("radio", { name: /online/i }));
+    expect(
+      screen.queryByLabelText(/location address/i)
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/base points/i)).toHaveValue(6);
+    expect(screen.getByLabelText(/punctuality bonus points/i)).toHaveValue(2);
+
+    const meetingInput = screen.getByLabelText(/web conferencing link/i);
+    expect(meetingInput).toBeRequired();
+
+    await user.type(
+      screen.getByLabelText(/session title/i),
+      "Deep Learning Lab 1"
+    );
 
     const slideDeckInput = screen.getByLabelText(/slide deck url/i);
     expect(slideDeckInput).toBeRequired();
@@ -100,32 +235,52 @@ describe("AttendanceManagerView Component", () => {
       slideDeckInput,
       "https://docs.google.com/presentation/d/dl-lab-1"
     );
-
-    const meetingInput = screen.getByLabelText(/web conferencing link/i);
-    expect(meetingInput).not.toBeRequired();
     await user.type(meetingInput, "https://meet.google.com/lab-one-meet");
+
+    // Instructor selector (MemberCombobox) only offers AI heads (Salma & Youssef), never Web Dev head or branch leaders
+    const instructorCombo = screen.getByRole("combobox", {
+      name: /session instructor/i,
+    });
+    await user.click(instructorCombo);
+    expect(
+      screen.getByRole("option", { name: /salma el-sayed/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /youssef adel/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /ziad hany/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /sara hassan/i })
+    ).not.toBeInTheDocument();
+
+    // Pick both AI heads
+    await user.click(screen.getByRole("option", { name: /salma el-sayed/i }));
+    await user.click(instructorCombo);
+    await user.click(screen.getByRole("option", { name: /youssef adel/i }));
 
     const windowSelect = screen.getByLabelText(/check-in window/i);
     await user.selectOptions(windowSelect, "45");
 
-    const submitBtn = screen.getByRole("button", { name: /save session/i });
-    await user.click(submitBtn);
+    await user.click(screen.getByRole("button", { name: /save session/i }));
 
     expect(handleCreateSession).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Deep Learning Lab 1",
+        sessionMode: "online",
         slideDeckUrl: "https://docs.google.com/presentation/d/dl-lab-1",
         webConferencingUrl: "https://meet.google.com/lab-one-meet",
+        locationUrl: null,
+        locationAddress: null,
+        instructorMembershipIds: ["inst-ai-1", "inst-ai-2"],
+        basePoints: 6,
+        punctualityBonus: 2,
         checkinWindowMinutes: 45,
         committeeId: "comm-ai",
       })
     );
-    // Should not send removed openCheckinImmediately property
-    expect(handleCreateSession.mock.calls[0][0]).not.toHaveProperty(
-      "openCheckinImmediately"
-    );
 
-    // Newly created session immediately renders in the list with confirmation status banner and links
     expect(await screen.findByText("Deep Learning Lab 1")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
       /deep learning lab 1/i
@@ -137,12 +292,16 @@ describe("AttendanceManagerView Component", () => {
       "href",
       "https://docs.google.com/presentation/d/dl-lab-1"
     );
+    const joinLinks = screen.getAllByRole("link", { name: /join meeting/i });
     expect(
-      screen.getByRole("link", { name: /join meeting/i })
-    ).toHaveAttribute("href", "https://meet.google.com/lab-one-meet");
+      joinLinks.some(
+        (link) =>
+          link.getAttribute("href") === "https://meet.google.com/lab-one-meet"
+      )
+    ).toBe(true);
   });
 
-  it("makes slide deck URL optional for hr_admin and master_admin", async () => {
+  it("allows hr_admin to create branch-wide offline or online sessions with optional links and picks instructors from masters, directors, and hr admins", async () => {
     const user = userEvent.setup();
     const handleCreateSession = vi.fn().mockResolvedValue({
       ok: true,
@@ -161,8 +320,18 @@ describe("AttendanceManagerView Component", () => {
         punctualityCutoffMinutes: 15,
         basePoints: 10,
         punctualityBonus: 5,
+        sessionMode: "offline",
         slideDeckUrl: null,
         webConferencingUrl: null,
+        locationUrl: "https://maps.google.com/?q=Cairo+University+Hall",
+        locationAddress: "Cairo University Main Hall",
+        instructors: [
+          {
+            membershipId: "inst-director",
+            fullName: "Khaled Mansour",
+            role: "director",
+          },
+        ],
         attendanceCount: 0,
       },
     });
@@ -171,6 +340,11 @@ describe("AttendanceManagerView Component", () => {
       <AttendanceManagerView
         sessions={sampleSessions}
         currentUserRole="hr_admin"
+        committees={[
+          { id: "comm-ai", name: "AI and Machine Learning" },
+          { id: "comm-web", name: "Web Development" },
+        ]}
+        instructorCandidates={sampleInstructorCandidates}
         onCreateSession={handleCreateSession}
       />
     );
@@ -180,16 +354,81 @@ describe("AttendanceManagerView Component", () => {
     const slideDeckInput = screen.getByLabelText(/slide deck url/i);
     expect(slideDeckInput).not.toBeRequired();
 
+    // Check online mode keeps web conferencing optional for hr_admin
+    await user.click(screen.getByRole("radio", { name: /online/i }));
+    expect(
+      screen.getByLabelText(/web conferencing link/i)
+    ).not.toBeRequired();
+
+    // Switch back to offline and enter location address + link
+    await user.click(screen.getByRole("radio", { name: /offline/i }));
+    await user.type(
+      screen.getByLabelText(/location address/i),
+      "Cairo University Main Hall"
+    );
+    await user.type(
+      screen.getByLabelText(/location link/i),
+      "https://maps.google.com/?q=Cairo+University+Hall"
+    );
+
+    // Branch-wide instructor selector offers Master, Director, HR Admin (never committee heads)
+    const instructorCombo = screen.getByRole("combobox", {
+      name: /session instructor/i,
+    });
+    await user.click(instructorCombo);
+    expect(
+      screen.getByRole("option", { name: /master administrator/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /khaled mansour/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /sara hassan/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /salma el-sayed/i })
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("option", { name: /khaled mansour/i }));
+
     await user.type(screen.getByLabelText(/session title/i), "Branch Town Hall");
     await user.click(screen.getByRole("button", { name: /save session/i }));
 
     expect(handleCreateSession).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Branch Town Hall",
+        sessionMode: "offline",
         slideDeckUrl: null,
         webConferencingUrl: null,
+        locationAddress: "Cairo University Main Hall",
+        locationUrl: "https://maps.google.com/?q=Cairo+University+Hall",
+        instructorMembershipIds: ["inst-director"],
       })
     );
+  });
+
+  it("blocks submitting a session when no instructor is selected", async () => {
+    const user = userEvent.setup();
+    const handleCreateSession = vi.fn();
+
+    render(
+      <AttendanceManagerView
+        sessions={sampleSessions}
+        currentUserRole="hr_admin"
+        instructorCandidates={sampleInstructorCandidates}
+        onCreateSession={handleCreateSession}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /create session/i }));
+    await user.type(
+      screen.getByLabelText(/session title/i),
+      "Missing Instructor Session"
+    );
+    await user.click(screen.getByRole("button", { name: /save session/i }));
+
+    expect(handleCreateSession).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/instructor/i);
   });
 
   it("hides Create Session and explains scope when an hr_member has no assigned committee", () => {
@@ -258,7 +497,7 @@ describe("AttendanceManagerView Component", () => {
       id: "sess-past",
       title: "Delayed Robotics Workshop",
       committeeName: "Robotics",
-      startsAt: new Date(Date.now() - 60 * 60_000), // 1 hour ago
+      startsAt: new Date(Date.now() - 60 * 60_000),
       checkinOpen: false,
       checkinCode: "112233",
       checkinStartsAt: new Date(Date.now() - 60 * 60_000),
@@ -281,7 +520,6 @@ describe("AttendanceManagerView Component", () => {
     });
     await user.click(reopenBtn);
 
-    // Should prompt before firing toggle
     expect(handleToggleCheckin).not.toHaveBeenCalled();
     expect(
       screen.getByText(/punctuality cutoff has passed/i)
@@ -385,10 +623,14 @@ describe("AttendanceManagerView Component", () => {
     await user.click(rosterButtons[1]);
 
     expect(onLoadRoster).toHaveBeenCalledWith("sess-2");
-    expect(await screen.findByText("Salma El-Sayed")).toBeInTheDocument();
-    expect(screen.getByText("Omar Tarek")).toBeInTheDocument();
+    const sheetDialog = screen.getByRole("dialog", {
+      name: /attendance sheet: ai & ml workshop 1/i,
+    });
+    expect(
+      await within(sheetDialog).findByText("Salma El-Sayed")
+    ).toBeInTheDocument();
+    expect(within(sheetDialog).getByText("Omar Tarek")).toBeInTheDocument();
 
-    // Status Updated column header and initial timestamp / Not recorded state
     expect(screen.getByText(/status updated/i)).toBeInTheDocument();
     expect(screen.getAllByText(/not recorded/i).length).toBeGreaterThanOrEqual(
       1
@@ -408,7 +650,6 @@ describe("AttendanceManagerView Component", () => {
       1
     );
 
-    // Click "Late" for Salma and verify exact timestamp updates from server response
     const lateBtn = screen.getByRole("button", {
       name: /mark salma el-sayed as late/i,
     });
@@ -434,7 +675,6 @@ describe("AttendanceManagerView Component", () => {
       (await screen.findAllByText(salmaUpdatedFormatted)).length
     ).toBeGreaterThanOrEqual(1);
 
-    // Keyboard navigation: ArrowDown to Omar (index 1) and press 'e' for Excused
     await user.keyboard("{ArrowDown}e");
     expect(onSetAttendance).toHaveBeenCalledWith(
       expect.objectContaining({
