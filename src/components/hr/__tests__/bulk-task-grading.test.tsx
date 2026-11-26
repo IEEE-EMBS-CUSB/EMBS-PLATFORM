@@ -451,4 +451,58 @@ describe("BulkTaskGradingView Component", () => {
     expect(screen.getByText(/1 to verify/i)).toBeInTheDocument();
     expect(screen.getByText(/1 \/ 2 completed/i)).toBeInTheDocument();
   });
+
+  it("renders assignment submissions and grades in read-only mode without inputs or save controls", () => {
+    render(
+      <BulkTaskGradingView
+        task={{ ...sampleTask, workType: "assignment" }}
+        submissions={[
+          {
+            submissionId: "sub-1",
+            membershipId: "m-1",
+            memberName: "Nourhan Khaled",
+            effortScore: 5,
+            qualityScore: 4,
+            timelinessScore: 5,
+            totalPoints: 90,
+            notes: "Clean implementation",
+            submittedAt: "2026-11-20T12:00:00.000Z",
+            submissionUrl: "https://github.com/embs/a1",
+          },
+          {
+            submissionId: "sub-2",
+            membershipId: "m-2",
+            memberName: "Omar Tarek",
+            effortScore: null,
+            qualityScore: null,
+            timelinessScore: null,
+            totalPoints: null,
+            notes: "",
+            submittedAt: "2026-11-21T12:00:00.000Z",
+            submissionUrl: "https://github.com/embs/a2",
+          },
+        ]}
+        collapsible
+        defaultExpanded
+        readOnly
+      />
+    );
+
+    expect(screen.getByText(/^Read-only$/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Read-only view of member submissions and grades/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/to grade/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /save grades/i })
+    ).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("spinbutton")).toHaveLength(0);
+    expect(screen.queryAllByRole("textbox")).toHaveLength(0);
+
+    // Still surfaces submissions, rubric scores, total points, and feedback notes
+    expect(screen.getByText("Nourhan Khaled")).toBeInTheDocument();
+    expect(screen.getByText("90 pts")).toBeInTheDocument();
+    expect(screen.getByText("Clean implementation")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /open link/i })).toHaveLength(2);
+  });
 });

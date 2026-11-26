@@ -32,8 +32,16 @@ vi.mock("@/services/context.service", async (importOriginal) => {
     ...actual,
     listEligibleContextsForPerson: vi.fn(async () => mockEligibleContexts),
     validateMembershipSwitch: vi.fn(
-      async (_personId: string, targetMembershipId: string) =>
-        actual.resolveContextSwitch(mockEligibleContexts, targetMembershipId)
+      async (
+        _personId: string,
+        targetMembershipId: string,
+        targetTrackedCommitteeId?: string | null
+      ) =>
+        actual.resolveContextSwitch(
+          mockEligibleContexts,
+          targetMembershipId,
+          targetTrackedCommitteeId
+        )
     ),
   };
 });
@@ -230,5 +238,73 @@ describe("POST/GET /api/session/context and session auto-fallback", () => {
     expect(res.status).toBe(200);
     expect(res.cookies.get(SESSION_COOKIE_NAME)?.value).toBe("");
     expect(res.cookies.get(LAST_CONTEXT_COOKIE_NAME)?.value).toBe("");
+  });
+
+  it("switches active trackedCommitteeId for an hr_member and rejects unassigned committees with 403", async () => {
+    const hrMembershipId = "77777777-7777-4777-8777-777777777777";
+    const hrContext = {
+      ...headContext,
+      membershipId: hrMembershipId,
+      role: "hr_member" as const,
+      committeeId: "comm-hr",
+      committeeName: "Human Resources",
+      committeeSlug: "human-resources",
+      trackedCommitteeId: "comm-ai",
+      trackedCommitteeName: "AI & ML",
+      trackedCommittees: [
+        { id: "comm-ai", name: "AI & ML" },
+        { id: "comm-robotics", name: "Robotics" },
+      ],
+    };
+    const initialSession = createSessionForMember({
+      id: hrMembershipId,
+      personId: hrContext.personId,
+      fullName: "Nourhan HR",
+      role: "hr_member",
+      trackedCommitteeId: "comm-ai",
+    });
+    mockSession = initialSession;
+    mockEligibleContexts = [hrContext];
+
+    // Switch to assigned second tracked committee succeeds
+    const okRes = await POST(
+      new NextRequest("http://localhost:3000/api/session/context", {
+        method: "POST",
+        body: JSON.stringify({
+          membershipId: hrMembershipId,
+          view: "manage",
+          trackedCommitteeId: "comm-robotics",
+        }),
+        headers: { "content-type": "application/json" },
+      })
+    );
+    expect(okRes.status).toBe(200);
+    const okBody = await okRes.json();
+    expect(okBody.ok).toBe(true);
+    expect(okBody.activeTrackedCommitteeId).toBe("comm-robotics");
+    expect(okBody.redirectTo).toBe("/hr");
+
+    const decoded = decodeSessionToken(
+      okRes.cookies.get(SESSION_COOKIE_NAME)!.value
+    );
+    expect(decoded?.participantId).toBe(hrMembershipId);
+    expect(decoded?.trackedCommitteeId).toBe("comm-robotics");
+    expect(okRes.cookies.get(LAST_CONTEXT_COOKIE_NAME)?.value).toBe(
+      `${hrMembershipId}:comm-robotics`
+    );
+
+    // Switch to unassigned committee is rejected with 403
+    const badRes = await POST(
+      new NextRequest("http://localhost:3000/api/session/context", {
+        method: "POST",
+        body: JSON.stringify({
+          membershipId: hrMembershipId,
+          view: "manage",
+          trackedCommitteeId: "comm-unauthorized",
+        }),
+        headers: { "content-type": "application/json" },
+      })
+    );
+    expect(badRes.status).toBe(403);
   });
 });

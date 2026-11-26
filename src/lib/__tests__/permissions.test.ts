@@ -24,6 +24,8 @@ import {
   canCreateWorkType,
   canGradeWorkSubmission,
   canTaskHaveGradeableSubmissions,
+  canViewWorkSubmission,
+  canTaskHaveVisibleSubmissions,
   resolveWorkScopeCommitteeId,
   isWebConferencingRequiredForRole,
   isEligibleSessionInstructor,
@@ -673,6 +675,125 @@ describe("RBAC Permissions Engine", () => {
           { role: "member", committeeId: commAi, isActive: true },
           null
         )
+      ).toBe(false);
+    });
+
+    it("lets hr_member view tracked-committee member assignments read-only without grading or seeing head assignments", () => {
+      const hrTrackedAi: UserPermissionContext = {
+        id: "m-hr-ai",
+        personId: "p-hr",
+        email: "hr.ai@cu.edu.eg",
+        role: "hr_member",
+        committeeId: "comm-hr",
+        trackedCommitteeId: commAi,
+      };
+      const hrUnassigned: UserPermissionContext = {
+        id: "m-hr-none",
+        personId: "p-hr-none",
+        email: "hr.none@cu.edu.eg",
+        role: "hr_member",
+        committeeId: "comm-hr",
+        trackedCommitteeId: null,
+      };
+
+      // Task pre-filter allows member-scoped assignments in tracked committee
+      expect(
+        canTaskHaveVisibleSubmissions({
+          actor: hrTrackedAi,
+          workType: "assignment",
+          taskCommitteeId: commAi,
+        })
+      ).toBe(true);
+      expect(
+        canTaskHaveVisibleSubmissions({
+          actor: hrTrackedAi,
+          workType: "assignment",
+          taskCommitteeId: commWeb,
+        })
+      ).toBe(false);
+      expect(
+        canTaskHaveVisibleSubmissions({
+          actor: hrUnassigned,
+          workType: "assignment",
+          taskCommitteeId: commAi,
+        })
+      ).toBe(false);
+
+      // Submission-level view: regular member in tracked committee is visible
+      expect(
+        canViewWorkSubmission({
+          actor: hrTrackedAi,
+          workType: "assignment",
+          taskCommitteeId: commAi,
+          submissionMembershipId: "m-ai-1",
+          submissionPersonId: "p-ai-1",
+          memberRole: "member",
+          memberCommitteeId: commAi,
+        })
+      ).toBe(true);
+
+      // Still NOT gradeable or creatable by hr_member
+      expect(
+        canGradeWorkSubmission({
+          actor: hrTrackedAi,
+          workType: "assignment",
+          taskCommitteeId: commAi,
+          submissionMembershipId: "m-ai-1",
+          submissionPersonId: "p-ai-1",
+          memberRole: "member",
+          memberCommitteeId: commAi,
+        })
+      ).toBe(false);
+      expect(canCreateWorkType("hr_member", "assignment")).toBe(false);
+
+      // Never exposes assignments given TO a committee head
+      expect(
+        canViewWorkSubmission({
+          actor: hrTrackedAi,
+          workType: "assignment",
+          taskCommitteeId: commAi,
+          submissionMembershipId: "m-head-ai",
+          submissionPersonId: "p-head-ai",
+          memberRole: "committee_head",
+          memberCommitteeId: commAi,
+        })
+      ).toBe(false);
+
+      // Never exposes hr_member's own submission across another hat
+      expect(
+        canViewWorkSubmission({
+          actor: hrTrackedAi,
+          workType: "assignment",
+          taskCommitteeId: commAi,
+          submissionMembershipId: "m-ai-self",
+          submissionPersonId: "p-hr",
+          memberRole: "member",
+          memberCommitteeId: commAi,
+        })
+      ).toBe(false);
+
+      // Never exposes assignments from another committee or HR home committee
+      expect(
+        canViewWorkSubmission({
+          actor: hrTrackedAi,
+          workType: "assignment",
+          taskCommitteeId: commWeb,
+          submissionMembershipId: "m-web-1",
+          submissionPersonId: "p-web-1",
+          memberRole: "member",
+          memberCommitteeId: commWeb,
+        })
+      ).toBe(false);
+      expect(
+        canViewWorkSubmission({
+          actor: hrTrackedAi,
+          workType: "assignment",
+          taskCommitteeId: "comm-hr",
+          submissionMembershipId: "m-hr-other",
+          submissionPersonId: "p-hr-other",
+          memberRole: "member",
+          memberCommitteeId: "comm-hr",
+        })
       ).toBe(false);
     });
   });

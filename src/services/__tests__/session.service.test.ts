@@ -107,4 +107,19 @@ describe("session.service (HMAC-SHA256 signed cookies)", () => {
     const renewedDecoded = decodeSessionToken(encodeSessionToken(renewed), futureNow);
     expect(renewedDecoded?.participantId).toBe(sampleMember.participantId);
   });
+
+  it("round-trips optional trackedCommitteeId in v2 session tokens for multi-committee HR hats", () => {
+    const hrSession = createSessionForMember({
+      id: "11111111-1111-4111-8111-111111111111",
+      personId: "22222222-2222-4222-8222-222222222222",
+      fullName: "Nourhan HR",
+      role: "hr_member",
+      trackedCommitteeId: "comm-robotics",
+    });
+
+    const token = encodeSessionToken(hrSession);
+    const decoded = decodeSessionToken(token);
+    expect(decoded?.participantId).toBe(hrSession.participantId);
+    expect(decoded?.trackedCommitteeId).toBe("comm-robotics");
+  });
 });

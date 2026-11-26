@@ -259,30 +259,96 @@ export async function cloneSeasonAsActor(
       }
 
       if (options?.includeRoster) {
-        const members = await tx
-          .select()
-          .from(schema.rosterMemberships)
-          .where(eq(schema.rosterMemberships.seasonId, sourceSeasonId));
+        const [members, sourceTrackedRows] = await Promise.all([
+          tx
+            .select()
+            .from(schema.rosterMemberships)
+            .where(eq(schema.rosterMemberships.seasonId, sourceSeasonId)),
+          tx
+            .select({
+              membershipId: schema.hrMemberTrackedCommittees.membershipId,
+              committeeId: schema.hrMemberTrackedCommittees.committeeId,
+            })
+            .from(schema.hrMemberTrackedCommittees)
+            .where(
+              eq(schema.hrMemberTrackedCommittees.seasonId, sourceSeasonId)
+            ),
+        ]);
 
         const activeMembers = members.filter((m) => m.isActive);
         if (activeMembers.length > 0) {
-          await tx.insert(schema.rosterMemberships).values(
-            activeMembers.map((m) => ({
+          const insertedMembers = await tx
+            .insert(schema.rosterMemberships)
+            .values(
+              activeMembers.map((m) => ({
+                seasonId: newSeason.id,
+                personId: m.personId,
+                committeeId: m.committeeId
+                  ? committeeMap.get(m.committeeId) ?? null
+                  : null,
+                trackedCommitteeId: m.trackedCommitteeId
+                  ? committeeMap.get(m.trackedCommitteeId) ?? null
+                  : null,
+                managedTrackId: m.managedTrackId
+                  ? trackMap.get(m.managedTrackId) ?? null
+                  : null,
+                role: m.role,
+                isActive: m.isActive,
+              }))
+            )
+            .returning({ id: schema.rosterMemberships.id });
+
+          const membershipIdMap = new Map<string, string>();
+          activeMembers.forEach((m, idx) => {
+            const newId = insertedMembers[idx]?.id;
+            if (newId) {
+              membershipIdMap.set(m.id, newId);
+            }
+          });
+
+          const clonedTrackedValues: Array<{
+            seasonId: string;
+            membershipId: string;
+            committeeId: string;
+          }> = [];
+          const seenPairs = new Set<string>();
+
+          for (const row of sourceTrackedRows) {
+            const newMembershipId = membershipIdMap.get(row.membershipId);
+            const newCommitteeId = committeeMap.get(row.committeeId);
+            if (!newMembershipId || !newCommitteeId) continue;
+            const key = `${newMembershipId}:${newCommitteeId}`;
+            if (seenPairs.has(key)) continue;
+            seenPairs.add(key);
+            clonedTrackedValues.push({
               seasonId: newSeason.id,
-              personId: m.personId,
-              committeeId: m.committeeId
-                ? committeeMap.get(m.committeeId) ?? null
-                : null,
-              trackedCommitteeId: m.trackedCommitteeId
-                ? committeeMap.get(m.trackedCommitteeId) ?? null
-                : null,
-              managedTrackId: m.managedTrackId
-                ? trackMap.get(m.managedTrackId) ?? null
-                : null,
-              role: m.role,
-              isActive: m.isActive,
-            }))
-          );
+              membershipId: newMembershipId,
+              committeeId: newCommitteeId,
+            });
+          }
+
+          // Fallback for any legacy hr_member rows that only had trackedCommitteeId
+          for (const m of activeMembers) {
+            if (m.role !== "hr_member" || !m.trackedCommitteeId) continue;
+            const newMembershipId = membershipIdMap.get(m.id);
+            const newCommitteeId = committeeMap.get(m.trackedCommitteeId);
+            if (!newMembershipId || !newCommitteeId) continue;
+            const key = `${newMembershipId}:${newCommitteeId}`;
+            if (seenPairs.has(key)) continue;
+            seenPairs.add(key);
+            clonedTrackedValues.push({
+              seasonId: newSeason.id,
+              membershipId: newMembershipId,
+              committeeId: newCommitteeId,
+            });
+          }
+
+          if (clonedTrackedValues.length > 0) {
+            await tx
+              .insert(schema.hrMemberTrackedCommittees)
+              .values(clonedTrackedValues)
+              .onConflictDoNothing();
+          }
         }
       }
 

@@ -5,6 +5,7 @@ import {
   buildClearSessionCookieOptions,
   buildLastContextCookieOptions,
   buildSessionCookieOptions,
+  encodeLastContextCookie,
   LAST_CONTEXT_COOKIE_NAME,
   SESSION_COOKIE_NAME,
   validateSessionAgainstDb,
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
         fullName: renewed.fullName,
         participantType: renewed.participantType,
         activeMembershipId: renewed.participantId,
+        activeTrackedCommitteeId: renewed.trackedCommitteeId ?? null,
         membershipRole: renewed.membershipRole,
       },
     },
@@ -55,10 +57,16 @@ export async function GET(request: NextRequest) {
     encodeSessionToken(renewed),
     buildSessionCookieOptions()
   );
-  if (liveUser.participantId !== decoded.participantId) {
+  if (
+    liveUser.participantId !== decoded.participantId ||
+    (liveUser.trackedCommitteeId ?? null) !== (decoded.trackedCommitteeId ?? null)
+  ) {
     response.cookies.set(
       LAST_CONTEXT_COOKIE_NAME,
-      liveUser.participantId,
+      encodeLastContextCookie(
+        liveUser.participantId,
+        liveUser.trackedCommitteeId
+      ),
       buildLastContextCookieOptions()
     );
   }

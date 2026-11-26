@@ -10,6 +10,7 @@ import {
   createSessionForMember,
   switchSessionMembership,
 } from "@/services/session.service";
+import { resolveLiveSessionFromPersonState } from "@/lib/session-cookie";
 
 const makeCandidate = (
   overrides: Partial<RawContextCandidate>
@@ -255,5 +256,71 @@ describe("context.service (multi-role context selection & ownership validation)"
     expect(Date.parse(switched.expiresAt)).toBeGreaterThan(
       Date.parse(original.expiresAt)
     );
+  });
+
+  it("validates trackedCommitteeId switches for a single hr_member hat and blocks unassigned committees", () => {
+    const hrHat = makeCandidate({
+      membershipId: "mem-hr-1",
+      role: "hr_member",
+      committeeId: "comm-hr",
+      committeeName: "Human Resources",
+      trackedCommitteeId: "comm-ai",
+      trackedCommitteeName: "AI & ML",
+      trackedCommittees: [
+        { id: "comm-ai", name: "AI & ML" },
+        { id: "comm-robotics", name: "Robotics" },
+      ],
+    });
+    const eligible = filterEligibleSeasonContexts([hrHat]);
+
+    const okRobotics = resolveContextSwitch(eligible, "mem-hr-1", "comm-robotics");
+    expect(okRobotics.ok).toBe(true);
+    if (okRobotics.ok) {
+      expect(okRobotics.context.trackedCommitteeId).toBe("comm-robotics");
+      expect(okRobotics.context.trackedCommitteeName).toBe("Robotics");
+    }
+
+    const forbiddenWeb = resolveContextSwitch(eligible, "mem-hr-1", "comm-web");
+    expect(forbiddenWeb.ok).toBe(false);
+
+    // Live session resolution preserves still-assigned trackedCommitteeId and falls back if removed
+    const sessionOnRobotics = createSessionForMember({
+      id: "mem-hr-1",
+      personId: "person-1",
+      fullName: "Nourhan HR",
+      role: "hr_member",
+      trackedCommitteeId: "comm-robotics",
+    });
+    const resolvedValid = resolveLiveSessionFromPersonState({
+      sessionUser: sessionOnRobotics,
+      person: {
+        id: "person-1",
+        fullName: "Nourhan HR",
+        isActive: true,
+        mustChangePassword: false,
+        passwordChangedAt: null,
+      },
+      eligibleContexts: eligible,
+    });
+    expect(resolvedValid?.trackedCommitteeId).toBe("comm-robotics");
+
+    const eligibleAfterUnassign = filterEligibleSeasonContexts([
+      makeCandidate({
+        ...hrHat,
+        trackedCommittees: [{ id: "comm-ai", name: "AI & ML" }],
+      }),
+    ]);
+    const resolvedFallback = resolveLiveSessionFromPersonState({
+      sessionUser: sessionOnRobotics,
+      person: {
+        id: "person-1",
+        fullName: "Nourhan HR",
+        isActive: true,
+        mustChangePassword: false,
+        passwordChangedAt: null,
+      },
+      eligibleContexts: eligibleAfterUnassign,
+    });
+    expect(resolvedFallback?.trackedCommitteeId).toBe("comm-ai");
   });
 });

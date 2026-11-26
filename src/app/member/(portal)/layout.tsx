@@ -20,7 +20,10 @@ export default async function MemberPortalLayout({
   const session = await requireMemberSession();
   const [profile, opProfile, eligibleContexts, navBadges] = await Promise.all([
     getMemberProfile(session.participantId),
-    getOperationalUserProfile(session.participantId),
+    getOperationalUserProfile(
+      session.participantId,
+      session.trackedCommitteeId
+    ),
     listEligibleContextsForPerson(session.personId),
     getMemberNavNotifications(session.participantId, session.personId),
   ]);
@@ -53,6 +56,7 @@ export default async function MemberPortalLayout({
       currentUserRole={role}
       contexts={toContextPickerOptions(eligibleContexts)}
       activeMembershipId={session.participantId}
+      activeTrackedCommitteeId={session.trackedCommitteeId ?? null}
       navBadges={navBadges}
     >
       {children}

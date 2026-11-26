@@ -15,7 +15,13 @@ import {
   SESSION_COOKIE_NAME,
   buildLastContextCookieOptions,
   buildSessionCookieOptions,
+  encodeLastContextCookie,
+  parseLastContextCookie,
 } from "@/lib/session-cookie";
+import {
+  listEligibleContextsForPerson,
+  resolveTrackedCommitteesForContext,
+} from "@/services/context.service";
 import { getRoleLandingPath } from "@/lib/auth-helpers";
 import { parseLoginIdentifier } from "@/lib/phone";
 import { sanitizeNextPath } from "@/lib/checkin-url";
@@ -42,6 +48,26 @@ export interface LoginActionResult {
   mustChangePassword?: boolean;
   redirectTo?: string;
   error?: string;
+}
+
+async function resolveInitialTrackedCommitteeId(
+  personId: string,
+  membershipId: string,
+  role: string,
+  preferredTrackedCommitteeId: string | null
+): Promise<string | null> {
+  if (role !== "hr_member") return null;
+  const eligible = await listEligibleContextsForPerson(personId);
+  const matched = eligible.find((c) => c.membershipId === membershipId);
+  if (!matched) return null;
+  const assigned = resolveTrackedCommitteesForContext(matched);
+  if (
+    preferredTrackedCommitteeId &&
+    assigned.some((c) => c.id === preferredTrackedCommitteeId)
+  ) {
+    return preferredTrackedCommitteeId;
+  }
+  return assigned[0]?.id ?? null;
 }
 
 export async function loginWithPasswordAction(
@@ -73,8 +99,10 @@ export async function loginWithPasswordAction(
   }
 
   const cookieStore = await cookies();
-  const preferredMembershipId =
-    cookieStore.get(LAST_CONTEXT_COOKIE_NAME)?.value ?? null;
+  const lastContext = parseLastContextCookie(
+    cookieStore.get(LAST_CONTEXT_COOKIE_NAME)?.value
+  );
+  const preferredMembershipId = lastContext.membershipId;
 
   const result = await authenticateWithPassword({
     email,
@@ -103,11 +131,19 @@ export async function loginWithPasswordAction(
     };
   }
 
+  const initialTrackedCommitteeId = await resolveInitialTrackedCommitteeId(
+    result.member.personId,
+    result.member.id,
+    result.member.role,
+    lastContext.trackedCommitteeId
+  );
+
   const sessionUser = createSessionForMember({
     id: result.member.id,
     personId: result.member.personId,
     fullName: result.member.fullName,
     role: result.member.role,
+    trackedCommitteeId: initialTrackedCommitteeId,
   });
 
   let signedToken: string;
@@ -128,7 +164,7 @@ export async function loginWithPasswordAction(
   );
   cookieStore.set(
     LAST_CONTEXT_COOKIE_NAME,
-    result.member.id,
+    encodeLastContextCookie(result.member.id, initialTrackedCommitteeId),
     buildLastContextCookieOptions()
   );
 
@@ -174,8 +210,10 @@ export async function changePasswordOnFirstLoginAction(
   }
 
   const cookieStore = await cookies();
-  const preferredMembershipId =
-    cookieStore.get(LAST_CONTEXT_COOKIE_NAME)?.value ?? null;
+  const lastContext = parseLastContextCookie(
+    cookieStore.get(LAST_CONTEXT_COOKIE_NAME)?.value
+  );
+  const preferredMembershipId = lastContext.membershipId;
 
   const member = await resolveLoginMembershipByIdentifier(
     parsed.value,
@@ -229,12 +267,20 @@ export async function changePasswordOnFirstLoginAction(
 
   await clearRateLimit(emailKey);
 
+  const initialTrackedCommitteeId = await resolveInitialTrackedCommitteeId(
+    member.personId,
+    member.id,
+    member.role,
+    lastContext.trackedCommitteeId
+  );
+
   // Mint the final session AFTER passwordChangedAt is recorded so issuedAt >= passwordChangedAt
   const sessionUser = createSessionForMember({
     id: member.id,
     personId: member.personId,
     fullName: member.fullName,
     role: member.role,
+    trackedCommitteeId: initialTrackedCommitteeId,
   });
   const signedToken = encodeSessionToken(sessionUser);
 
@@ -245,7 +291,7 @@ export async function changePasswordOnFirstLoginAction(
   );
   cookieStore.set(
     LAST_CONTEXT_COOKIE_NAME,
-    member.id,
+    encodeLastContextCookie(member.id, initialTrackedCommitteeId),
     buildLastContextCookieOptions()
   );
 

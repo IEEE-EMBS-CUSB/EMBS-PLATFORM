@@ -7,6 +7,7 @@ import {
 } from "@/services/session.service";
 import {
   listEligibleContextsForPerson,
+  resolveTrackedCommitteesForContext,
   type EligibleContextOption,
 } from "@/services/context.service";
 import type { SessionUser } from "@/types";
@@ -17,6 +18,30 @@ import { eq } from "drizzle-orm";
 
 export const SESSION_COOKIE_NAME = "embs_portal_session";
 export const LAST_CONTEXT_COOKIE_NAME = "embs_last_context";
+
+export function encodeLastContextCookie(
+  membershipId: string,
+  trackedCommitteeId?: string | null
+): string {
+  return trackedCommitteeId ? `${membershipId}:${trackedCommitteeId}` : membershipId;
+}
+
+export function parseLastContextCookie(raw?: string | null): {
+  membershipId: string | null;
+  trackedCommitteeId: string | null;
+} {
+  const trimmed = raw?.trim();
+  if (!trimmed) {
+    return { membershipId: null, trackedCommitteeId: null };
+  }
+  const sepIndex = trimmed.indexOf(":");
+  if (sepIndex === -1) {
+    return { membershipId: trimmed, trackedCommitteeId: null };
+  }
+  const membershipId = trimmed.slice(0, sepIndex).trim() || null;
+  const trackedCommitteeId = trimmed.slice(sepIndex + 1).trim() || null;
+  return { membershipId, trackedCommitteeId };
+}
 
 export function isProductionEnv(): boolean {
   return process.env.NODE_ENV === "production";
@@ -117,6 +142,19 @@ export function resolveLiveSessionFromPersonState(input: {
   const participantType =
     activeContext.role === "attendee" ? "attendee" : "member";
 
+  let resolvedTrackedCommitteeId: string | null = null;
+  if (activeContext.role === "hr_member") {
+    const assigned = resolveTrackedCommitteesForContext(activeContext);
+    if (
+      sessionUser.trackedCommitteeId &&
+      assigned.some((c) => c.id === sessionUser.trackedCommitteeId)
+    ) {
+      resolvedTrackedCommitteeId = sessionUser.trackedCommitteeId;
+    } else {
+      resolvedTrackedCommitteeId = assigned[0]?.id ?? null;
+    }
+  }
+
   return {
     ...sessionUser,
     personId: person.id,
@@ -125,6 +163,7 @@ export function resolveLiveSessionFromPersonState(input: {
     fullName: person.fullName,
     participantType,
     membershipRole: activeContext.role as MembershipRole,
+    trackedCommitteeId: resolvedTrackedCommitteeId,
   };
 }
 

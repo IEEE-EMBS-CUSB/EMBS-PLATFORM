@@ -183,4 +183,41 @@ describe("buildContextPickerModel", () => {
     expect(singleAttendee.isInteractive).toBe(false);
     expect(singleAttendee.activeTriggerLabel).toBe("Attendee");
   });
+
+  it("renders one Track <Committee> hat per assigned committee under a single HR Member group", () => {
+    const model = buildContextPickerModel({
+      contexts: [
+        {
+          membershipId: "m-hr-1",
+          role: "hr_member",
+          committeeName: "Human Resources",
+          trackedCommitteeId: "comm-ai",
+          trackedCommitteeName: "AI & ML",
+          trackedCommittees: [
+            { id: "comm-ai", name: "AI & ML" },
+            { id: "comm-robotics", name: "Robotics" },
+          ],
+          managedTrackName: null,
+        },
+      ],
+      activeMembershipId: "m-hr-1",
+      activeTrackedCommitteeId: "comm-robotics",
+      activePortal: "hr",
+    });
+
+    expect(model.isInteractive).toBe(true);
+    expect(model.groups).toHaveLength(1);
+    expect(model.groups[0].heading).toBe("HR · Member");
+    expect(model.groups[0].views.map((v) => v.label)).toEqual([
+      "My work",
+      "Track AI & ML",
+      "Track Robotics",
+    ]);
+    expect(model.groups[0].views[0].isActive).toBe(false);
+    expect(model.groups[0].views[1].isActive).toBe(false);
+    expect(model.groups[0].views[1].trackedCommitteeId).toBe("comm-ai");
+    expect(model.groups[0].views[2].isActive).toBe(true);
+    expect(model.groups[0].views[2].trackedCommitteeId).toBe("comm-robotics");
+    expect(model.activeTriggerLabel).toBe("HR · Member · Track Robotics");
+  });
 });

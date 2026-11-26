@@ -263,6 +263,19 @@ async function resolvePersonSeasonScope(memberId: string): Promise<{
       )
     );
 
+  const activeHatIds = seasonHats.filter((h) => h.isActive).map((h) => h.id);
+  const hrTrackedCommitteeRows =
+    activeHatIds.length > 0
+      ? await db
+          .select({
+            committeeId: schema.hrMemberTrackedCommittees.committeeId,
+          })
+          .from(schema.hrMemberTrackedCommittees)
+          .where(
+            inArray(schema.hrMemberTrackedCommittees.membershipId, activeHatIds)
+          )
+      : [];
+
   const membershipIds = Array.from(
     new Set([memberId, ...seasonHats.map((h) => h.id)])
   );
@@ -273,6 +286,7 @@ async function resolvePersonSeasonScope(memberId: string): Promise<{
         ...seasonHats
           .filter((h) => h.isActive)
           .flatMap((h) => [h.committeeId, h.trackedCommitteeId]),
+        ...hrTrackedCommitteeRows.map((r) => r.committeeId),
       ].filter((id): id is string => Boolean(id))
     )
   );
@@ -369,13 +383,16 @@ export interface OperationalUserProfile {
   committeeName?: string;
   trackedCommitteeId?: string | null;
   trackedCommitteeName?: string;
+  trackedCommitteeIds?: string[];
+  trackedCommittees?: Array<{ id: string; name: string }>;
   managedTrackId: string | null;
   managedTrackName?: string;
   seasonId?: string;
 }
 
 export async function getOperationalUserProfile(
-  memberId: string
+  memberId: string,
+  activeTrackedCommitteeId?: string | null
 ): Promise<OperationalUserProfile | null> {
   try {
     const memberRows = await db
@@ -416,8 +433,45 @@ export async function getOperationalUserProfile(
 
     const member = memberRows[0];
     if (member && member.role !== "attendee") {
+      let trackedCommittees: Array<{ id: string; name: string }> = [];
+      let resolvedTrackedCommitteeId: string | null =
+        member.trackedCommitteeId ?? null;
       let trackedCommitteeName: string | undefined;
-      if (member.trackedCommitteeId) {
+
+      if (member.role === "hr_member") {
+        const joinRows = await db
+          .select({
+            id: schema.committees.id,
+            name: schema.committees.name,
+          })
+          .from(schema.hrMemberTrackedCommittees)
+          .innerJoin(
+            schema.committees,
+            eq(schema.hrMemberTrackedCommittees.committeeId, schema.committees.id)
+          )
+          .where(eq(schema.hrMemberTrackedCommittees.membershipId, member.id))
+          .orderBy(asc(schema.committees.name));
+
+        if (joinRows.length > 0) {
+          trackedCommittees = joinRows;
+        } else if (member.trackedCommitteeId) {
+          const [tracked] = await db
+            .select({ id: schema.committees.id, name: schema.committees.name })
+            .from(schema.committees)
+            .where(eq(schema.committees.id, member.trackedCommitteeId))
+            .limit(1);
+          if (tracked) {
+            trackedCommittees = [tracked];
+          }
+        }
+
+        const matchedActive = activeTrackedCommitteeId
+          ? trackedCommittees.find((c) => c.id === activeTrackedCommitteeId)
+          : undefined;
+        const effectiveTracked = matchedActive ?? trackedCommittees[0] ?? null;
+        resolvedTrackedCommitteeId = effectiveTracked?.id ?? null;
+        trackedCommitteeName = effectiveTracked?.name;
+      } else if (member.trackedCommitteeId) {
         const [tracked] = await db
           .select({ name: schema.committees.name })
           .from(schema.committees)
@@ -434,8 +488,10 @@ export async function getOperationalUserProfile(
         role: member.role as MembershipRole,
         committeeId: member.committeeId,
         committeeName: member.committeeName ?? undefined,
-        trackedCommitteeId: member.trackedCommitteeId ?? null,
+        trackedCommitteeId: resolvedTrackedCommitteeId,
         trackedCommitteeName,
+        trackedCommitteeIds: trackedCommittees.map((c) => c.id),
+        trackedCommittees,
         managedTrackId: member.managedTrackId ?? null,
         managedTrackName: member.managedTrackName ?? undefined,
         seasonId: member.seasonId,

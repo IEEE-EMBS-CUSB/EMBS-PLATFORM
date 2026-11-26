@@ -35,6 +35,7 @@ export interface StatisticsMemberRecord {
   role: MembershipRole;
   committeeId: string | null;
   trackedCommitteeId: string | null;
+  trackedCommitteeIds?: string[];
   managedTrackId: string | null;
   isActive: boolean;
   mustChangePassword: boolean | null;
@@ -460,8 +461,19 @@ export function formatShortMonthLabel(monthKey: string): string {
   }).format(new Date(Date.UTC(y, m - 1, 1)));
 }
 
+function getMemberTrackedCommitteeIds(m: StatisticsMemberRecord): string[] {
+  if (m.role !== "hr_member") return [];
+  if (m.trackedCommitteeIds && m.trackedCommitteeIds.length > 0) {
+    return m.trackedCommitteeIds;
+  }
+  return m.trackedCommitteeId ? [m.trackedCommitteeId] : [];
+}
+
 function getMemberDisplayCommitteeId(m: StatisticsMemberRecord): string | null {
-  return m.role === "hr_member" ? m.trackedCommitteeId : m.committeeId;
+  if (m.role === "hr_member") {
+    return getMemberTrackedCommitteeIds(m)[0] ?? null;
+  }
+  return m.committeeId;
 }
 
 function getMemberTrackId(
@@ -491,7 +503,8 @@ function matchesMemberFilters(
   } else if (filters.committeeId !== "all") {
     const matchesHome = m.committeeId === filters.committeeId;
     const matchesTracked =
-      m.role === "hr_member" && m.trackedCommitteeId === filters.committeeId;
+      m.role === "hr_member" &&
+      getMemberTrackedCommitteeIds(m).includes(filters.committeeId);
     if (!matchesHome && !matchesTracked) return false;
   }
 
@@ -500,7 +513,16 @@ function matchesMemberFilters(
     const homeTrack = m.committeeId
       ? (committeeById.get(m.committeeId)?.trackId ?? null)
       : null;
-    if (memberTrack !== filters.trackId && homeTrack !== filters.trackId) {
+    const matchesTrackedTrack =
+      m.role === "hr_member" &&
+      getMemberTrackedCommitteeIds(m).some(
+        (cid) => committeeById.get(cid)?.trackId === filters.trackId
+      );
+    if (
+      memberTrack !== filters.trackId &&
+      homeTrack !== filters.trackId &&
+      !matchesTrackedTrack
+    ) {
       return false;
     }
   }
@@ -1197,22 +1219,26 @@ export function computeAdminStatistics(
     const isEligible = eligiblePersonIds.has(personId);
     const committeeNames = Array.from(
       new Set(
-        hats.map((h) => {
+        hats.flatMap((h) => {
           if (h.role === "hr_member") {
-            const tracked = h.trackedCommitteeId
-              ? committeeById.get(h.trackedCommitteeId)?.name
-              : null;
-            return tracked ? `Tracks ${tracked}` : "Human Resources";
+            const trackedNames = getMemberTrackedCommitteeIds(h)
+              .map((cid) => committeeById.get(cid)?.name)
+              .filter((name): name is string => Boolean(name));
+            return trackedNames.length > 0
+              ? trackedNames.map((name) => `Tracks ${name}`)
+              : ["Human Resources"];
           }
           if (h.role === "director") {
             const trackName = h.managedTrackId
               ? trackById.get(h.managedTrackId)?.name
               : null;
-            return trackName ? `${trackName} Track` : "Chapter Leadership";
+            return [trackName ? `${trackName} Track` : "Chapter Leadership"];
           }
-          return h.committeeId
-            ? (committeeById.get(h.committeeId)?.name ?? "Unassigned")
-            : "Unassigned";
+          return [
+            h.committeeId
+              ? (committeeById.get(h.committeeId)?.name ?? "Unassigned")
+              : "Unassigned",
+          ];
         })
       )
     );

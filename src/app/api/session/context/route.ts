@@ -3,6 +3,7 @@ import { isSameOriginRequest } from "@/lib/request-origin";
 import {
   buildLastContextCookieOptions,
   buildSessionCookieOptions,
+  encodeLastContextCookie,
   getServerSession,
   LAST_CONTEXT_COOKIE_NAME,
   SESSION_COOKIE_NAME,
@@ -32,6 +33,7 @@ export async function GET() {
     {
       authenticated: true,
       activeMembershipId: session.participantId,
+      activeTrackedCommitteeId: session.trackedCommitteeId ?? null,
       contexts: contexts.map((c) => ({
         membershipId: c.membershipId,
         seasonId: c.seasonId,
@@ -40,6 +42,9 @@ export async function GET() {
         committeeId: c.committeeId,
         committeeName: c.committeeName,
         committeeSlug: c.committeeSlug,
+        trackedCommitteeId: c.trackedCommitteeId ?? null,
+        trackedCommitteeName: c.trackedCommitteeName ?? null,
+        trackedCommittees: c.trackedCommittees ?? [],
         managedTrackId: c.managedTrackId,
         managedTrackName: c.managedTrackName,
       })),
@@ -63,9 +68,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { membershipId?: unknown; view?: unknown };
+  let body: {
+    membershipId?: unknown;
+    view?: unknown;
+    trackedCommitteeId?: unknown;
+  };
   try {
-    body = (await request.json()) as { membershipId?: unknown; view?: unknown };
+    body = (await request.json()) as {
+      membershipId?: unknown;
+      view?: unknown;
+      trackedCommitteeId?: unknown;
+    };
   } catch {
     return NextResponse.json(
       { ok: false, error: "Invalid request payload." },
@@ -77,10 +90,15 @@ export async function POST(request: NextRequest) {
     typeof body.membershipId === "string" ? body.membershipId.trim() : "";
   const view: ContextViewMode | undefined =
     body.view === "personal" || body.view === "manage" ? body.view : undefined;
+  const trackedCommitteeId =
+    typeof body.trackedCommitteeId === "string"
+      ? body.trackedCommitteeId.trim() || null
+      : null;
 
   const validated = await validateMembershipSwitch(
     session.personId,
-    membershipId
+    membershipId,
+    trackedCommitteeId
   );
   if (!validated.ok) {
     return NextResponse.json(
@@ -93,6 +111,7 @@ export async function POST(request: NextRequest) {
     id: validated.context.membershipId,
     fullName: session.fullName,
     role: validated.context.role,
+    trackedCommitteeId: validated.context.trackedCommitteeId ?? null,
   });
 
   let signedToken: string;
@@ -110,6 +129,7 @@ export async function POST(request: NextRequest) {
     {
       ok: true,
       activeMembershipId: switched.participantId,
+      activeTrackedCommitteeId: switched.trackedCommitteeId ?? null,
       role: validated.context.role,
       redirectTo,
     },
@@ -123,7 +143,7 @@ export async function POST(request: NextRequest) {
   );
   response.cookies.set(
     LAST_CONTEXT_COOKIE_NAME,
-    switched.participantId,
+    encodeLastContextCookie(switched.participantId, switched.trackedCommitteeId),
     buildLastContextCookieOptions()
   );
 

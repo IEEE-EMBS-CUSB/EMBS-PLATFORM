@@ -251,6 +251,40 @@ export const rosterMemberships = pgTable(
 );
 
 // ============================================================================
+// 3b. HR Member Tracked Committees
+// Season-scoped many-to-many join table allowing a single hr_member membership
+// to track multiple operational committees while remaining one HR home member.
+// ============================================================================
+
+export const hrMemberTrackedCommittees = pgTable(
+  "hr_member_tracked_committees",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    seasonId: uuid("season_id")
+      .notNull()
+      .references(() => seasons.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => rosterMemberships.id, { onDelete: "cascade" }),
+    committeeId: uuid("committee_id")
+      .notNull()
+      .references(() => committees.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("hr_tracked_committees_membership_committee_uniq").on(
+      table.membershipId,
+      table.committeeId
+    ),
+    index("hr_tracked_committees_season_id_idx").on(table.seasonId),
+    index("hr_tracked_committees_membership_id_idx").on(table.membershipId),
+    index("hr_tracked_committees_committee_id_idx").on(table.committeeId),
+  ]
+);
+
+// ============================================================================
 // 4. Scoring Rubrics
 // Configurable seasonal rubric categories and weighting managed by HR.
 // ============================================================================
@@ -772,10 +806,29 @@ export const rosterMembershipsRelations = relations(
     }),
     attendance: many(attendanceRecords),
     instructedSessions: many(branchSessionInstructors),
+    trackedCommittees: many(hrMemberTrackedCommittees),
     taskSubmissions: many(taskSubmissions),
     ledgerEntries: many(scoreLedger),
     feedbackReceived: many(hrFeedback, { relationName: "feedbackRecipient" }),
     feedbackAuthored: many(hrFeedback, { relationName: "feedbackAuthor" }),
+  })
+);
+
+export const hrMemberTrackedCommitteesRelations = relations(
+  hrMemberTrackedCommittees,
+  ({ one }) => ({
+    season: one(seasons, {
+      fields: [hrMemberTrackedCommittees.seasonId],
+      references: [seasons.id],
+    }),
+    membership: one(rosterMemberships, {
+      fields: [hrMemberTrackedCommittees.membershipId],
+      references: [rosterMemberships.id],
+    }),
+    committee: one(committees, {
+      fields: [hrMemberTrackedCommittees.committeeId],
+      references: [committees.id],
+    }),
   })
 );
 

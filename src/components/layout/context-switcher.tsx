@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 export interface ContextSwitcherProps {
   contexts: readonly ContextPickerOption[];
   activeMembershipId?: string | null;
+  activeTrackedCommitteeId?: string | null;
   activePortal: ActivePortalKind;
   variant: "header" | "desktop" | "mobile";
   fallbackLabel?: string;
@@ -33,6 +34,7 @@ export interface ContextSwitcherProps {
 export function ContextSwitcher({
   contexts,
   activeMembershipId,
+  activeTrackedCommitteeId,
   activePortal,
   variant,
   fallbackLabel,
@@ -47,6 +49,7 @@ export function ContextSwitcher({
   const model = buildContextPickerModel({
     contexts,
     activeMembershipId,
+    activeTrackedCommitteeId,
     activePortal,
     fallbackLabel,
   });
@@ -93,10 +96,13 @@ export function ContextSwitcher({
     setError(null);
 
     try {
-      const res = await switchActiveContextAction(
-        view.membershipId,
-        view.viewMode
-      );
+      const res = view.trackedCommitteeId
+        ? await switchActiveContextAction(
+            view.membershipId,
+            view.viewMode,
+            view.trackedCommitteeId
+          )
+        : await switchActiveContextAction(view.membershipId, view.viewMode);
       if (!res.ok) {
         setError(res.error ?? "Failed to switch context.");
         return;

@@ -45,6 +45,7 @@ export interface HrShellProps {
   userCommitteeName?: string;
   contexts?: readonly ContextPickerOption[];
   activeMembershipId?: string | null;
+  activeTrackedCommitteeId?: string | null;
   navBadges?: NavBadgeMap;
   children: ReactNode;
 }
@@ -67,6 +68,7 @@ export function HrShell({
   userCommitteeName,
   contexts = [],
   activeMembershipId,
+  activeTrackedCommitteeId,
   navBadges,
   children,
 }: HrShellProps) {
@@ -96,6 +98,7 @@ export function HrShell({
   const pickerModel = buildContextPickerModel({
     contexts,
     activeMembershipId,
+    activeTrackedCommitteeId,
     activePortal: "hr",
     fallbackLabel: fallbackContextLabel,
   });
@@ -126,6 +129,7 @@ export function HrShell({
             <ContextSwitcher
               contexts={contexts}
               activeMembershipId={activeMembershipId}
+              activeTrackedCommitteeId={activeTrackedCommitteeId}
               activePortal="hr"
               variant="header"
               fallbackLabel={fallbackContextLabel}

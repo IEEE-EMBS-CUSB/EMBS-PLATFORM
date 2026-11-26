@@ -19,7 +19,10 @@ export async function getActorContext(): Promise<ActorContext | null> {
   const session = await getServerSession();
   if (!session || session.participantType !== "member") return null;
 
-  const profile = await getOperationalUserProfile(session.participantId);
+  const profile = await getOperationalUserProfile(
+    session.participantId,
+    session.trackedCommitteeId
+  );
   if (!profile || !isOperationalRole(profile.role)) return null;
 
   return {

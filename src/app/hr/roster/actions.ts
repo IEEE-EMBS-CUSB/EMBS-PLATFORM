@@ -6,6 +6,7 @@ import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   addRosterMemberAsActor,
   assignDirectorTrackAsActor,
+  assignHrTrackedCommitteesAsActor,
   assignMemberCommitteeAsActor,
   assignMemberRoleAsActor,
   bulkImportRosterAsActor,
@@ -77,6 +78,21 @@ export async function assignMemberCommitteeAction(
   const actor = await getActorContext();
   if (!actor) return unauthorizedResult();
   const res = await assignMemberCommitteeAsActor(memberId, committeeId, actor);
+  if (res.ok) safeRevalidateRoster();
+  return res;
+}
+
+export async function assignHrTrackedCommitteesAction(
+  memberId: string,
+  committeeIds: string[]
+) {
+  const actor = await getActorContext();
+  if (!actor) return unauthorizedResult();
+  const res = await assignHrTrackedCommitteesAsActor(
+    memberId,
+    committeeIds,
+    actor
+  );
   if (res.ok) safeRevalidateRoster();
   return res;
 }

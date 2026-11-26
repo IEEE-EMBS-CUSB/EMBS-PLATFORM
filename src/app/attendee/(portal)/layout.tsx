@@ -31,6 +31,7 @@ export default async function AttendeePortalLayout({
       subtitle={`${profile.programTrack} · ${profile.cohortLabel}`}
       contexts={toContextPickerOptions(eligibleContexts)}
       activeMembershipId={session.participantId}
+      activeTrackedCommitteeId={session.trackedCommitteeId ?? null}
       navBadges={navBadges}
     >
       {children}

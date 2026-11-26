@@ -15,6 +15,7 @@ export interface SessionUser {
   fullName: string;
   participantType: ParticipantType;
   membershipRole?: MembershipRole;
+  trackedCommitteeId?: string | null;
   keyVersion: number;
   issuedAt: string;
   expiresAt: string;

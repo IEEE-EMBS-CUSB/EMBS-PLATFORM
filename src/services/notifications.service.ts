@@ -409,6 +409,7 @@ export async function getHrNavNotifications(
       ungradedSubmissions,
       openSessions,
       activeHrMembers,
+      hrTrackedJoinRows,
       monthOptions,
     ] = await Promise.all([
       db
@@ -497,6 +498,7 @@ export async function getHrNavNotifications(
       profile.role === "master_admin" || profile.role === "hr_admin"
         ? db
             .select({
+              id: schema.rosterMemberships.id,
               trackedCommitteeId: schema.rosterMemberships.trackedCommitteeId,
               committeeId: schema.rosterMemberships.committeeId,
             })
@@ -513,6 +515,15 @@ export async function getHrNavNotifications(
                 eq(schema.persons.isActive, true)
               )
             )
+        : Promise.resolve([]),
+      profile.role === "master_admin" || profile.role === "hr_admin"
+        ? db
+            .select({
+              membershipId: schema.hrMemberTrackedCommittees.membershipId,
+              committeeId: schema.hrMemberTrackedCommittees.committeeId,
+            })
+            .from(schema.hrMemberTrackedCommittees)
+            .where(eq(schema.hrMemberTrackedCommittees.seasonId, seasonId))
         : Promise.resolve([]),
       canPublishLeaderboard(profile.role)
         ? getPublishingMonthOptions(seasonId)
@@ -611,11 +622,17 @@ export async function getHrNavNotifications(
 
     // 4. /hr/roster — uncovered committees missing an HR member (for Master & HR Admin)
     if (profile.role === "master_admin" || profile.role === "hr_admin") {
-      const coveredCommitteeIds = new Set(
-        activeHrMembers
-          .map((m) => m.trackedCommitteeId ?? m.committeeId)
-          .filter((id): id is string => Boolean(id))
-      );
+      const activeHrMemberIds = new Set(activeHrMembers.map((m) => m.id));
+      const coveredCommitteeIds = new Set<string>();
+      for (const jr of hrTrackedJoinRows) {
+        if (activeHrMemberIds.has(jr.membershipId)) {
+          coveredCommitteeIds.add(jr.committeeId);
+        }
+      }
+      for (const m of activeHrMembers) {
+        const legacyId = m.trackedCommitteeId ?? m.committeeId;
+        if (legacyId) coveredCommitteeIds.add(legacyId);
+      }
       const uncoveredCount = dbCommittees.filter(
         (c) =>
           c.slug !== "human-resources" &&

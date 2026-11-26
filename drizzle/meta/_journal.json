@@ -134,6 +134,13 @@
       "when": 1795814400000,
       "tag": "0018_branch_sessions_mode_location_instructors",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795900800000,
+      "tag": "0019_hr_member_tracked_committees",
+      "breakpoints": true
     }
   ]
 }

@@ -32,7 +32,10 @@ async function SessionAwarePrimaryPortalCta() {
 
   let href = session.participantType === "member" ? "/member" : "/attendee";
   try {
-    const opProfile = await getOperationalUserProfile(session.participantId);
+    const opProfile = await getOperationalUserProfile(
+      session.participantId,
+      session.trackedCommitteeId
+    );
     if (opProfile && isOperationalRole(opProfile.role)) {
       href = getRoleLandingPath(opProfile.role);
     }
@@ -66,7 +69,10 @@ async function SessionAwareRoleLink({
   let href = isSignedInAsRole ? `/${role}` : "/login";
   if (isSignedInAsRole && role === "member") {
     try {
-      const opProfile = await getOperationalUserProfile(session.participantId);
+      const opProfile = await getOperationalUserProfile(
+      session.participantId,
+      session.trackedCommitteeId
+    );
       if (opProfile && isOperationalRole(opProfile.role)) {
         href = getRoleLandingPath(opProfile.role);
       }

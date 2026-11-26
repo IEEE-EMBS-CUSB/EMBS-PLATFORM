@@ -8,7 +8,8 @@ import { requireHrModule } from "@/lib/portal-guards";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canGradeWorkSubmission,
-  canTaskHaveGradeableSubmissions,
+  canTaskHaveVisibleSubmissions,
+  canViewWorkSubmission,
   getOperationalCommitteeScope,
   type WorkItemType,
 } from "@/lib/permissions";
@@ -57,7 +58,11 @@ export default async function HrTasksPage() {
     submittedAt?: string | null;
     completed?: boolean;
   };
-  const bulkTasks: { task: BulkTask; submissions: BulkSubmission[] }[] = [];
+  const bulkTasks: {
+    task: BulkTask;
+    submissions: BulkSubmission[];
+    readOnly: boolean;
+  }[] = [];
 
   const isCommitteeScoped =
     profile.role === "committee_head" || profile.role === "hr_member";
@@ -284,7 +289,7 @@ export default async function HrTasksPage() {
       const roleAuthorizedTasks = dbTasks.filter((t) => {
         const itemWorkType: WorkItemType =
           t.workType === "task" ? "task" : "assignment";
-        return canTaskHaveGradeableSubmissions({
+        return canTaskHaveVisibleSubmissions({
           actor: actorPermCtx,
           workType: itemWorkType,
           taskCommitteeId: t.committeeId,
@@ -320,26 +325,31 @@ export default async function HrTasksPage() {
           .where(inArray(schema.taskSubmissions.taskId, taskIds));
 
         const subsByTask = new Map<string, BulkSubmission[]>();
+        const gradeableByTask = new Map<string, boolean>();
         for (const { sub, member } of allSubs) {
           const parentTask = taskById.get(sub.taskId);
           if (!parentTask) continue;
 
           const itemWorkType: WorkItemType =
             parentTask.workType === "task" ? "task" : "assignment";
-          if (
-            !canGradeWorkSubmission({
-              actor: actorPermCtx,
-              workType: itemWorkType,
-              taskCommitteeId: parentTask.committeeId,
-              submissionMembershipId: member.id,
-              submissionPersonId: member.personId,
-              memberRole: member.role as MembershipRole,
-              memberCommitteeId: member.committeeId,
-              directorTrackCommitteeIds,
-              hrCommitteeId,
-            })
-          ) {
+          const submissionCheckInput = {
+            actor: actorPermCtx,
+            workType: itemWorkType,
+            taskCommitteeId: parentTask.committeeId,
+            submissionMembershipId: member.id,
+            submissionPersonId: member.personId,
+            memberRole: member.role as MembershipRole,
+            memberCommitteeId: member.committeeId,
+            directorTrackCommitteeIds,
+            hrCommitteeId,
+          };
+
+          if (!canViewWorkSubmission(submissionCheckInput)) {
             continue;
+          }
+
+          if (canGradeWorkSubmission(submissionCheckInput)) {
+            gradeableByTask.set(sub.taskId, true);
           }
 
           const list = subsByTask.get(sub.taskId) ?? [];
@@ -360,7 +370,7 @@ export default async function HrTasksPage() {
           subsByTask.set(sub.taskId, list);
         }
 
-        // Only surface assignments/tasks that actually have gradeable submissions for this actor
+        // Only surface assignments/tasks that actually have visible submissions for this actor
         const visibleTasks = roleAuthorizedTasks.filter(
           (t) => (subsByTask.get(t.id)?.length ?? 0) > 0
         );
@@ -379,6 +389,7 @@ export default async function HrTasksPage() {
               maxPoints: t.maxPoints,
             },
             submissions: subsByTask.get(t.id) ?? [],
+            readOnly: !(gradeableByTask.get(t.id) ?? false),
           });
         }
       }
@@ -411,7 +422,7 @@ export default async function HrTasksPage() {
             </p>
           </div>
           <div className="space-y-2.5">
-            {bulkTasks.map(({ task, submissions }) => (
+            {bulkTasks.map(({ task, submissions, readOnly }) => (
               <BulkTaskGradingView
                 key={task.id}
                 task={task}
@@ -419,8 +430,9 @@ export default async function HrTasksPage() {
                 gradingWeights={gradingWeights}
                 collapsible
                 defaultExpanded={false}
-                onGrade={gradeTaskSubmissionAction}
-                onToggleTask={hrToggleTaskCompletionAction}
+                readOnly={readOnly}
+                onGrade={readOnly ? undefined : gradeTaskSubmissionAction}
+                onToggleTask={readOnly ? undefined : hrToggleTaskCompletionAction}
               />
             ))}
           </div>

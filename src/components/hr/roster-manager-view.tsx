@@ -46,6 +46,7 @@ export interface RosterMemberItem {
   email: string;
   phoneNumber?: string | null;
   committeeId?: string | null;
+  trackedCommitteeIds?: string[];
   committeeName: string;
   trackId?: string | null;
   managedTrackId?: string | null;
@@ -106,6 +107,10 @@ interface RosterManagerViewProps {
     memberId: string,
     committeeId: string | null
   ) => Promise<{ ok: boolean; error?: string } | void> | void;
+  onAssignHrTrackedCommittees?: (
+    memberId: string,
+    committeeIds: string[]
+  ) => Promise<{ ok: boolean; error?: string } | void> | void;
   onAssignDirectorTrack?: (
     memberId: string,
     trackId: string | null
@@ -119,6 +124,7 @@ interface RosterManagerViewProps {
     phoneNumber?: string | null;
     role: MembershipRole;
     committeeId?: string | null;
+    trackedCommitteeIds?: string[];
     managedTrackId?: string | null;
   }) => Promise<
     {
@@ -199,6 +205,7 @@ export function RosterManagerView({
   ],
   onAssignRole,
   onAssignCommittee,
+  onAssignHrTrackedCommittees,
   onAssignDirectorTrack,
   onResetPassword,
   onAddMember,
@@ -231,6 +238,9 @@ export function RosterManagerView({
   const [addPhoneNumber, setAddPhoneNumber] = useState("");
   const [addRole, setAddRole] = useState<MembershipRole>("member");
   const [addCommitteeId, setAddCommitteeId] = useState("");
+  const [addTrackedCommitteeIds, setAddTrackedCommitteeIds] = useState<string[]>(
+    []
+  );
   const [addManagedTrackId, setAddManagedTrackId] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState("");
@@ -451,11 +461,23 @@ export function RosterManagerView({
     [availableCommittees]
   );
 
+  const getHrTrackedIds = (m: RosterMemberItem): string[] => {
+    if (m.role !== "hr_member") return [];
+    if (m.trackedCommitteeIds !== undefined) {
+      return m.trackedCommitteeIds;
+    }
+    return m.committeeId ? [m.committeeId] : [];
+  };
+
   const uncoveredCommittees = useMemo(() => {
     const coveredIds = new Set(
-      activeHrMembers
-        .map((m) => m.committeeId)
-        .filter((id): id is string => Boolean(id))
+      activeHrMembers.flatMap((m) =>
+        m.trackedCommitteeIds !== undefined
+          ? m.trackedCommitteeIds
+          : m.committeeId
+            ? [m.committeeId]
+            : []
+      )
     );
     return trackableCommittees.filter((c) => !coveredIds.has(c.id));
   }, [activeHrMembers, trackableCommittees]);
@@ -466,20 +488,43 @@ export function RosterManagerView({
       if (statusFilter === "active" && !m.isActive) return false;
       if (statusFilter === "inactive" && m.isActive) return false;
       if (roleFilter !== "all" && m.role !== roleFilter) return false;
+      const hrTrackedIds =
+        m.role === "hr_member"
+          ? m.trackedCommitteeIds !== undefined
+            ? m.trackedCommitteeIds
+            : m.committeeId
+              ? [m.committeeId]
+              : []
+          : [];
       if (committeeFilter !== "all") {
         if (committeeFilter === "unassigned") {
-          if (m.committeeId) return false;
+          if (m.role === "hr_member") {
+            if (hrTrackedIds.length > 0) return false;
+          } else if (m.committeeId) {
+            return false;
+          }
+        } else if (m.role === "hr_member") {
+          if (!hrTrackedIds.includes(committeeFilter)) return false;
         } else if (m.committeeId !== committeeFilter) {
           return false;
         }
       }
       if (trackFilter !== "all") {
-        const effectiveTrackId =
-          m.role === "director"
-            ? m.managedTrackId
-            : (m.trackId ??
-              (m.committeeId ? committeeById.get(m.committeeId)?.trackId : null));
-        if (effectiveTrackId !== trackFilter) return false;
+        if (m.role === "hr_member") {
+          const matchesAnyTrackedTrack = hrTrackedIds.some(
+            (cid) => committeeById.get(cid)?.trackId === trackFilter
+          );
+          if (!matchesAnyTrackedTrack) return false;
+        } else {
+          const effectiveTrackId =
+            m.role === "director"
+              ? m.managedTrackId
+              : (m.trackId ??
+                (m.committeeId
+                  ? committeeById.get(m.committeeId)?.trackId
+                  : null));
+          if (effectiveTrackId !== trackFilter) return false;
+        }
       }
 
       if (!q) return true;
@@ -523,6 +568,7 @@ export function RosterManagerView({
     setAddPhoneNumber(prefill?.phoneNumber ?? "");
     setAddRole("member");
     setAddCommitteeId("");
+    setAddTrackedCommitteeIds([]);
     setAddManagedTrackId("");
     setAddAutofillSource(
       prefill?.fromDirectory
@@ -745,6 +791,11 @@ export function RosterManagerView({
           ? {
               ...m,
               committeeId: effectiveCommitteeId,
+              trackedCommitteeIds: isHrMember
+                ? effectiveCommitteeId
+                  ? [effectiveCommitteeId]
+                  : []
+                : m.trackedCommitteeIds,
               committeeName: isHrMember
                 ? effectiveCommitteeId && found
                   ? `Tracks ${found.name}`
@@ -773,6 +824,72 @@ export function RosterManagerView({
         err instanceof Error
           ? err.message
           : "Failed to update committee assignment."
+      );
+    }
+  };
+
+  const handleHrTrackedCommitteesChange = async (
+    memberId: string,
+    nextCommitteeIds: string[]
+  ) => {
+    const previous = members.find((m) => m.id === memberId);
+    if (!previous || previous.role !== "hr_member") return;
+
+    const cleanIds = Array.from(
+      new Set(
+        nextCommitteeIds.filter((cid) => {
+          const comm = committeeById.get(cid);
+          if (!comm) return false;
+          const isHrSelf =
+            comm.slug === "human-resources" ||
+            comm.name.toLowerCase() === "human resources";
+          return !isHrSelf;
+        })
+      )
+    );
+
+    const names = cleanIds
+      .map((cid) => committeeById.get(cid)?.name)
+      .filter((name): name is string => Boolean(name));
+    const primaryId = cleanIds[0] ?? null;
+    const primaryComm = primaryId ? committeeById.get(primaryId) : undefined;
+
+    setActionError(null);
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.id === memberId
+          ? {
+              ...m,
+              committeeId: primaryId,
+              trackedCommitteeIds: cleanIds,
+              committeeName:
+                names.length > 0 ? `Tracks ${names.join(", ")}` : "Unassigned",
+              trackId: primaryComm?.trackId ?? null,
+            }
+          : m
+      )
+    );
+
+    try {
+      const res = onAssignHrTrackedCommittees
+        ? await onAssignHrTrackedCommittees(memberId, cleanIds)
+        : await onAssignCommittee?.(memberId, primaryId);
+      if (res && !res.ok) {
+        setMembers((prev) =>
+          prev.map((m) => (m.id === memberId ? previous : m))
+        );
+        setActionError(
+          res.error ?? "Failed to update HR tracked committee assignments."
+        );
+      }
+    } catch (err: unknown) {
+      setMembers((prev) =>
+        prev.map((m) => (m.id === memberId ? previous : m))
+      );
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update HR tracked committee assignments."
       );
     }
   };
@@ -843,9 +960,15 @@ export function RosterManagerView({
       let createdId = `new-${Date.now()}`;
       let createdPersonId: string | undefined;
       const isDirectorRole = addRole === "director";
+      const isHrRole = addRole === "hr_member";
+      const submittedTrackedIds = isHrRole
+        ? Array.from(new Set(addTrackedCommitteeIds))
+        : [];
       const submittedCommitteeId = isDirectorRole
         ? null
-        : addCommitteeId || null;
+        : isHrRole
+          ? (submittedTrackedIds[0] ?? null)
+          : addCommitteeId || null;
       const submittedTrackId = isDirectorRole
         ? addManagedTrackId || null
         : null;
@@ -869,6 +992,7 @@ export function RosterManagerView({
           phoneNumber: normalizedModalPhone,
           role: addRole,
           committeeId: submittedCommitteeId,
+          ...(isHrRole ? { trackedCommitteeIds: submittedTrackedIds } : {}),
           ...(isDirectorRole ? { managedTrackId: submittedTrackId } : {}),
         });
         if (res && !res.ok) {
@@ -897,7 +1021,9 @@ export function RosterManagerView({
         ? committeeById.get(submittedCommitteeId)
         : undefined;
       const track = availableTracks.find((t) => t.id === submittedTrackId);
-      const isHrMember = addRole === "hr_member";
+      const hrTrackedNames = submittedTrackedIds
+        .map((cid) => committeeById.get(cid)?.name)
+        .filter((name): name is string => Boolean(name));
       const newMember: RosterMemberItem = {
         id: createdId,
         personId: createdPersonId,
@@ -906,9 +1032,10 @@ export function RosterManagerView({
         phoneNumber: resolvedPhone,
         role: addRole,
         committeeId: submittedCommitteeId,
-        committeeName: isHrMember
-          ? comm
-            ? `Tracks ${comm.name}`
+        trackedCommitteeIds: isHrRole ? submittedTrackedIds : undefined,
+        committeeName: isHrRole
+          ? hrTrackedNames.length > 0
+            ? `Tracks ${hrTrackedNames.join(", ")}`
             : "Unassigned"
           : (comm?.name ?? "Unassigned"),
         trackId: isDirectorRole ? submittedTrackId : (comm?.trackId ?? null),
@@ -923,6 +1050,7 @@ export function RosterManagerView({
       setAddPhoneNumber("");
       setAddRole("member");
       setAddCommitteeId("");
+      setAddTrackedCommitteeIds([]);
       setAddManagedTrackId("");
       setAddAutofillSource(null);
     } catch (err: unknown) {
@@ -1035,36 +1163,101 @@ export function RosterManagerView({
           </CardHeader>
           <CardContent className="p-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {activeHrMembers.map((hr) => (
-                <div
-                  key={`hr-assign-${hr.id}`}
-                  className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-[#f8f9fb] p-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-heading text-xs font-bold text-[#002855]">
-                      {hr.fullName}
-                    </p>
-                    <p className="truncate font-mono text-[11px] text-muted-foreground">
-                      {hr.email}
-                    </p>
-                  </div>
-                  <select
-                    aria-label={`Assign tracked committee for HR member ${hr.fullName}`}
-                    value={hr.committeeId ?? ""}
-                    onChange={(e) =>
-                      handleCommitteeChange(hr.id, e.target.value)
-                    }
-                    className="h-9 w-full min-w-0 max-w-full rounded-md border border-border bg-white px-2.5 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+              {activeHrMembers.map((hr) => {
+                const trackedIds = getHrTrackedIds(hr);
+                const unassignedTrackable = trackableCommittees.filter(
+                  (c) => !trackedIds.includes(c.id)
+                );
+                const useMultiHrControl = Boolean(onAssignHrTrackedCommittees);
+                return (
+                  <div
+                    key={`hr-assign-${hr.id}`}
+                    className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-[#f8f9fb] p-3"
                   >
-                    <option value="">Unassigned</option>
-                    {trackableCommittees.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
+                    <div className="min-w-0">
+                      <p className="truncate font-heading text-xs font-bold text-[#002855]">
+                        {hr.fullName}
+                      </p>
+                      <p className="truncate font-mono text-[11px] text-muted-foreground">
+                        {hr.email}
+                      </p>
+                    </div>
+                    {useMultiHrControl && trackedIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {trackedIds.map((cid) => {
+                          const cName =
+                            committeeById.get(cid)?.name ?? "Committee";
+                          return (
+                            <span
+                              key={cid}
+                              className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#e3f5f6] px-2 py-0.5 text-[11px] font-semibold text-[#005559]"
+                            >
+                              <span className="truncate">{cName}</span>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${cName} from ${hr.fullName}`}
+                                onClick={() =>
+                                  handleHrTrackedCommitteesChange(
+                                    hr.id,
+                                    trackedIds.filter((id) => id !== cid)
+                                  )
+                                }
+                                className="shrink-0 rounded-full p-0.5 transition-colors hover:bg-[#007377]/20 focus-visible:outline-2 focus-visible:outline-[#772583]"
+                              >
+                                <X className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {useMultiHrControl ? (
+                      <select
+                        aria-label={`Assign tracked committee for HR member ${hr.fullName}`}
+                        value=""
+                        disabled={unassignedTrackable.length === 0}
+                        onChange={(e) => {
+                          if (!e.target.value) return;
+                          handleHrTrackedCommitteesChange(hr.id, [
+                            ...trackedIds,
+                            e.target.value,
+                          ]);
+                        }}
+                        className="h-9 w-full min-w-0 max-w-full rounded-md border border-border bg-white px-2.5 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583] disabled:opacity-60"
+                      >
+                        <option value="">
+                          {unassignedTrackable.length === 0
+                            ? "Tracking all committees"
+                            : trackedIds.length > 0
+                              ? "+ Add tracked committee..."
+                              : "Select committee to track..."}
+                        </option>
+                        {unassignedTrackable.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <select
+                        aria-label={`Assign tracked committee for HR member ${hr.fullName}`}
+                        value={hr.committeeId ?? ""}
+                        onChange={(e) =>
+                          handleCommitteeChange(hr.id, e.target.value)
+                        }
+                        className="h-9 w-full min-w-0 max-w-full rounded-md border border-border bg-white px-2.5 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
+                      >
+                        <option value="">Unassigned</option>
+                        {trackableCommittees.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             {uncoveredCommittees.length > 0 && (
               <p className="mt-3 text-[11px] text-muted-foreground">
@@ -1627,24 +1820,101 @@ export function RosterManagerView({
                           </span>
                         )
                       ) : canAssignThisCommittee ? (
-                        <select
-                          aria-label={`Assign committee for ${m.fullName}`}
-                          value={m.committeeId ?? ""}
-                          onChange={(e) =>
-                            handleCommitteeChange(m.id, e.target.value)
-                          }
-                          className={SELECT_CLASS}
-                        >
-                          <option value="">Unassigned</option>
-                          {(m.role === "hr_member"
-                            ? trackableCommittees
-                            : availableCommittees
-                          ).map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
+                        m.role === "hr_member" && onAssignHrTrackedCommittees ? (
+                          (() => {
+                            const trackedIds = getHrTrackedIds(m);
+                            const unassignedTrackable =
+                              trackableCommittees.filter(
+                                (c) => !trackedIds.includes(c.id)
+                              );
+                            return (
+                              <div className="flex min-w-0 flex-col gap-1.5">
+                                {trackedIds.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {trackedIds.map((cid) => {
+                                      const cName =
+                                        committeeById.get(cid)?.name ??
+                                        "Committee";
+                                      return (
+                                        <span
+                                          key={cid}
+                                          className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#e3f5f6] px-2 py-0.5 text-[11px] font-semibold text-[#005559]"
+                                        >
+                                          <span className="truncate">
+                                            {cName}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            aria-label={`Remove ${cName} from ${m.fullName}`}
+                                            onClick={() =>
+                                              handleHrTrackedCommitteesChange(
+                                                m.id,
+                                                trackedIds.filter(
+                                                  (id) => id !== cid
+                                                )
+                                              )
+                                            }
+                                            className="shrink-0 rounded-full p-0.5 transition-colors hover:bg-[#007377]/20 focus-visible:outline-2 focus-visible:outline-[#772583]"
+                                          >
+                                            <X
+                                              className="h-3 w-3"
+                                              aria-hidden="true"
+                                            />
+                                          </button>
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                <select
+                                  aria-label={`Assign committee for ${m.fullName}`}
+                                  value=""
+                                  disabled={unassignedTrackable.length === 0}
+                                  onChange={(e) => {
+                                    if (!e.target.value) return;
+                                    handleHrTrackedCommitteesChange(m.id, [
+                                      ...trackedIds,
+                                      e.target.value,
+                                    ]);
+                                  }}
+                                  className={SELECT_CLASS}
+                                >
+                                  <option value="">
+                                    {unassignedTrackable.length === 0
+                                      ? "All committees"
+                                      : trackedIds.length > 0
+                                        ? "+ Add committee..."
+                                        : "Unassigned"}
+                                  </option>
+                                  {unassignedTrackable.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <select
+                            aria-label={`Assign committee for ${m.fullName}`}
+                            value={m.committeeId ?? ""}
+                            onChange={(e) =>
+                              handleCommitteeChange(m.id, e.target.value)
+                            }
+                            className={SELECT_CLASS}
+                          >
+                            <option value="">Unassigned</option>
+                            {(m.role === "hr_member"
+                              ? trackableCommittees
+                              : availableCommittees
+                            ).map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                        )
                       ) : (
                         m.committeeName
                       )}
@@ -1952,15 +2222,54 @@ export function RosterManagerView({
                     ))}
                   </select>
                 </div>
+              ) : addRole === "hr_member" ? (
+                <div className="space-y-2">
+                  <label className="block font-heading text-xs font-bold text-[#002855]">
+                    Tracked Committees (Optional — select one or more)
+                  </label>
+                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border bg-[#f8f9fb] p-2.5">
+                    {trackableCommittees.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No trackable committees available.
+                      </p>
+                    ) : (
+                      trackableCommittees.map((c) => {
+                        const checked = addTrackedCommitteeIds.includes(c.id);
+                        return (
+                          <label
+                            key={c.id}
+                            className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs font-medium text-[#002855] hover:bg-white"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setAddTrackedCommitteeIds((prev) =>
+                                    prev.includes(c.id) ? prev : [...prev, c.id]
+                                  );
+                                } else {
+                                  setAddTrackedCommitteeIds((prev) =>
+                                    prev.filter((id) => id !== c.id)
+                                  );
+                                }
+                              }}
+                              className="h-3.5 w-3.5 rounded border-border accent-[#772583]"
+                            />
+                            <span className="truncate">{c.name}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
               ) : addRole !== "master_admin" && addRole !== "hr_admin" ? (
                 <div>
                   <label
                     htmlFor="add-member-committee"
                     className="block font-heading text-xs font-bold text-[#002855]"
                   >
-                    {addRole === "hr_member"
-                      ? "Tracked Committee"
-                      : "Committee"}
+                    Committee
                   </label>
                   <select
                     id="add-member-committee"
@@ -1969,10 +2278,7 @@ export function RosterManagerView({
                     className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                   >
                     <option value="">Unassigned</option>
-                    {(addRole === "hr_member"
-                      ? trackableCommittees
-                      : availableCommittees
-                    ).map((c) => (
+                    {availableCommittees.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>

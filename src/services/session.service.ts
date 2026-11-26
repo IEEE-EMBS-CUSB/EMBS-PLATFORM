@@ -62,6 +62,7 @@ export function createSessionForMember(member: {
   personId: string;
   fullName: string;
   role: string;
+  trackedCommitteeId?: string | null;
 }): SessionUser {
   const now = new Date();
   const participantType: ParticipantType =
@@ -75,6 +76,8 @@ export function createSessionForMember(member: {
     fullName: member.fullName,
     participantType,
     membershipRole: member.role as MembershipRole,
+    trackedCommitteeId:
+      member.role === "hr_member" ? (member.trackedCommitteeId ?? null) : null,
     keyVersion: CURRENT_SESSION_KEY_VERSION,
     issuedAt: now.toISOString(),
     expiresAt: computeExpirationIso(now),
@@ -90,6 +93,7 @@ export function encodeSessionToken(user: SessionUser): string {
     name: user.fullName,
     role: user.participantType,
     mrole: user.membershipRole,
+    ...(user.trackedCommitteeId ? { tcid: user.trackedCommitteeId } : {}),
     kv: user.keyVersion,
     iat: user.issuedAt,
     exp: user.expiresAt,
@@ -150,6 +154,10 @@ export function decodeSessionToken(
         typeof parsed.mrole === "string"
           ? (parsed.mrole as MembershipRole)
           : undefined,
+      trackedCommitteeId:
+        typeof parsed.tcid === "string" && parsed.tcid.length > 0
+          ? parsed.tcid
+          : null,
       keyVersion: parsed.kv,
       issuedAt: parsed.iat,
       expiresAt: parsed.exp,
@@ -180,6 +188,7 @@ export function switchSessionMembership(
     id: string;
     fullName: string;
     role: MembershipRole;
+    trackedCommitteeId?: string | null;
   },
   now: Date = new Date()
 ): SessionUser {
@@ -193,6 +202,8 @@ export function switchSessionMembership(
     fullName: target.fullName,
     participantType,
     membershipRole: target.role,
+    trackedCommitteeId:
+      target.role === "hr_member" ? (target.trackedCommitteeId ?? null) : null,
     expiresAt: computeExpirationIso(now),
   };
 }

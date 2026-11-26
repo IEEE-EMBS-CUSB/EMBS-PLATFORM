@@ -3,11 +3,18 @@ import type { MembershipRole } from "@/lib/auth-helpers";
 export type ContextPickerViewMode = "manage" | "personal";
 export type ActivePortalKind = "hr" | "member" | "attendee";
 
+export interface ContextPickerTrackedCommittee {
+  id: string;
+  name: string;
+}
+
 export interface ContextPickerOption {
   membershipId: string;
   role: MembershipRole;
   committeeName: string | null;
+  trackedCommitteeId?: string | null;
   trackedCommitteeName?: string | null;
+  trackedCommittees?: readonly ContextPickerTrackedCommittee[];
   managedTrackName?: string | null;
 }
 
@@ -15,6 +22,7 @@ export interface ContextPickerViewItem {
   key: string;
   membershipId: string;
   viewMode: ContextPickerViewMode;
+  trackedCommitteeId?: string | null;
   label: string;
   href: "/hr" | "/member" | "/attendee";
   isActive: boolean;
@@ -68,7 +76,8 @@ function formatRoleHeading(ctx: ContextPickerOption): string {
 function buildViewsForContext(
   ctx: ContextPickerOption,
   isActiveMembership: boolean,
-  activePortal: ActivePortalKind
+  activePortal: ActivePortalKind,
+  activeTrackedCommitteeId?: string | null
 ): ContextPickerViewItem[] {
   switch (ctx.role) {
     case "committee_head":
@@ -90,27 +99,69 @@ function buildViewsForContext(
           isActive: isActiveMembership && activePortal === "hr",
         },
       ];
-    case "hr_member":
+    case "hr_member": {
+      const trackedList: ContextPickerTrackedCommittee[] =
+        ctx.trackedCommittees && ctx.trackedCommittees.length > 0
+          ? [...ctx.trackedCommittees]
+          : ctx.trackedCommitteeName
+            ? [
+                {
+                  id: ctx.trackedCommitteeId ?? "__single__",
+                  name: ctx.trackedCommitteeName,
+                },
+              ]
+            : [];
+
+      const personalView: ContextPickerViewItem = {
+        key: `${ctx.membershipId}:personal`,
+        membershipId: ctx.membershipId,
+        viewMode: "personal",
+        trackedCommitteeId: null,
+        label: "My work",
+        href: "/member",
+        isActive: isActiveMembership && activePortal === "member",
+      };
+
+      if (trackedList.length === 0) {
+        return [
+          personalView,
+          {
+            key: `${ctx.membershipId}:manage`,
+            membershipId: ctx.membershipId,
+            viewMode: "manage",
+            trackedCommitteeId: null,
+            label: "HR duties",
+            href: "/hr",
+            isActive: isActiveMembership && activePortal === "hr",
+          },
+        ];
+      }
+
+      const resolvedActiveTrackedId =
+        activeTrackedCommitteeId &&
+        trackedList.some((c) => c.id === activeTrackedCommitteeId)
+          ? activeTrackedCommitteeId
+          : trackedList[0].id;
+
       return [
-        {
-          key: `${ctx.membershipId}:personal`,
+        personalView,
+        ...trackedList.map((tc) => ({
+          key:
+            tc.id === "__single__"
+              ? `${ctx.membershipId}:manage`
+              : `${ctx.membershipId}:manage:${tc.id}`,
           membershipId: ctx.membershipId,
-          viewMode: "personal",
-          label: "My work",
-          href: "/member",
-          isActive: isActiveMembership && activePortal === "member",
-        },
-        {
-          key: `${ctx.membershipId}:manage`,
-          membershipId: ctx.membershipId,
-          viewMode: "manage",
-          label: ctx.trackedCommitteeName
-            ? `Track ${ctx.trackedCommitteeName}`
-            : "HR duties",
-          href: "/hr",
-          isActive: isActiveMembership && activePortal === "hr",
-        },
+          viewMode: "manage" as const,
+          trackedCommitteeId: tc.id === "__single__" ? null : tc.id,
+          label: `Track ${tc.name}`,
+          href: "/hr" as const,
+          isActive:
+            isActiveMembership &&
+            activePortal === "hr" &&
+            tc.id === resolvedActiveTrackedId,
+        })),
       ];
+    }
     case "member":
       return [
         {
@@ -179,11 +230,17 @@ function buildViewsForContext(
 export function buildContextPickerModel(input: {
   contexts: readonly ContextPickerOption[];
   activeMembershipId?: string | null;
+  activeTrackedCommitteeId?: string | null;
   activePortal: ActivePortalKind;
   fallbackLabel?: string;
 }): ContextPickerModel {
-  const { contexts, activeMembershipId, activePortal, fallbackLabel = "" } =
-    input;
+  const {
+    contexts,
+    activeMembershipId,
+    activeTrackedCommitteeId,
+    activePortal,
+    fallbackLabel = "",
+  } = input;
 
   if (contexts.length === 0) {
     return {
@@ -204,7 +261,12 @@ export function buildContextPickerModel(input: {
       membershipId: ctx.membershipId,
       heading: formatRoleHeading(ctx),
       role: ctx.role,
-      views: buildViewsForContext(ctx, isActiveMembership, activePortal),
+      views: buildViewsForContext(
+        ctx,
+        isActiveMembership,
+        activePortal,
+        isActiveMembership ? activeTrackedCommitteeId : null
+      ),
     };
   });
 

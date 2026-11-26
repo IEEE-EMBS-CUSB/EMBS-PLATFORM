@@ -1,6 +1,6 @@
 import { db, withTransaction } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { resetPersonPassword } from "@/services/auth-password.service";
 import { hashPassword, getDefaultMemberPassword } from "@/lib/password";
 import { normalizeEmail, type MembershipRole } from "@/lib/auth-helpers";
@@ -21,6 +21,7 @@ export interface AddRosterMemberInput {
   role: MembershipRole;
   committeeId?: string | null;
   trackedCommitteeId?: string | null;
+  trackedCommitteeIds?: string[];
   managedTrackId?: string | null;
   seasonId?: string;
 }
@@ -134,35 +135,51 @@ export async function addRosterMemberAsActor(
     }
 
     // For hr_member: home committee is ALWAYS Human Resources (auto-ensured if missing);
-    // the assigned committee becomes trackedCommitteeId (operational HR duty scope).
+    // the assigned committee(s) become tracked committees in hr_member_tracked_committees
+    // (with trackedCommitteeId kept in sync as the primary tracked committee).
     let trackedCommitteeId: string | null = null;
+    let trackedCommitteeIds: string[] = [];
     if (input.role === "hr_member") {
       const hrComm = await ensureHrCommitteeForSeason(seasonId);
-      const requestedTracked =
-        input.trackedCommitteeId !== undefined
-          ? input.trackedCommitteeId || null
-          : committeeId && committeeId !== hrComm.id
-            ? committeeId
-            : null;
-      if (requestedTracked) {
-        const [tracked] = await db
+      const rawRequestedIds: string[] =
+        input.trackedCommitteeIds !== undefined
+          ? input.trackedCommitteeIds
+          : input.trackedCommitteeId !== undefined
+            ? input.trackedCommitteeId
+              ? [input.trackedCommitteeId]
+              : []
+            : committeeId && committeeId !== hrComm.id
+              ? [committeeId]
+              : [];
+
+      const uniqueRequested = Array.from(
+        new Set(
+          rawRequestedIds
+            .map((id) => id?.trim())
+            .filter((id): id is string => Boolean(id) && id !== hrComm.id)
+        )
+      );
+
+      if (uniqueRequested.length > 0) {
+        const validComms = await db
           .select({ id: schema.committees.id })
           .from(schema.committees)
           .where(
             and(
-              eq(schema.committees.id, requestedTracked),
+              inArray(schema.committees.id, uniqueRequested),
               eq(schema.committees.seasonId, seasonId),
               eq(schema.committees.isActive, true)
             )
-          )
-          .limit(1);
-        if (!tracked) {
+          );
+        const validSet = new Set(validComms.map((c) => c.id));
+        if (validSet.size !== uniqueRequested.length) {
           return {
             ok: false,
             error: "Selected tracked committee does not belong to this season.",
           };
         }
-        trackedCommitteeId = tracked.id;
+        trackedCommitteeIds = uniqueRequested;
+        trackedCommitteeId = trackedCommitteeIds[0] ?? null;
       }
       committeeId = hrComm.id;
     }
@@ -262,6 +279,19 @@ export async function addRosterMemberAsActor(
             isActive: true,
           })
           .returning();
+
+        if (input.role === "hr_member" && trackedCommitteeIds.length > 0) {
+          await tx
+            .insert(schema.hrMemberTrackedCommittees)
+            .values(
+              trackedCommitteeIds.map((tcId) => ({
+                seasonId,
+                membershipId: membership.id,
+                committeeId: tcId,
+              }))
+            )
+            .onConflictDoNothing();
+        }
 
         return {
           inserted: membership,
@@ -436,6 +466,17 @@ export async function bulkImportRosterAsActor(
             isActive: true,
           })
           .returning();
+
+        if (rec.role === "hr_member" && membershipTrackedCommitteeId) {
+          await tx
+            .insert(schema.hrMemberTrackedCommittees)
+            .values({
+              seasonId,
+              membershipId: inserted.id,
+              committeeId: membershipTrackedCommitteeId,
+            })
+            .onConflictDoNothing();
+        }
 
         return {
           id: inserted.id,
@@ -613,28 +654,47 @@ export async function assignMemberRoleAsActor(
         (target.committeeId && target.committeeId !== hrComm.id
           ? target.committeeId
           : null);
-      await db
-        .update(schema.rosterMemberships)
-        .set({
-          role: newRole,
-          committeeId: hrComm.id,
-          trackedCommitteeId: preservedTracked,
-          managedTrackId: null,
-        })
-        .where(eq(schema.rosterMemberships.id, memberId));
+      await withTransaction(async (tx) => {
+        await tx
+          .update(schema.rosterMemberships)
+          .set({
+            role: newRole,
+            committeeId: hrComm.id,
+            trackedCommitteeId: preservedTracked,
+            managedTrackId: null,
+          })
+          .where(eq(schema.rosterMemberships.id, memberId));
+
+        if (preservedTracked) {
+          await tx
+            .insert(schema.hrMemberTrackedCommittees)
+            .values({
+              seasonId: target.seasonId,
+              membershipId: memberId,
+              committeeId: preservedTracked,
+            })
+            .onConflictDoNothing();
+        }
+      });
       return { ok: true };
     }
 
-    await db
-      .update(schema.rosterMemberships)
-      .set({
-        role: newRole,
-        trackedCommitteeId: null,
-        ...(newRole === "director"
-          ? { committeeId: null }
-          : { managedTrackId: null }),
-      })
-      .where(eq(schema.rosterMemberships.id, memberId));
+    await withTransaction(async (tx) => {
+      await tx
+        .update(schema.rosterMemberships)
+        .set({
+          role: newRole,
+          trackedCommitteeId: null,
+          ...(newRole === "director"
+            ? { committeeId: null }
+            : { managedTrackId: null }),
+        })
+        .where(eq(schema.rosterMemberships.id, memberId));
+
+      await tx
+        .delete(schema.hrMemberTrackedCommittees)
+        .where(eq(schema.hrMemberTrackedCommittees.membershipId, memberId));
+    });
     return { ok: true };
   } catch (err: unknown) {
     return {
@@ -699,16 +759,34 @@ export async function assignMemberCommitteeAsActor(
 
     if (target.role === "hr_member") {
       const hrComm = await ensureHrCommitteeForSeason(target.seasonId);
-      await db
-        .update(schema.rosterMemberships)
-        .set({
-          committeeId: hrComm.id,
-          trackedCommitteeId:
-            resolvedCommitteeId && resolvedCommitteeId !== hrComm.id
-              ? resolvedCommitteeId
-              : null,
-        })
-        .where(eq(schema.rosterMemberships.id, memberId));
+      const nextTracked =
+        resolvedCommitteeId && resolvedCommitteeId !== hrComm.id
+          ? resolvedCommitteeId
+          : null;
+      await withTransaction(async (tx) => {
+        await tx
+          .update(schema.rosterMemberships)
+          .set({
+            committeeId: hrComm.id,
+            trackedCommitteeId: nextTracked,
+          })
+          .where(eq(schema.rosterMemberships.id, memberId));
+
+        await tx
+          .delete(schema.hrMemberTrackedCommittees)
+          .where(eq(schema.hrMemberTrackedCommittees.membershipId, memberId));
+
+        if (nextTracked) {
+          await tx
+            .insert(schema.hrMemberTrackedCommittees)
+            .values({
+              seasonId: target.seasonId,
+              membershipId: memberId,
+              committeeId: nextTracked,
+            })
+            .onConflictDoNothing();
+        }
+      });
     } else {
       await db
         .update(schema.rosterMemberships)
@@ -721,6 +799,102 @@ export async function assignMemberCommitteeAsActor(
     return {
       ok: false,
       error: sanitizeDbError(err, "Failed to update member committee."),
+    };
+  }
+}
+
+export async function assignHrTrackedCommitteesAsActor(
+  memberId: string,
+  committeeIds: string[],
+  actor: RosterActor
+) {
+  if (
+    !canAssignRoles(actor.profile.role) &&
+    !canAssignHrCommittees(actor.profile.role)
+  ) {
+    return {
+      ok: false,
+      error: "Unauthorized: cannot assign HR tracked committees.",
+    };
+  }
+  try {
+    const [target] = await db
+      .select()
+      .from(schema.rosterMemberships)
+      .where(eq(schema.rosterMemberships.id, memberId))
+      .limit(1);
+    if (!target) return { ok: false, error: "Member not found." };
+
+    if (target.role !== "hr_member") {
+      return {
+        ok: false,
+        error: "Multiple tracked committees can only be assigned to HR Members.",
+      };
+    }
+
+    const seasonRes = await resolveMutableSeason(target.seasonId);
+    if (!seasonRes.ok) return { ok: false, error: seasonRes.error };
+
+    const hrComm = await ensureHrCommitteeForSeason(target.seasonId);
+    const uniqueRequested = Array.from(
+      new Set(
+        (committeeIds ?? [])
+          .map((id) => id?.trim())
+          .filter((id): id is string => Boolean(id) && id !== hrComm.id)
+      )
+    );
+
+    if (uniqueRequested.length > 0) {
+      const validComms = await db
+        .select({ id: schema.committees.id })
+        .from(schema.committees)
+        .where(
+          and(
+            inArray(schema.committees.id, uniqueRequested),
+            eq(schema.committees.seasonId, target.seasonId),
+            eq(schema.committees.isActive, true)
+          )
+        );
+      if (validComms.length !== uniqueRequested.length) {
+        return {
+          ok: false,
+          error: "One or more selected committees were not found in this season.",
+        };
+      }
+    }
+
+    await withTransaction(async (tx) => {
+      await tx
+        .update(schema.rosterMemberships)
+        .set({
+          committeeId: hrComm.id,
+          trackedCommitteeId: uniqueRequested[0] ?? null,
+        })
+        .where(eq(schema.rosterMemberships.id, memberId));
+
+      await tx
+        .delete(schema.hrMemberTrackedCommittees)
+        .where(eq(schema.hrMemberTrackedCommittees.membershipId, memberId));
+
+      if (uniqueRequested.length > 0) {
+        await tx
+          .insert(schema.hrMemberTrackedCommittees)
+          .values(
+            uniqueRequested.map((tcId) => ({
+              seasonId: target.seasonId,
+              membershipId: memberId,
+              committeeId: tcId,
+            }))
+          )
+          .onConflictDoNothing();
+      }
+    });
+
+    return { ok: true, trackedCommitteeIds: uniqueRequested };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      error: sanitizeDbError(err, "Failed to update HR tracked committees."),
     };
   }
 }

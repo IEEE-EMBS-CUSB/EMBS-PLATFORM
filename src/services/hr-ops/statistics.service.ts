@@ -216,8 +216,9 @@ export async function getAdminStatisticsDatasetForActor(input: {
     });
   }
 
-  // Load committees, memberships (with person metadata), and actor's own hats for privacy exclusion
-  const [dbCommittees, dbAllSeasonMembers, dbSnapshots] = await Promise.all([
+  // Load committees, memberships (with person metadata), HR tracked committees, and snapshots
+  const [dbCommittees, dbAllSeasonMembers, dbHrTrackedRows, dbSnapshots] =
+    await Promise.all([
     db
       .select({
         id: schema.committees.id,
@@ -259,12 +260,38 @@ export async function getAdminStatisticsDatasetForActor(input: {
       .where(eq(schema.rosterMemberships.seasonId, seasonId)),
     db
       .select({
+        membershipId: schema.hrMemberTrackedCommittees.membershipId,
+        committeeId: schema.hrMemberTrackedCommittees.committeeId,
+      })
+      .from(schema.hrMemberTrackedCommittees)
+      .where(eq(schema.hrMemberTrackedCommittees.seasonId, seasonId)),
+    db
+      .select({
         month: schema.monthlySnapshots.month,
         status: schema.monthlySnapshots.status,
       })
       .from(schema.monthlySnapshots)
       .where(eq(schema.monthlySnapshots.seasonId, seasonId)),
   ]);
+
+  const trackedIdsByMembership = new Map<string, string[]>();
+  for (const row of dbHrTrackedRows) {
+    const list = trackedIdsByMembership.get(row.membershipId) ?? [];
+    if (!list.includes(row.committeeId)) {
+      list.push(row.committeeId);
+    }
+    trackedIdsByMembership.set(row.membershipId, list);
+  }
+  const getMemberTrackedIds = (m: {
+    id: string;
+    role: string;
+    trackedCommitteeId: string | null;
+  }): string[] => {
+    if (m.role !== "hr_member") return [];
+    const fromJoin = trackedIdsByMembership.get(m.id);
+    if (fromJoin && fromJoin.length > 0) return fromJoin;
+    return m.trackedCommitteeId ? [m.trackedCommitteeId] : [];
+  };
 
   const allowedCommitteeSet =
     allowedCommitteeIds !== null ? new Set(allowedCommitteeIds) : null;
@@ -289,10 +316,9 @@ export async function getAdminStatisticsDatasetForActor(input: {
               (m) =>
                 m.role === "hr_member" &&
                 m.membershipActive &&
-                m.personActive &&
-                m.trackedCommitteeId !== null
+                m.personActive
             )
-            .map((m) => m.trackedCommitteeId!)
+            .flatMap((m) => getMemberTrackedIds(m))
         )
       )
     : [];
@@ -304,8 +330,11 @@ export async function getAdminStatisticsDatasetForActor(input: {
       return m.committeeId !== null && allowedCommitteeSet.has(m.committeeId);
     }
     // Track Director sees members of committees in their track + HR members tracking those committees
-    if (m.role === "hr_member" && m.trackedCommitteeId) {
-      return allowedCommitteeSet.has(m.trackedCommitteeId);
+    if (m.role === "hr_member") {
+      const tracked = getMemberTrackedIds(m);
+      if (tracked.some((cid) => allowedCommitteeSet.has(cid))) {
+        return true;
+      }
     }
     return m.committeeId !== null && allowedCommitteeSet.has(m.committeeId);
   });
@@ -510,19 +539,23 @@ export async function getAdminStatisticsDatasetForActor(input: {
       slug: c.slug,
       trackId: c.trackId ?? null,
     })),
-    members: scopedMembers.map((m) => ({
-      id: m.id,
-      personId: m.personId,
-      fullName: m.fullName,
-      email: m.email,
-      phoneNumber: m.phoneNumber ?? null,
-      role: m.role,
-      committeeId: m.committeeId,
-      trackedCommitteeId: m.trackedCommitteeId,
-      managedTrackId: m.managedTrackId,
-      isActive: m.membershipActive && m.personActive,
-      mustChangePassword: isChapterHrOrMaster ? m.mustChangePassword : null,
-    })),
+    members: scopedMembers.map((m) => {
+      const trackedIds = getMemberTrackedIds(m);
+      return {
+        id: m.id,
+        personId: m.personId,
+        fullName: m.fullName,
+        email: m.email,
+        phoneNumber: m.phoneNumber ?? null,
+        role: m.role,
+        committeeId: m.committeeId,
+        trackedCommitteeId: trackedIds[0] ?? m.trackedCommitteeId,
+        trackedCommitteeIds: trackedIds,
+        managedTrackId: m.managedTrackId,
+        isActive: m.membershipActive && m.personActive,
+        mustChangePassword: isChapterHrOrMaster ? m.mustChangePassword : null,
+      };
+    }),
     sessions: dbSessions.map((s) => ({
       id: s.id,
       committeeId: s.committeeId,

@@ -45,7 +45,10 @@ export async function requireOperationalSession(): Promise<{
     redirect("/attendee");
   }
 
-  const profile = await getOperationalUserProfile(session.participantId);
+  const profile = await getOperationalUserProfile(
+    session.participantId,
+    session.trackedCommitteeId
+  );
   if (!profile) {
     redirect("/login?session=invalid");
   }

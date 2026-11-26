@@ -55,6 +55,7 @@ interface BulkTaskGradingViewProps {
   gradingWeights?: SeasonGradingSettings;
   collapsible?: boolean;
   defaultExpanded?: boolean;
+  readOnly?: boolean;
   onGrade?: (input: {
     submissionId: string;
     effortScore: number;
@@ -96,6 +97,7 @@ export function BulkTaskGradingView({
   gradingWeights = DEFAULT_SEASON_SETTINGS.grading,
   collapsible = false,
   defaultExpanded = true,
+  readOnly = false,
   onGrade,
   onToggleTask,
 }: BulkTaskGradingViewProps) {
@@ -129,9 +131,11 @@ export function BulkTaskGradingView({
       ).length;
   const pendingVerifyCount =
     isCheckableTask && isHrOnlyTask ? submissions.length - completedCount : 0;
-  const attentionCount = isCheckableTask
-    ? pendingVerifyCount
-    : pendingGradingCount;
+  const attentionCount = readOnly
+    ? 0
+    : isCheckableTask
+      ? pendingVerifyCount
+      : pendingGradingCount;
 
   const handleScoreChange = (
     idx: number,
@@ -352,6 +356,11 @@ export function BulkTaskGradingView({
                     {isHrOnlyTask ? "HR-Only" : "Self-Report"}
                   </span>
                 )}
+                {readOnly && (
+                  <span className="inline-flex shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                    Read-only
+                  </span>
+                )}
                 <span className="truncate font-heading text-sm font-bold text-[#002855]">
                   {task.title}
                 </span>
@@ -488,16 +497,22 @@ export function BulkTaskGradingView({
                         {sub.memberName}
                       </TableCell>
                       <TableCell>
-                        <input
-                          type="checkbox"
-                          checked={isDone}
-                          disabled={!sub.submissionId || togglingId === sub.submissionId}
-                          onChange={(e) =>
-                            handleToggleChecklist(idx, e.target.checked)
-                          }
-                          aria-label={`Mark ${task.title} completed for ${sub.memberName}`}
-                          className="h-4 w-4 cursor-pointer rounded border-border accent-[#772583]"
-                        />
+                        {readOnly ? (
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {isDone ? "Yes" : "No"}
+                          </span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={isDone}
+                            disabled={!sub.submissionId || togglingId === sub.submissionId}
+                            onChange={(e) =>
+                              handleToggleChecklist(idx, e.target.checked)
+                            }
+                            aria-label={`Mark ${task.title} completed for ${sub.memberName}`}
+                            className="h-4 w-4 cursor-pointer rounded border-border accent-[#772583]"
+                          />
+                        )}
                       </TableCell>
                       <TableCell>
                         <span
@@ -542,38 +557,43 @@ export function BulkTaskGradingView({
             {task.title} · {task.committeeName} (Max {task.maxPoints} pts ·
             Effort ×{gradingWeights.effortWeight}, Quality ×
             {gradingWeights.qualityWeight}, Timeliness ×
-            {gradingWeights.timelinessWeight}). Tab across rows to grade.
+            {gradingWeights.timelinessWeight}).{" "}
+            {readOnly
+              ? "Read-only view of member submissions and grades."
+              : "Tab across rows to grade."}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {hasUnsavedChanges && !isSaving && (
-            <span className="text-xs font-medium text-muted-foreground">
-              Unsaved changes
-            </span>
-          )}
-          {onGrade && (
-            <Button
-              type="button"
-              onClick={handleSaveAll}
-              disabled={isSaving}
-              className="h-9 bg-[#772583] px-4 text-xs font-semibold text-white hover:bg-[#5a1b63]"
-            >
-              {isSaving ? "Saving..." : "Save Grades"}
-            </Button>
-          )}
-          {saveError && (
-            <span role="alert" className="text-xs font-semibold text-[#ba0c2f]">
-              {saveError}
-            </span>
-          )}
-          {savedNotification && (
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#ebf3f8] px-3 py-1.5 text-xs font-semibold text-[#00629b]">
-              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-              Saved
-            </span>
-          )}
-        </div>
+        {!readOnly && (
+          <div className="flex flex-wrap items-center gap-2">
+            {hasUnsavedChanges && !isSaving && (
+              <span className="text-xs font-medium text-muted-foreground">
+                Unsaved changes
+              </span>
+            )}
+            {onGrade && (
+              <Button
+                type="button"
+                onClick={handleSaveAll}
+                disabled={isSaving}
+                className="h-9 bg-[#772583] px-4 text-xs font-semibold text-white hover:bg-[#5a1b63]"
+              >
+                {isSaving ? "Saving..." : "Save Grades"}
+              </Button>
+            )}
+            {saveError && (
+              <span role="alert" className="text-xs font-semibold text-[#ba0c2f]">
+                {saveError}
+              </span>
+            )}
+            {savedNotification && (
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#ebf3f8] px-3 py-1.5 text-xs font-semibold text-[#00629b]">
+                <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                Saved
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <Card className="border-border bg-white shadow-xs">
@@ -639,60 +659,84 @@ export function BulkTaskGradingView({
                       )}
                     </TableCell>
                     <TableCell>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={5}
-                        aria-label={`Effort score for ${sub.memberName}`}
-                        value={sub.effortScore ?? ""}
-                        onChange={(e) =>
-                          handleScoreChange(idx, "effortScore", e.target.value)
-                        }
-                        className="h-9 w-20 text-center font-heading font-bold tabular-nums"
-                      />
+                      {readOnly ? (
+                        <span className="inline-block w-16 text-center font-heading text-sm font-bold tabular-nums text-[#002855]">
+                          {sub.effortScore ?? "—"}
+                        </span>
+                      ) : (
+                        <Input
+                          type="number"
+                          min={1}
+                          max={5}
+                          aria-label={`Effort score for ${sub.memberName}`}
+                          value={sub.effortScore ?? ""}
+                          onChange={(e) =>
+                            handleScoreChange(idx, "effortScore", e.target.value)
+                          }
+                          className="h-9 w-20 text-center font-heading font-bold tabular-nums"
+                        />
+                      )}
                     </TableCell>
                     <TableCell>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={5}
-                        aria-label={`Quality score for ${sub.memberName}`}
-                        value={sub.qualityScore ?? ""}
-                        onChange={(e) =>
-                          handleScoreChange(idx, "qualityScore", e.target.value)
-                        }
-                        className="h-9 w-20 text-center font-heading font-bold tabular-nums"
-                      />
+                      {readOnly ? (
+                        <span className="inline-block w-16 text-center font-heading text-sm font-bold tabular-nums text-[#002855]">
+                          {sub.qualityScore ?? "—"}
+                        </span>
+                      ) : (
+                        <Input
+                          type="number"
+                          min={1}
+                          max={5}
+                          aria-label={`Quality score for ${sub.memberName}`}
+                          value={sub.qualityScore ?? ""}
+                          onChange={(e) =>
+                            handleScoreChange(idx, "qualityScore", e.target.value)
+                          }
+                          className="h-9 w-20 text-center font-heading font-bold tabular-nums"
+                        />
+                      )}
                     </TableCell>
                     <TableCell>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={5}
-                        aria-label={`Timeliness score for ${sub.memberName}`}
-                        value={sub.timelinessScore ?? ""}
-                        onChange={(e) =>
-                          handleScoreChange(
-                            idx,
-                            "timelinessScore",
-                            e.target.value
-                          )
-                        }
-                        className="h-9 w-20 text-center font-heading font-bold tabular-nums"
-                      />
+                      {readOnly ? (
+                        <span className="inline-block w-16 text-center font-heading text-sm font-bold tabular-nums text-[#002855]">
+                          {sub.timelinessScore ?? "—"}
+                        </span>
+                      ) : (
+                        <Input
+                          type="number"
+                          min={1}
+                          max={5}
+                          aria-label={`Timeliness score for ${sub.memberName}`}
+                          value={sub.timelinessScore ?? ""}
+                          onChange={(e) =>
+                            handleScoreChange(
+                              idx,
+                              "timelinessScore",
+                              e.target.value
+                            )
+                          }
+                          className="h-9 w-20 text-center font-heading font-bold tabular-nums"
+                        />
+                      )}
                     </TableCell>
                     <TableCell className="font-heading text-sm font-bold text-[#002855] tabular-nums">
                       {sub.totalPoints ?? "—"} pts
                     </TableCell>
                     <TableCell>
-                      <Input
-                        type="text"
-                        aria-label={`Feedback notes for ${sub.memberName}`}
-                        placeholder="Optional note..."
-                        value={sub.notes}
-                        onChange={(e) => handleNotesChange(idx, e.target.value)}
-                        className="h-9 text-xs"
-                      />
+                      {readOnly ? (
+                        <span className="text-xs text-muted-foreground">
+                          {sub.notes?.trim() ? sub.notes : "—"}
+                        </span>
+                      ) : (
+                        <Input
+                          type="text"
+                          aria-label={`Feedback notes for ${sub.memberName}`}
+                          placeholder="Optional note..."
+                          value={sub.notes}
+                          onChange={(e) => handleNotesChange(idx, e.target.value)}
+                          className="h-9 text-xs"
+                        />
+                      )}
                     </TableCell>
                   </TableRow>
                 );

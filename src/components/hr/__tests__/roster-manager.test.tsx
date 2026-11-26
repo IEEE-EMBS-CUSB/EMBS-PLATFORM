@@ -505,4 +505,60 @@ describe("RosterManagerView Component", () => {
     expect(modalPanel.className).toContain("max-h-[90vh]");
     expect(modalPanel.className).toContain("overflow-y-auto");
   });
+
+  it("lets HR Admin assign and remove multiple tracked committees on a single hr_member and updates coverage", async () => {
+    const user = userEvent.setup();
+    const handleAssignTracked = vi.fn().mockResolvedValue({ ok: true });
+
+    render(
+      <RosterManagerView
+        currentUserRole="hr_admin"
+        availableCommittees={[
+          { id: "comm-hr", name: "Human Resources", slug: "human-resources" },
+          { id: "comm-ai", name: "AI & ML", slug: "ai-ml" },
+          { id: "comm-robotics", name: "Robotics", slug: "robotics" },
+        ]}
+        members={[
+          {
+            id: "m-hr-1",
+            personId: "p-hr-1",
+            fullName: "Nourhan HR",
+            email: "nourhan@cu.edu.eg",
+            committeeId: "comm-ai",
+            trackedCommitteeIds: ["comm-ai"],
+            committeeName: "Tracks AI & ML",
+            role: "hr_member",
+            isActive: true,
+          },
+        ]}
+        onAssignHrTrackedCommittees={handleAssignTracked}
+      />
+    );
+
+    // Initially Robotics is uncovered
+    expect(screen.getByText(/1 committee needs? an hr member/i)).toBeInTheDocument();
+
+    // Add Robotics as a second tracked committee via the HR Assignments card select
+    const hrCardSelect = screen.getByLabelText(
+      /assign tracked committee for hr member nourhan hr/i
+    );
+    await user.selectOptions(hrCardSelect, "comm-robotics");
+
+    expect(handleAssignTracked).toHaveBeenCalledWith("m-hr-1", [
+      "comm-ai",
+      "comm-robotics",
+    ]);
+    expect(screen.getByText(/all committees covered/i)).toBeInTheDocument();
+
+    // Remove AI & ML pill while keeping Robotics
+    const removeButtons = screen.getAllByRole("button", {
+      name: /remove ai & ml from nourhan hr/i,
+    });
+    await user.click(removeButtons[0]);
+
+    expect(handleAssignTracked).toHaveBeenLastCalledWith("m-hr-1", [
+      "comm-robotics",
+    ]);
+    expect(screen.getByText(/1 committee needs? an hr member/i)).toBeInTheDocument();
+  });
 });

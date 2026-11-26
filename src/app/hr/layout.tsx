@@ -40,6 +40,7 @@ export default async function HrLayout({ children }: { children: ReactNode }) {
       activeSeasonName={activeSeasonName}
       contexts={toContextPickerOptions(eligibleContexts)}
       activeMembershipId={session.participantId}
+      activeTrackedCommitteeId={profile.trackedCommitteeId ?? null}
       navBadges={navBadges}
     >
       {children}

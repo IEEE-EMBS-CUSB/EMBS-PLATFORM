@@ -121,6 +121,7 @@ interface PortalShellProps {
   currentUserRole?: MembershipRole;
   contexts?: readonly ContextPickerOption[];
   activeMembershipId?: string | null;
+  activeTrackedCommitteeId?: string | null;
   navBadges?: NavBadgeMap;
   children: ReactNode;
 }
@@ -132,6 +133,7 @@ export function PortalShell({
   currentUserRole,
   contexts = [],
   activeMembershipId,
+  activeTrackedCommitteeId,
   navBadges,
   children,
 }: PortalShellProps) {
@@ -158,6 +160,7 @@ export function PortalShell({
   const pickerModel = buildContextPickerModel({
     contexts,
     activeMembershipId,
+    activeTrackedCommitteeId,
     activePortal: portalType,
     fallbackLabel: subtitle,
   });
@@ -230,6 +233,7 @@ export function PortalShell({
             <ContextSwitcher
               contexts={contexts}
               activeMembershipId={activeMembershipId}
+              activeTrackedCommitteeId={activeTrackedCommitteeId}
               activePortal={portalType}
               variant="header"
               fallbackLabel={portalLabel}

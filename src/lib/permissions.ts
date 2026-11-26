@@ -723,3 +723,92 @@ export function canGradeWorkSubmission(input: {
 
   return true;
 }
+
+/**
+ * Pre-filters tasks/assignments visible in `/hr/tasks`, including read-only
+ * visibility for `hr_member` to inspect member assignments in their tracked committee
+ * without granting assignment creation or grading authority.
+ */
+export function canTaskHaveVisibleSubmissions(input: {
+  actor: UserPermissionContext;
+  workType: WorkItemType;
+  taskCommitteeId: string | null;
+  directorTrackCommitteeIds?: ReadonlySet<string> | null;
+  hrCommitteeId?: string | null;
+}): boolean {
+  if (canTaskHaveGradeableSubmissions(input)) {
+    return true;
+  }
+
+  if (input.actor.role === "hr_member" && input.workType === "assignment") {
+    const scopeId = getOperationalCommitteeScope(input.actor);
+    if (!scopeId) return false;
+    return input.taskCommitteeId === null || input.taskCommitteeId === scopeId;
+  }
+
+  return false;
+}
+
+/**
+ * Determines whether an operational actor can view a work submission in `/hr/tasks`.
+ * - Anyone who can grade/verify the submission can view it.
+ * - `hr_member` can also view (read-only) `assignment` submissions belonging to
+ *   regular `member`s in their active tracked committee (never their own hats,
+ *   never committee heads' assignments, and never other committees).
+ */
+export function canViewWorkSubmission(input: {
+  actor: UserPermissionContext;
+  workType: WorkItemType;
+  taskCommitteeId: string | null;
+  submissionMembershipId: string;
+  submissionPersonId?: string | null;
+  memberRole: MembershipRole;
+  memberCommitteeId: string | null;
+  directorTrackCommitteeIds?: ReadonlySet<string> | null;
+  hrCommitteeId?: string | null;
+}): boolean {
+  if (canGradeWorkSubmission(input)) {
+    return true;
+  }
+
+  const {
+    actor,
+    workType,
+    taskCommitteeId,
+    submissionMembershipId,
+    submissionPersonId,
+    memberRole,
+    memberCommitteeId,
+    hrCommitteeId,
+  } = input;
+
+  if (actor.role !== "hr_member" || workType !== "assignment") {
+    return false;
+  }
+
+  if (submissionMembershipId === actor.id) {
+    return false;
+  }
+
+  if (actor.personId && submissionPersonId && actor.personId === submissionPersonId) {
+    return false;
+  }
+
+  if (memberRole !== "member") {
+    return false;
+  }
+
+  const scopeCommitteeId = resolveWorkScopeCommitteeId({
+    taskCommitteeId,
+    memberCommitteeId,
+    memberRole,
+    hrCommitteeId,
+  });
+  const trackedScopeId = getOperationalCommitteeScope(actor);
+
+  return (
+    trackedScopeId !== null &&
+    scopeCommitteeId !== null &&
+    scopeCommitteeId === trackedScopeId
+  );
+}

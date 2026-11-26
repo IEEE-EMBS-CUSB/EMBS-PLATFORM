@@ -1,10 +1,15 @@
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import type { MembershipRole, SeasonStatus } from "@/lib/auth-helpers";
 import type { ContextPickerOption } from "@/lib/context-picker";
 
 export type ContextViewMode = "manage" | "personal";
+
+export interface TrackedCommitteeRef {
+  id: string;
+  name: string;
+}
 
 export interface RawContextCandidate {
   membershipId: string;
@@ -19,6 +24,7 @@ export interface RawContextCandidate {
   committeeSlug: string | null;
   trackedCommitteeId?: string | null;
   trackedCommitteeName?: string | null;
+  trackedCommittees?: TrackedCommitteeRef[];
   managedTrackId: string | null;
   managedTrackName: string | null;
   isActive: boolean;
@@ -37,6 +43,7 @@ export interface EligibleContextOption {
   committeeSlug: string | null;
   trackedCommitteeId?: string | null;
   trackedCommitteeName?: string | null;
+  trackedCommittees?: TrackedCommitteeRef[];
   managedTrackId: string | null;
   managedTrackName: string | null;
   isActive: boolean;
@@ -74,7 +81,29 @@ function compareContextPriority(
   return a.createdAt.getTime() - b.createdAt.getTime();
 }
 
+export function resolveTrackedCommitteesForContext(
+  c: Pick<
+    EligibleContextOption,
+    "trackedCommitteeId" | "trackedCommitteeName" | "trackedCommittees"
+  >
+): TrackedCommitteeRef[] {
+  if (c.trackedCommittees && c.trackedCommittees.length > 0) {
+    return c.trackedCommittees;
+  }
+  if (c.trackedCommitteeId) {
+    return [
+      {
+        id: c.trackedCommitteeId,
+        name: c.trackedCommitteeName ?? "Committee",
+      },
+    ];
+  }
+  return [];
+}
+
 function toEligibleOption(c: RawContextCandidate): EligibleContextOption {
+  const trackedCommittees = resolveTrackedCommitteesForContext(c);
+  const primaryTracked = trackedCommittees[0] ?? null;
   return {
     membershipId: c.membershipId,
     personId: c.personId,
@@ -85,8 +114,10 @@ function toEligibleOption(c: RawContextCandidate): EligibleContextOption {
     committeeId: c.committeeId,
     committeeName: c.committeeName,
     committeeSlug: c.committeeSlug,
-    trackedCommitteeId: c.trackedCommitteeId ?? null,
-    trackedCommitteeName: c.trackedCommitteeName ?? null,
+    trackedCommitteeId: primaryTracked?.id ?? c.trackedCommitteeId ?? null,
+    trackedCommitteeName:
+      primaryTracked?.name ?? c.trackedCommitteeName ?? null,
+    trackedCommittees,
     managedTrackId: c.managedTrackId,
     managedTrackName: c.managedTrackName,
     isActive: c.isActive,
@@ -158,7 +189,8 @@ export function selectInitialLoginContext(
  */
 export function resolveContextSwitch(
   eligibleContexts: readonly EligibleContextOption[],
-  targetMembershipId: string
+  targetMembershipId: string,
+  targetTrackedCommitteeId?: string | null
 ): ContextSwitchResult {
   const trimmed = targetMembershipId?.trim() ?? "";
   if (!trimmed) {
@@ -176,6 +208,42 @@ export function resolveContextSwitch(
       code: "FORBIDDEN",
       error:
         "Unauthorized: you do not hold an active membership for the requested context.",
+    };
+  }
+
+  const trimmedTracked = targetTrackedCommitteeId?.trim() || null;
+  if (found.role === "hr_member") {
+    const assigned = resolveTrackedCommitteesForContext(found);
+    if (trimmedTracked) {
+      const matched = assigned.find((c) => c.id === trimmedTracked);
+      if (!matched) {
+        return {
+          ok: false,
+          code: "FORBIDDEN",
+          error:
+            "Unauthorized: you are not assigned to track the requested committee.",
+        };
+      }
+      return {
+        ok: true,
+        context: {
+          ...found,
+          trackedCommitteeId: matched.id,
+          trackedCommitteeName: matched.name,
+          trackedCommittees: assigned,
+        },
+      };
+    }
+
+    const first = assigned[0] ?? null;
+    return {
+      ok: true,
+      context: {
+        ...found,
+        trackedCommitteeId: first?.id ?? null,
+        trackedCommitteeName: first?.name ?? null,
+        trackedCommittees: assigned,
+      },
     };
   }
 
@@ -258,45 +326,98 @@ export async function listEligibleContextsForPerson(
       )
       .where(eq(schema.rosterMemberships.personId, personId));
 
-    const trackedIds = Array.from(
+    const hrMembershipIds = rows
+      .filter((r) => r.role === "hr_member")
+      .map((r) => r.membershipId);
+
+    const trackedByMembership = new Map<string, TrackedCommitteeRef[]>();
+    if (hrMembershipIds.length > 0) {
+      const joinRows = await db
+        .select({
+          membershipId: schema.hrMemberTrackedCommittees.membershipId,
+          committeeId: schema.committees.id,
+          committeeName: schema.committees.name,
+        })
+        .from(schema.hrMemberTrackedCommittees)
+        .innerJoin(
+          schema.committees,
+          eq(schema.hrMemberTrackedCommittees.committeeId, schema.committees.id)
+        )
+        .where(
+          inArray(schema.hrMemberTrackedCommittees.membershipId, hrMembershipIds)
+        )
+        .orderBy(asc(schema.committees.name));
+
+      for (const jr of joinRows) {
+        const list = trackedByMembership.get(jr.membershipId) ?? [];
+        if (!list.some((item) => item.id === jr.committeeId)) {
+          list.push({ id: jr.committeeId, name: jr.committeeName });
+        }
+        trackedByMembership.set(jr.membershipId, list);
+      }
+    }
+
+    const legacyTrackedIds = Array.from(
       new Set(
         rows
+          .filter(
+            (r) =>
+              r.trackedCommitteeId &&
+              (trackedByMembership.get(r.membershipId)?.length ?? 0) === 0
+          )
           .map((r) => r.trackedCommitteeId)
           .filter((id): id is string => Boolean(id))
       )
     );
-    const trackedNameById = new Map<string, string>();
-    if (trackedIds.length > 0) {
+    const legacyTrackedNameById = new Map<string, string>();
+    if (legacyTrackedIds.length > 0) {
       const trackedRows = await db
         .select({ id: schema.committees.id, name: schema.committees.name })
         .from(schema.committees)
-        .where(inArray(schema.committees.id, trackedIds));
+        .where(inArray(schema.committees.id, legacyTrackedIds));
       for (const tc of trackedRows) {
-        trackedNameById.set(tc.id, tc.name);
+        legacyTrackedNameById.set(tc.id, tc.name);
       }
     }
 
     return filterEligibleSeasonContexts(
-      rows.map((r) => ({
-        membershipId: r.membershipId,
-        personId: r.personId,
-        seasonId: r.seasonId,
-        seasonName: r.seasonName,
-        seasonStatus: r.seasonStatus as SeasonStatus,
-        seasonStartDate: r.seasonStartDate,
-        role: r.role as MembershipRole,
-        committeeId: r.committeeId,
-        committeeName: r.committeeName ?? null,
-        committeeSlug: r.committeeSlug ?? null,
-        trackedCommitteeId: r.trackedCommitteeId ?? null,
-        trackedCommitteeName: r.trackedCommitteeId
-          ? trackedNameById.get(r.trackedCommitteeId) ?? null
-          : null,
-        managedTrackId: r.managedTrackId ?? null,
-        managedTrackName: r.managedTrackName ?? null,
-        isActive: r.isActive,
-        createdAt: r.createdAt,
-      }))
+      rows.map((r) => {
+        const joinTracked = trackedByMembership.get(r.membershipId) ?? [];
+        const resolvedTracked: TrackedCommitteeRef[] =
+          joinTracked.length > 0
+            ? joinTracked
+            : r.trackedCommitteeId
+              ? [
+                  {
+                    id: r.trackedCommitteeId,
+                    name:
+                      legacyTrackedNameById.get(r.trackedCommitteeId) ??
+                      "Committee",
+                  },
+                ]
+              : [];
+        const primaryTracked = resolvedTracked[0] ?? null;
+
+        return {
+          membershipId: r.membershipId,
+          personId: r.personId,
+          seasonId: r.seasonId,
+          seasonName: r.seasonName,
+          seasonStatus: r.seasonStatus as SeasonStatus,
+          seasonStartDate: r.seasonStartDate,
+          role: r.role as MembershipRole,
+          committeeId: r.committeeId,
+          committeeName: r.committeeName ?? null,
+          committeeSlug: r.committeeSlug ?? null,
+          trackedCommitteeId: primaryTracked?.id ?? null,
+          trackedCommitteeName: primaryTracked?.name ?? null,
+          trackedCommittees: resolvedTracked,
+          managedTrackId: r.managedTrackId ?? null,
+          managedTrackName: r.managedTrackName ?? null,
+          isActive: r.isActive,
+          createdAt: r.createdAt,
+        };
+      })
     );
   } catch {
     return [];
@@ -306,13 +427,19 @@ export async function listEligibleContextsForPerson(
 export function toContextPickerOptions(
   contexts: readonly EligibleContextOption[]
 ): ContextPickerOption[] {
-  return contexts.map((c) => ({
-    membershipId: c.membershipId,
-    role: c.role,
-    committeeName: c.committeeName,
-    trackedCommitteeName: c.trackedCommitteeName ?? null,
-    managedTrackName: c.managedTrackName ?? null,
-  }));
+  return contexts.map((c) => {
+    const trackedCommittees = resolveTrackedCommitteesForContext(c);
+    return {
+      membershipId: c.membershipId,
+      role: c.role,
+      committeeName: c.committeeName,
+      trackedCommitteeId: c.trackedCommitteeId ?? trackedCommittees[0]?.id ?? null,
+      trackedCommitteeName:
+        c.trackedCommitteeName ?? trackedCommittees[0]?.name ?? null,
+      trackedCommittees,
+      managedTrackName: c.managedTrackName ?? null,
+    };
+  });
 }
 
 /**
@@ -320,8 +447,13 @@ export function toContextPickerOptions(
  */
 export async function validateMembershipSwitch(
   personId: string,
-  targetMembershipId: string
+  targetMembershipId: string,
+  targetTrackedCommitteeId?: string | null
 ): Promise<ContextSwitchResult> {
   const eligible = await listEligibleContextsForPerson(personId);
-  return resolveContextSwitch(eligible, targetMembershipId);
+  return resolveContextSwitch(
+    eligible,
+    targetMembershipId,
+    targetTrackedCommitteeId
+  );
 }
