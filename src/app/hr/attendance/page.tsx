@@ -70,7 +70,10 @@ export default async function HrAttendancePage() {
               eq(schema.rosterMemberships.seasonId, seasonId),
               eq(schema.rosterMemberships.isActive, true),
               eq(schema.persons.isActive, true),
-              eq(schema.rosterMemberships.role, "committee_head"),
+              inArray(schema.rosterMemberships.role, [
+                "committee_head",
+                "hr_admin",
+              ]),
               eq(schema.rosterMemberships.committeeId, operationalCommitteeId)
             )
           : and(

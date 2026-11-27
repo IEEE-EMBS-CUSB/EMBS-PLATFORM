@@ -390,7 +390,11 @@ export function validateSessionDeliveryFields(input: {
  */
 export function filterEligibleInstructorCandidates<
   T extends InstructorCandidate,
->(candidates: readonly T[], sessionCommitteeId: string | null): T[] {
+>(
+  candidates: readonly T[],
+  sessionCommitteeId: string | null,
+  hrCommitteeId?: string | null
+): T[] {
   const eligible = candidates.filter((c) =>
     isEligibleSessionInstructor(
       {
@@ -398,7 +402,8 @@ export function filterEligibleInstructorCandidates<
         committeeId: c.committeeId,
         isActive: c.isActive,
       },
-      sessionCommitteeId
+      sessionCommitteeId,
+      hrCommitteeId
     )
   );
 
@@ -424,6 +429,7 @@ export function validateSessionInstructors(input: {
   requestedIds?: readonly string[];
   resolvedCandidates: readonly InstructorCandidate[];
   sessionCommitteeId: string | null;
+  hrCommitteeId?: string | null;
 }):
   | { ok: true; instructors: SessionInstructorSummary[] }
   | { ok: false; error: string } {
@@ -451,7 +457,7 @@ export function validateSessionInstructors(input: {
   const scopeError =
     input.sessionCommitteeId === null
       ? "All instructors for a branch-wide session must be active Master Admins, Directors, or HR Admins."
-      : "All instructors for a committee session must be active Committee Heads of that committee.";
+      : "All instructors for a committee session must be active Committee Heads (or HR Admins for Human Resources) of that committee.";
 
   for (const id of uniqueRequestedIds) {
     const candidate = candidateById.get(id);
@@ -463,7 +469,8 @@ export function validateSessionInstructors(input: {
           committeeId: candidate.committeeId,
           isActive: candidate.isActive,
         },
-        input.sessionCommitteeId
+        input.sessionCommitteeId,
+        input.hrCommitteeId
       )
     ) {
       return { ok: false, error: scopeError };
@@ -649,9 +656,14 @@ export async function createSessionAsActor(
     }
 
     let committeeName = "Branch-wide";
+    let sessionHrCommitteeId: string | null = null;
     if (targetCommitteeId) {
       const [comm] = await db
-        .select({ id: schema.committees.id, name: schema.committees.name })
+        .select({
+          id: schema.committees.id,
+          name: schema.committees.name,
+          slug: schema.committees.slug,
+        })
         .from(schema.committees)
         .where(
           and(
@@ -665,6 +677,12 @@ export async function createSessionAsActor(
         return { ok: false, error: "Selected committee does not exist in the active season." };
       }
       committeeName = comm.name;
+      if (
+        comm.slug === "human-resources" ||
+        comm.name.toLowerCase() === "human resources"
+      ) {
+        sessionHrCommitteeId = comm.id;
+      }
     }
 
     const dbInstructorRows = await db
@@ -700,6 +718,7 @@ export async function createSessionAsActor(
         isActive: r.membershipActive && r.personActive,
       })),
       sessionCommitteeId: targetCommitteeId || null,
+      hrCommitteeId: sessionHrCommitteeId,
     });
     if (!instructorCheck.ok) {
       return { ok: false, error: instructorCheck.error };

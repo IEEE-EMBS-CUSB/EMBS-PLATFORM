@@ -144,6 +144,14 @@ export default async function HrRosterPage() {
           trackId: c.trackId ?? null,
         }));
 
+      const hrCommittee =
+        dbCommittees.find(
+          (c) =>
+            c.slug === "human-resources" ||
+            c.name.toLowerCase() === "human resources"
+        ) ?? null;
+      const hrCommitteeId = hrCommittee?.id ?? null;
+
       members = dbMembers
         .filter((m) => {
           if (!directorTrackCommitteeIds) return true;
@@ -154,17 +162,24 @@ export default async function HrRosterPage() {
               return true;
             }
           }
+          const effectiveCommId =
+            m.role === "hr_admin"
+              ? (m.committeeId ?? hrCommitteeId)
+              : m.committeeId;
           return (
-            m.committeeId !== null &&
-            directorTrackCommitteeIds.has(m.committeeId)
+            effectiveCommId !== null &&
+            directorTrackCommitteeIds.has(effectiveCommId)
           );
         })
         .map((m) => {
           const isHrMember = m.role === "hr_member";
+          const isHrAdmin = m.role === "hr_admin";
           const hrTrackedIds = isHrMember ? resolveHrTrackedIds(m) : [];
           const displayCommitteeId = isHrMember
             ? (hrTrackedIds[0] ?? null)
-            : m.committeeId;
+            : isHrAdmin
+              ? (m.committeeId ?? hrCommitteeId)
+              : m.committeeId;
           const displayCommittee = displayCommitteeId
             ? committeeMap.get(displayCommitteeId)
             : undefined;
@@ -175,7 +190,9 @@ export default async function HrRosterPage() {
             ? trackedNames.length > 0
               ? `Tracks ${trackedNames.join(", ")}`
               : "Unassigned"
-            : displayCommittee?.name ?? "Unassigned";
+            : isHrAdmin
+              ? (displayCommittee?.name ?? "Human Resources")
+              : displayCommittee?.name ?? "Unassigned";
 
           const trackId =
             m.role === "director"

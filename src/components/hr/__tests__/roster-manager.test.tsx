@@ -561,4 +561,75 @@ describe("RosterManagerView Component", () => {
     ]);
     expect(screen.getByText(/1 committee needs? an hr member/i)).toBeInTheDocument();
   });
+
+  it("locks hr_admin to Human Resources and excludes Human Resources from member and committee_head committee dropdowns", async () => {
+    const user = userEvent.setup();
+    render(
+      <RosterManagerView
+        currentUserRole="master_admin"
+        availableCommittees={[
+          { id: "comm-hr", name: "Human Resources", slug: "human-resources" },
+          { id: "comm-ai", name: "AI & ML", slug: "ai-ml" },
+          { id: "comm-robotics", name: "Robotics", slug: "robotics" },
+        ]}
+        members={[
+          {
+            id: "m-hr-admin",
+            personId: "p-hr-admin",
+            fullName: "Sara HR Head",
+            email: "sara.hr@cu.edu.eg",
+            committeeId: "comm-hr",
+            committeeName: "Human Resources",
+            role: "hr_admin",
+            isActive: true,
+          },
+          {
+            id: "m-head-ai",
+            personId: "p-head-ai",
+            fullName: "Salma AI Head",
+            email: "salma.ai@cu.edu.eg",
+            committeeId: "comm-ai",
+            committeeName: "AI & ML",
+            role: "committee_head",
+            isActive: true,
+          },
+          {
+            id: "m-reg",
+            personId: "p-reg",
+            fullName: "Omar Regular",
+            email: "omar.reg@cu.edu.eg",
+            committeeId: "comm-robotics",
+            committeeName: "Robotics",
+            role: "member",
+            isActive: true,
+          },
+        ]}
+      />
+    );
+
+    // HR Admin has fixed "Human Resources" committee display and NO editable committee dropdown
+    expect(
+      screen.queryByLabelText("Assign committee for Sara HR Head")
+    ).not.toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Human Resources")).toBeInTheDocument();
+
+    // Committee Head and Member inline committee selects must NOT offer Human Resources
+    const headSelect = screen.getByLabelText("Assign committee for Salma AI Head");
+    expect(
+      within(headSelect).queryByRole("option", { name: "Human Resources" })
+    ).not.toBeInTheDocument();
+    const memberSelect = screen.getByLabelText("Assign committee for Omar Regular");
+    expect(
+      within(memberSelect).queryByRole("option", { name: "Human Resources" })
+    ).not.toBeInTheDocument();
+
+    // Add Member modal also excludes Human Resources for member & committee_head
+    await user.click(screen.getByRole("button", { name: /add member/i }));
+    const dialog = screen.getByRole("dialog", { name: /add member to roster/i });
+    const modalCommSelect = within(dialog).getByLabelText(/^committee$/i);
+    expect(
+      within(modalCommSelect).queryByRole("option", { name: "Human Resources" })
+    ).not.toBeInTheDocument();
+  });
 });

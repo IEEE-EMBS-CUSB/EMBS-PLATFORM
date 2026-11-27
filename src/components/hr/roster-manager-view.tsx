@@ -451,6 +451,16 @@ export function RosterManagerView({
     [members]
   );
 
+  const hrCommittee = useMemo(
+    () =>
+      availableCommittees.find(
+        (c) =>
+          c.slug === "human-resources" ||
+          c.name.toLowerCase() === "human resources"
+      ) ?? null,
+    [availableCommittees]
+  );
+
   const trackableCommittees = useMemo(
     () =>
       availableCommittees.filter(
@@ -702,17 +712,36 @@ export function RosterManagerView({
     if (!previous) return;
     setActionError(null);
     setMembers((prev) =>
-      prev.map((m) =>
-        m.id === memberId
-          ? {
-              ...m,
-              role: newRole,
-              ...(newRole !== "director"
-                ? { managedTrackId: null, managedTrackName: null }
-                : {}),
-            }
-          : m
-      )
+      prev.map((m) => {
+        if (m.id !== memberId) return m;
+        const wasHrScoped =
+          m.role === "hr_admin" ||
+          m.role === "hr_member" ||
+          (hrCommittee && m.committeeId === hrCommittee.id);
+        return {
+          ...m,
+          role: newRole,
+          ...(newRole === "hr_admin"
+            ? {
+                committeeId: hrCommittee?.id ?? null,
+                committeeName: hrCommittee?.name ?? "Human Resources",
+                trackedCommitteeIds: undefined,
+                trackId: hrCommittee?.trackId ?? null,
+              }
+            : (newRole === "member" || newRole === "committee_head") &&
+                wasHrScoped
+              ? {
+                  committeeId: null,
+                  committeeName: "Unassigned",
+                  trackedCommitteeIds: undefined,
+                  trackId: null,
+                }
+              : {}),
+          ...(newRole !== "director"
+            ? { managedTrackId: null, managedTrackName: null }
+            : {}),
+        };
+      })
     );
     try {
       const res = await onAssignRole?.(memberId, newRole);
@@ -961,14 +990,17 @@ export function RosterManagerView({
       let createdPersonId: string | undefined;
       const isDirectorRole = addRole === "director";
       const isHrRole = addRole === "hr_member";
+      const isHrAdminRole = addRole === "hr_admin";
       const submittedTrackedIds = isHrRole
         ? Array.from(new Set(addTrackedCommitteeIds))
         : [];
       const submittedCommitteeId = isDirectorRole
         ? null
-        : isHrRole
-          ? (submittedTrackedIds[0] ?? null)
-          : addCommitteeId || null;
+        : isHrAdminRole
+          ? (hrCommittee?.id ?? null)
+          : isHrRole
+            ? (submittedTrackedIds[0] ?? null)
+            : addCommitteeId || null;
       const submittedTrackId = isDirectorRole
         ? addManagedTrackId || null
         : null;
@@ -1037,7 +1069,9 @@ export function RosterManagerView({
           ? hrTrackedNames.length > 0
             ? `Tracks ${hrTrackedNames.join(", ")}`
             : "Unassigned"
-          : (comm?.name ?? "Unassigned"),
+          : isHrAdminRole
+            ? (hrCommittee?.name ?? "Human Resources")
+            : (comm?.name ?? "Unassigned"),
         trackId: isDirectorRole ? submittedTrackId : (comm?.trackId ?? null),
         managedTrackId: submittedTrackId,
         managedTrackName: track?.name ?? null,
@@ -1819,6 +1853,10 @@ export function RosterManagerView({
                               : "All Tracks"}
                           </span>
                         )
+                      ) : m.role === "hr_admin" ? (
+                        <span className="font-semibold text-[#5a1b63]">
+                          Human Resources
+                        </span>
                       ) : canAssignThisCommittee ? (
                         m.role === "hr_member" && onAssignHrTrackedCommittees ? (
                           (() => {
@@ -1905,7 +1943,9 @@ export function RosterManagerView({
                             className={SELECT_CLASS}
                           >
                             <option value="">Unassigned</option>
-                            {(m.role === "hr_member"
+                            {(m.role === "hr_member" ||
+                            m.role === "member" ||
+                            m.role === "committee_head"
                               ? trackableCommittees
                               : availableCommittees
                             ).map((c) => (
@@ -2278,7 +2318,10 @@ export function RosterManagerView({
                     className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 text-xs font-semibold text-[#002855] focus:outline-2 focus:outline-[#772583]"
                   >
                     <option value="">Unassigned</option>
-                    {availableCommittees.map((c) => (
+                    {(addRole === "member" || addRole === "committee_head"
+                      ? trackableCommittees
+                      : availableCommittees
+                    ).map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>

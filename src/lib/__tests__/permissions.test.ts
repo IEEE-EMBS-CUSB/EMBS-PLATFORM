@@ -634,6 +634,26 @@ describe("RBAC Permissions Engine", () => {
       ).toBe(false);
       expect(
         isEligibleSessionInstructor(
+          { role: "hr_admin", committeeId: "comm-hr", isActive: true },
+          "comm-hr"
+        )
+      ).toBe(true);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "hr_admin", committeeId: null, isActive: true },
+          "comm-hr",
+          "comm-hr"
+        )
+      ).toBe(true);
+      expect(
+        isEligibleSessionInstructor(
+          { role: "hr_admin", committeeId: null, isActive: true },
+          commAi,
+          "comm-hr"
+        )
+      ).toBe(false);
+      expect(
+        isEligibleSessionInstructor(
           { role: "committee_head", committeeId: commAi, isActive: false },
           commAi
         )

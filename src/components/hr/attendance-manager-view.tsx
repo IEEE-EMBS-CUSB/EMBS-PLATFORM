@@ -304,7 +304,8 @@ const ROLE_PRIORITY: Record<MembershipRole, number> = {
 
 function selectEligibleInstructorOptions(
   candidates: readonly InstructorCandidate[],
-  committeeId: string | null
+  committeeId: string | null,
+  hrCommitteeId?: string | null
 ): MemberComboboxOption[] {
   const bestByPerson = new Map<string, InstructorCandidate>();
   for (const cand of candidates) {
@@ -315,7 +316,8 @@ function selectEligibleInstructorOptions(
           committeeId: cand.committeeId,
           isActive: cand.isActive,
         },
-        committeeId
+        committeeId,
+        hrCommitteeId
       )
     ) {
       continue;
@@ -562,13 +564,21 @@ export function AttendanceManagerView({
     ? currentUserCommitteeId
     : newCommitteeId || null;
 
+  const hrCommitteeId = useMemo(
+    () =>
+      committees.find((c) => c.name.toLowerCase() === "human resources")?.id ??
+      null,
+    [committees]
+  );
+
   const eligibleInstructorOptions = useMemo(
     () =>
       selectEligibleInstructorOptions(
         instructorCandidates,
-        effectiveTargetCommitteeId
+        effectiveTargetCommitteeId,
+        hrCommitteeId
       ),
-    [instructorCandidates, effectiveTargetCommitteeId]
+    [instructorCandidates, effectiveTargetCommitteeId, hrCommitteeId]
   );
 
   const handleModeChange = (nextMode: SessionMode) => {
@@ -586,9 +596,11 @@ export function AttendanceManagerView({
     setNewCommitteeId(nextCommitteeId);
     const nextScope = nextCommitteeId || null;
     const validIds = new Set(
-      selectEligibleInstructorOptions(instructorCandidates, nextScope).map(
-        (opt) => opt.id
-      )
+      selectEligibleInstructorOptions(
+        instructorCandidates,
+        nextScope,
+        hrCommitteeId
+      ).map((opt) => opt.id)
     );
     setNewInstructorIds((prev) => prev.filter((id) => validIds.has(id)));
   };

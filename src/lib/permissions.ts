@@ -194,7 +194,8 @@ export const BRANCH_WIDE_INSTRUCTOR_ROLES: readonly MembershipRole[] = [
 
 /**
  * Determines whether a roster membership can be assigned as a session instructor:
- * - Committee session (`sessionCommitteeId !== null`): active `committee_head` of that exact committee.
+ * - Committee session (`sessionCommitteeId !== null`): active `committee_head` of that exact committee,
+ *   or active `hr_admin` (HR Head) when the session belongs to the Human Resources committee.
  * - Branch-wide session (`sessionCommitteeId === null`): active `master_admin`, `director`, or `hr_admin`.
  */
 export function isEligibleSessionInstructor(
@@ -203,7 +204,8 @@ export function isEligibleSessionInstructor(
     committeeId: string | null;
     isActive?: boolean;
   },
-  sessionCommitteeId: string | null
+  sessionCommitteeId: string | null,
+  hrCommitteeId?: string | null
 ): boolean {
   if (candidate.isActive === false) return false;
   if (sessionCommitteeId === null) {
@@ -213,11 +215,22 @@ export function isEligibleSessionInstructor(
       candidate.role === "hr_admin"
     );
   }
-  return (
-    candidate.role === "committee_head" &&
-    candidate.committeeId !== null &&
-    candidate.committeeId === sessionCommitteeId
-  );
+  if (candidate.role === "committee_head") {
+    return (
+      candidate.committeeId !== null &&
+      candidate.committeeId === sessionCommitteeId
+    );
+  }
+  if (candidate.role === "hr_admin") {
+    if (hrCommitteeId) {
+      return sessionCommitteeId === hrCommitteeId;
+    }
+    return (
+      candidate.committeeId !== null &&
+      candidate.committeeId === sessionCommitteeId
+    );
+  }
+  return false;
 }
 
 /**

@@ -35,6 +35,19 @@ export interface RosterActor {
   };
 }
 
+const HR_ROLE_ONLY_COMMITTEE_ERROR =
+  "Cannot assign Member or Committee Head to Human Resources. Use the HR Member or HR Admin role instead.";
+
+function isHrCommitteeRecord(comm: {
+  slug?: string | null;
+  name?: string | null;
+}): boolean {
+  return (
+    comm.slug === "human-resources" ||
+    (comm.name ?? "").trim().toLowerCase() === "human resources"
+  );
+}
+
 const VALID_ROLES = new Set<MembershipRole>([
   "master_admin",
   "director",
@@ -131,15 +144,28 @@ export async function addRosterMemberAsActor(
           error: "Selected committee does not belong to this season.",
         };
       }
+      if (
+        (input.role === "member" || input.role === "committee_head") &&
+        isHrCommitteeRecord(comm)
+      ) {
+        return {
+          ok: false,
+          error: HR_ROLE_ONLY_COMMITTEE_ERROR,
+        };
+      }
       committeeId = comm.id;
     }
 
+    // For hr_admin: automatically belongs to Human Resources as HR Head.
     // For hr_member: home committee is ALWAYS Human Resources (auto-ensured if missing);
     // the assigned committee(s) become tracked committees in hr_member_tracked_committees
     // (with trackedCommitteeId kept in sync as the primary tracked committee).
     let trackedCommitteeId: string | null = null;
     let trackedCommitteeIds: string[] = [];
-    if (input.role === "hr_member") {
+    if (input.role === "hr_admin") {
+      const hrComm = await ensureHrCommitteeForSeason(seasonId);
+      committeeId = hrComm.id;
+    } else if (input.role === "hr_member") {
       const hrComm = await ensureHrCommitteeForSeason(seasonId);
       const rawRequestedIds: string[] =
         input.trackedCommitteeIds !== undefined
@@ -448,11 +474,22 @@ export async function bulkImportRosterAsActor(
 
         let membershipCommitteeId = rec.role === "director" ? null : committeeId;
         let membershipTrackedCommitteeId: string | null = null;
-        if (rec.role === "hr_member") {
+        if (rec.role === "hr_admin") {
+          const hrComm = await ensureHrCommitteeForSeason(seasonId, tx);
+          membershipCommitteeId = hrComm.id;
+        } else if (rec.role === "hr_member") {
           const hrComm = await ensureHrCommitteeForSeason(seasonId, tx);
           membershipTrackedCommitteeId =
             committeeId && committeeId !== hrComm.id ? committeeId : null;
           membershipCommitteeId = hrComm.id;
+        } else if (
+          (rec.role === "member" || rec.role === "committee_head") &&
+          membershipCommitteeId
+        ) {
+          const hrComm = await ensureHrCommitteeForSeason(seasonId, tx);
+          if (membershipCommitteeId === hrComm.id) {
+            throw new Error(HR_ROLE_ONLY_COMMITTEE_ERROR);
+          }
         }
 
         const [inserted] = await tx
@@ -679,6 +716,37 @@ export async function assignMemberRoleAsActor(
       return { ok: true };
     }
 
+    if (newRole === "hr_admin") {
+      const hrComm = await ensureHrCommitteeForSeason(target.seasonId);
+      await withTransaction(async (tx) => {
+        await tx
+          .update(schema.rosterMemberships)
+          .set({
+            role: newRole,
+            committeeId: hrComm.id,
+            trackedCommitteeId: null,
+            managedTrackId: null,
+          })
+          .where(eq(schema.rosterMemberships.id, memberId));
+
+        await tx
+          .delete(schema.hrMemberTrackedCommittees)
+          .where(eq(schema.hrMemberTrackedCommittees.membershipId, memberId));
+      });
+      return { ok: true };
+    }
+
+    let nextCommitteeId = target.committeeId;
+    if (
+      (newRole === "member" || newRole === "committee_head") &&
+      target.committeeId
+    ) {
+      const hrComm = await ensureHrCommitteeForSeason(target.seasonId);
+      if (target.committeeId === hrComm.id) {
+        nextCommitteeId = null;
+      }
+    }
+
     await withTransaction(async (tx) => {
       await tx
         .update(schema.rosterMemberships)
@@ -687,7 +755,7 @@ export async function assignMemberRoleAsActor(
           trackedCommitteeId: null,
           ...(newRole === "director"
             ? { committeeId: null }
-            : { managedTrackId: null }),
+            : { committeeId: nextCommitteeId, managedTrackId: null }),
         })
         .where(eq(schema.rosterMemberships.id, memberId));
 
@@ -735,6 +803,14 @@ export async function assignMemberCommitteeAsActor(
       };
     }
 
+    // HR Admin is inherently Head of Human Resources and cannot be moved to another committee
+    if (target.role === "hr_admin") {
+      return {
+        ok: false,
+        error: "HR Admins automatically belong to the Human Resources committee.",
+      };
+    }
+
     let resolvedCommitteeId: string | null = committeeId || null;
     if (resolvedCommitteeId) {
       const [comm] = await db
@@ -752,6 +828,15 @@ export async function assignMemberCommitteeAsActor(
         return {
           ok: false,
           error: "Committee not found in this member's season.",
+        };
+      }
+      if (
+        (target.role === "member" || target.role === "committee_head") &&
+        isHrCommitteeRecord(comm)
+      ) {
+        return {
+          ok: false,
+          error: HR_ROLE_ONLY_COMMITTEE_ERROR,
         };
       }
       resolvedCommitteeId = comm.id;

@@ -213,15 +213,25 @@ export default async function HrTasksPage() {
               })
             : dbMembers;
 
-      eligibleMembers = scopedMembers.map((m) => ({
-        id: m.id,
-        fullName: m.fullName,
-        email: m.email,
-        phoneNumber: m.phoneNumber ?? null,
-        role: m.role,
-        committeeId: m.committeeId,
-        committeeName: m.committeeId ? commMap.get(m.committeeId) : undefined,
-      }));
+      eligibleMembers = scopedMembers.map((m) => {
+        const effectiveCommId =
+          m.role === "hr_admin"
+            ? (m.committeeId ?? hrCommitteeId)
+            : m.committeeId;
+        return {
+          id: m.id,
+          fullName: m.fullName,
+          email: m.email,
+          phoneNumber: m.phoneNumber ?? null,
+          role: m.role,
+          committeeId: effectiveCommId,
+          committeeName: effectiveCommId
+            ? commMap.get(effectiveCommId)
+            : m.role === "hr_admin"
+              ? "Human Resources"
+              : undefined,
+        };
+      });
 
       // Resolve creator names & roles for items assigned to current user
       const creatorIds = Array.from(

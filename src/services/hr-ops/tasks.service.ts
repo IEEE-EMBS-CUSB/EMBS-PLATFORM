@@ -1,9 +1,10 @@
 import { db, withTransaction } from "@/db";
 import * as schema from "@/db/schema";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, or } from "drizzle-orm";
 import type { MembershipRole } from "@/lib/auth-helpers";
 import {
   canAssignTask,
+  canAssignTaskToRole,
   canCreateWorkType,
   canManageWorkItem,
   getDefaultWorkTypeForRole,
@@ -308,6 +309,17 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
       actorRole,
       actor.profile.managedTrackId
     );
+    const [hrCommitteeRow] = await db
+      .select({ id: schema.committees.id })
+      .from(schema.committees)
+      .where(
+        and(
+          eq(schema.committees.seasonId, seasonId),
+          eq(schema.committees.slug, "human-resources")
+        )
+      )
+      .limit(1);
+    const hrCommitteeId = hrCommitteeRow?.id ?? null;
 
     let targetMembershipIds: string[] = [];
     let taskCommitteeId: string | null = null;
@@ -464,6 +476,8 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
         }
 
         taskCommitteeId = commId;
+        const isHrTargetCommittee =
+          hrCommitteeId !== null && commId === hrCommitteeId;
 
         const commMembers = await db
           .select({
@@ -479,19 +493,35 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
           .where(
             and(
               eq(schema.rosterMemberships.seasonId, seasonId),
-              eq(schema.rosterMemberships.committeeId, commId),
+              isHrTargetCommittee
+                ? or(
+                    eq(schema.rosterMemberships.committeeId, commId),
+                    eq(schema.rosterMemberships.role, "hr_admin")
+                  )
+                : eq(schema.rosterMemberships.committeeId, commId),
               eq(schema.rosterMemberships.isActive, true),
               eq(schema.persons.isActive, true),
               ne(schema.rosterMemberships.role, "attendee")
             )
           );
 
-        const filteredComm =
+        const filteredComm = (
           input.targetGroup === "committee_heads"
-            ? commMembers.filter((m) => m.role === "committee_head")
+            ? commMembers.filter(
+                (m) =>
+                  m.role === "committee_head" ||
+                  (isHrTargetCommittee && m.role === "hr_admin")
+              )
             : input.targetGroup === "committee_members"
-              ? commMembers.filter((m) => m.role === "member")
-              : commMembers;
+              ? commMembers.filter(
+                  (m) =>
+                    m.role === "member" ||
+                    (isHrTargetCommittee && m.role === "hr_member")
+                )
+              : commMembers
+        ).filter((m) =>
+          canAssignTaskToRole(actorRole, m.role as MembershipRole, workType)
+        );
 
         targetMembershipIds = deduplicateRecipientsByPerson(
           filteredComm.map((m) => ({
@@ -520,18 +550,24 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
               eq(schema.persons.isActive, true),
               inArray(schema.rosterMemberships.role, [
                 "committee_head",
+                "hr_admin",
                 "hr_member",
                 "member",
               ])
             )
           );
-        const scopedAll = directorTrackCommitteeIds
-          ? allMembers.filter(
-              (m) =>
-                m.committeeId !== null &&
-                directorTrackCommitteeIds.has(m.committeeId)
-            )
-          : allMembers;
+        const scopedAll = allMembers.filter((m) => {
+          if (!canAssignTaskToRole(actorRole, m.role as MembershipRole, workType)) {
+            return false;
+          }
+          if (!directorTrackCommitteeIds) return true;
+          const effectiveCommId =
+            m.committeeId ?? (m.role === "hr_admin" ? hrCommitteeId : null);
+          return (
+            effectiveCommId !== null &&
+            directorTrackCommitteeIds.has(effectiveCommId)
+          );
+        });
         targetMembershipIds = deduplicateRecipientsByPerson(
           scopedAll.map((m) => ({
             id: m.id,
@@ -555,16 +591,26 @@ export async function createTaskAsActor(input: CreateTaskInput, actor: TaskActor
           .where(
             and(
               eq(schema.rosterMemberships.seasonId, seasonId),
-              eq(schema.rosterMemberships.role, "committee_head"),
+              inArray(schema.rosterMemberships.role, [
+                "committee_head",
+                "hr_admin",
+              ]),
               eq(schema.rosterMemberships.isActive, true),
               eq(schema.persons.isActive, true)
             )
           );
-        const scopedHeads = directorTrackCommitteeIds
-          ? allHeads.filter(
-              (h) => h.committeeId && directorTrackCommitteeIds.has(h.committeeId)
-            )
-          : allHeads;
+        const scopedHeads = allHeads.filter((h) => {
+          if (!canAssignTaskToRole(actorRole, h.role as MembershipRole, workType)) {
+            return false;
+          }
+          if (!directorTrackCommitteeIds) return true;
+          const effectiveCommId =
+            h.committeeId ?? (h.role === "hr_admin" ? hrCommitteeId : null);
+          return (
+            effectiveCommId !== null &&
+            directorTrackCommitteeIds.has(effectiveCommId)
+          );
+        });
         targetMembershipIds = deduplicateRecipientsByPerson(
           scopedHeads.map((m) => ({
             id: m.id,
@@ -1016,10 +1062,17 @@ function isMembershipEligibleForTaskTarget(
   switch (taskTargetGroup) {
     case "all_heads":
     case "committee_heads":
-      return membership.role === "committee_head";
+      return (
+        membership.role === "committee_head" ||
+        membership.role === "hr_admin"
+      );
     case "all_members":
-    case "committee_members":
       return membership.role === "member";
+    case "committee_members":
+      return (
+        membership.role === "member" ||
+        (taskCommitteeId !== null && membership.role === "hr_member")
+      );
     case "everyone":
     case "committee_all":
       return membership.role !== "attendee";

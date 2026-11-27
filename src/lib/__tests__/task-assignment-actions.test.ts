@@ -91,7 +91,7 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
       .where(
         and(
           eq(schema.rosterMemberships.seasonId, activeSeason.id),
-          eq(schema.rosterMemberships.role, "committee_head"),
+          inArray(schema.rosterMemberships.role, ["committee_head", "hr_admin"]),
           eq(schema.rosterMemberships.isActive, true)
         )
       );
@@ -212,6 +212,7 @@ describe("Task Assignment Actions (Database-backed Groups & Individuals)", () =>
           eq(schema.persons.isActive, true),
           inArray(schema.rosterMemberships.role, [
             "committee_head",
+            "hr_admin",
             "hr_member",
             "member",
           ])
