@@ -18,7 +18,7 @@ import {
 } from "@/services/hr-ops/attendance.service";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
 
 export default async function HrAttendancePage() {
   const { profile } = await requireHrModule("attendance");
@@ -133,7 +133,30 @@ export default async function HrAttendancePage() {
                   count: count(schema.attendanceRecords.id),
                 })
                 .from(schema.attendanceRecords)
-                .where(eq(schema.attendanceRecords.status, "present"))
+                .innerJoin(
+                  schema.branchSessions,
+                  eq(schema.attendanceRecords.sessionId, schema.branchSessions.id)
+                )
+                .innerJoin(
+                  schema.rosterMemberships,
+                  eq(
+                    schema.attendanceRecords.membershipId,
+                    schema.rosterMemberships.id
+                  )
+                )
+                .where(
+                  and(
+                    eq(schema.branchSessions.seasonId, seasonId),
+                    eq(schema.attendanceRecords.status, "present"),
+                    or(
+                      isNull(schema.branchSessions.committeeId),
+                      inArray(schema.rosterMemberships.role, [
+                        "member",
+                        "hr_member",
+                      ])
+                    )
+                  )
+                )
                 .groupBy(schema.attendanceRecords.sessionId),
           skipSessionQuery
             ? Promise.resolve([])

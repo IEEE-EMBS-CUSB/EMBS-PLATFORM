@@ -274,8 +274,8 @@ async function resolvePersonSeasonScope(memberId: string): Promise<{
   const seasonHats = await db
     .select({
       id: schema.rosterMemberships.id,
+      role: schema.rosterMemberships.role,
       committeeId: schema.rosterMemberships.committeeId,
-      trackedCommitteeId: schema.rosterMemberships.trackedCommitteeId,
       isActive: schema.rosterMemberships.isActive,
     })
     .from(schema.rosterMemberships)
@@ -287,31 +287,22 @@ async function resolvePersonSeasonScope(memberId: string): Promise<{
       )
     );
 
-  const activeHatIds = seasonHats.filter((h) => h.isActive).map((h) => h.id);
-  const hrTrackedCommitteeRows =
-    activeHatIds.length > 0
-      ? await db
-          .select({
-            committeeId: schema.hrMemberTrackedCommittees.committeeId,
-          })
-          .from(schema.hrMemberTrackedCommittees)
-          .where(
-            inArray(schema.hrMemberTrackedCommittees.membershipId, activeHatIds)
-          )
-      : [];
-
   const membershipIds = Array.from(
     new Set([memberId, ...seasonHats.map((h) => h.id)])
   );
+  // Committee session attendance applies only to committees where the person
+  // holds an active regular member (`member`) or HR member (`hr_member`) hat;
+  // heads/leadership are only prompted for branch-wide sessions.
   const committeeIds = Array.from(
     new Set(
-      [
-        member.committeeId,
-        ...seasonHats
-          .filter((h) => h.isActive)
-          .flatMap((h) => [h.committeeId, h.trackedCommitteeId]),
-        ...hrTrackedCommitteeRows.map((r) => r.committeeId),
-      ].filter((id): id is string => Boolean(id))
+      seasonHats
+        .filter(
+          (h) =>
+            h.isActive &&
+            (h.role === "member" || h.role === "hr_member") &&
+            Boolean(h.committeeId)
+        )
+        .map((h) => h.committeeId!)
     )
   );
 

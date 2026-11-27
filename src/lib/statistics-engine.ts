@@ -885,6 +885,9 @@ export function computeAdminStatistics(
   const membersByCommitteePersons = new Map<string, Set<string>>();
   for (const m of primaryMemberships) {
     if (!m.committeeId) continue;
+    // Committee sessions only expect regular members (`member`) or HR members (`hr_member`).
+    // Heads and leadership are only expected to attend branch-wide sessions.
+    if (m.role !== "member" && m.role !== "hr_member") continue;
     const set = membersByCommitteePersons.get(m.committeeId) ?? new Set<string>();
     set.add(m.personId);
     membersByCommitteePersons.set(m.committeeId, set);

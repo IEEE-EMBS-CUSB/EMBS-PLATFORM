@@ -961,6 +961,20 @@ export async function extendSessionCheckinWindowAsActor(
   }
 }
 
+/**
+ * Committee sessions (`sessionCommitteeId !== null`) only track attendance for regular
+ * committee members (`member`) and HR members for HR meetings (`hr_member`).
+ * Heads (`committee_head`, `hr_admin`) and leadership (`director`, `master_admin`)
+ * are only tracked on branch-wide sessions (`sessionCommitteeId === null`).
+ */
+export function isCommitteeSessionRosterRole(role: MembershipRole): boolean {
+  return role === "member" || role === "hr_member";
+}
+
+export function isCommitteeSessionCheckinRole(role: MembershipRole): boolean {
+  return role === "member" || role === "hr_member" || role === "attendee";
+}
+
 export async function getSessionAttendanceRosterAsActor(
   sessionId: string,
   actor: AttendanceActor
@@ -1038,10 +1052,12 @@ export async function getSessionAttendanceRosterAsActor(
       existingRecords.map((r) => [r.membershipId, r])
     );
 
-    const scopedRawMembers =
-      actor.profile.role === "committee_head"
-        ? rawMembers.filter((m) => m.role === "member")
-        : rawMembers;
+    const isCommitteeSession = session.committeeId !== null;
+    const scopedRawMembers = isCommitteeSession
+      ? rawMembers.filter((m) =>
+          isCommitteeSessionRosterRole(m.role as MembershipRole)
+        )
+      : rawMembers;
 
     // Deduplicate branch-wide sessions by personId so each human appears once
     const allowedIds = new Set(
@@ -1053,11 +1069,10 @@ export async function getSessionAttendanceRosterAsActor(
         }))
       )
     );
-    // Keep any membership that already has an attendance record for this session
-    // (still excluding non-members when viewed by a committee_head)
+    // Keep any eligible membership that already has an attendance record for this session
     const scopedIdSet = new Set(scopedRawMembers.map((m) => m.id));
     for (const rec of existingRecords) {
-      if (actor.profile.role !== "committee_head" || scopedIdSet.has(rec.membershipId)) {
+      if (scopedIdSet.has(rec.membershipId)) {
         allowedIds.add(rec.membershipId);
       }
     }
@@ -1169,6 +1184,16 @@ export async function setSessionMemberAttendanceAsActor(
         ok: false,
         error:
           "Unauthorized: Committee Heads can only record attendance for regular members in their committee.",
+      };
+    }
+    if (
+      session.committeeId !== null &&
+      !isCommitteeSessionCheckinRole(member.role as MembershipRole)
+    ) {
+      return {
+        ok: false,
+        error:
+          "Committee session attendance is for committee members only. Heads attend branch-wide sessions.",
       };
     }
 
@@ -1293,15 +1318,16 @@ export function selectCheckinMembershipForSession<
   }
 
   if (
-    activeMembership.committeeId === sessionCommitteeId ||
-    activeMembership.role === "master_admin" ||
-    activeMembership.role === "hr_admin"
+    activeMembership.committeeId === sessionCommitteeId &&
+    isCommitteeSessionCheckinRole(activeMembership.role)
   ) {
     return activeMembership;
   }
 
   const matching = allPersonSeasonMemberships.filter(
-    (m) => m.committeeId === sessionCommitteeId
+    (m) =>
+      m.committeeId === sessionCommitteeId &&
+      isCommitteeSessionCheckinRole(m.role)
   );
   if (matching.length === 0) {
     return null;
@@ -1402,7 +1428,8 @@ export async function recordMemberCheckin(
     if (!member) {
       return {
         ok: false,
-        error: "This session is exclusive to members of this committee.",
+        error:
+          "Committee session attendance is for committee members only. Heads attend branch-wide sessions.",
       };
     }
 

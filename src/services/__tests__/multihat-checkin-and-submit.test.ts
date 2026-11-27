@@ -49,6 +49,47 @@ describe("Multi-hat check-in & task submission membership resolution", () => {
       sessionCommitteeId: "comm-robotics",
     });
     expect(denied).toBeNull();
+
+    // Committee head scanning their OWN committee's session -> rejected (heads attend branch-wide sessions only)
+    const ownCommitteeAsHead = selectCheckinMembershipForSession({
+      activeMembership: prHead,
+      allPersonSeasonMemberships: [prHead, aiMember],
+      sessionCommitteeId: "comm-pr",
+    });
+    expect(ownCommitteeAsHead).toBeNull();
+
+    // HR Admin (HR Head) scanning an HR meeting -> rejected; HR Member scanning an HR meeting -> allowed
+    const hrHead: CheckinMembershipCandidate = {
+      id: "mem-hr-head",
+      role: "hr_admin",
+      committeeId: "comm-hr",
+    };
+    const hrMem: CheckinMembershipCandidate = {
+      id: "mem-hr-member",
+      role: "hr_member",
+      committeeId: "comm-hr",
+    };
+    expect(
+      selectCheckinMembershipForSession({
+        activeMembership: hrHead,
+        allPersonSeasonMemberships: [hrHead],
+        sessionCommitteeId: "comm-hr",
+      })
+    ).toBeNull();
+    expect(
+      selectCheckinMembershipForSession({
+        activeMembership: hrMem,
+        allPersonSeasonMemberships: [hrMem],
+        sessionCommitteeId: "comm-hr",
+      })?.id
+    ).toBe("mem-hr-member");
+    expect(
+      selectCheckinMembershipForSession({
+        activeMembership: hrHead,
+        allPersonSeasonMemberships: [hrHead],
+        sessionCommitteeId: null,
+      })?.id
+    ).toBe("mem-hr-head");
   });
 
   it("resolves assigned hat for task submission across a person's hats and stamps active hat for global tasks", () => {

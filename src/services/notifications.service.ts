@@ -141,6 +141,7 @@ export async function getMemberNavNotifications(
     const memberships = await db
       .select({
         id: schema.rosterMemberships.id,
+        role: schema.rosterMemberships.role,
         committeeId: schema.rosterMemberships.committeeId,
       })
       .from(schema.rosterMemberships)
@@ -155,8 +156,12 @@ export async function getMemberNavNotifications(
 
     const membershipIds =
       memberships.length > 0 ? memberships.map((m) => m.id) : [memberId];
+    // Committee session check-in alerts apply only to committees where the person
+    // is a regular member (`member`) or HR member (`hr_member`). Heads are alerted
+    // for branch-wide sessions only.
     const committeeIdSet = new Set(
       memberships
+        .filter((m) => m.role === "member" || m.role === "hr_member")
         .map((m) => m.committeeId)
         .filter((id): id is string => Boolean(id))
     );
