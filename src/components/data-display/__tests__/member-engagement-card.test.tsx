@@ -42,4 +42,23 @@ describe("MemberEngagementCard", () => {
     expect(screen.getByText("Diamond Member")).toBeInTheDocument();
     expect(screen.getByText("Rank #1 · Chapter Leader")).toBeInTheDocument();
   });
+
+  it("omits member rank and leaderboard tier comparisons for unranked leadership roles (e.g. Committee Head)", () => {
+    render(
+      <MemberEngagementCard
+        {...defaultProps}
+        currentRank={null}
+        pointsToNextRank={null}
+        targetRank={null}
+        roleLabel="Head"
+      />
+    );
+
+    expect(screen.getByText("175 pts")).toBeInTheDocument();
+    expect(screen.getByText("4 Session Streak")).toBeInTheDocument();
+    expect(screen.getByText("88%")).toBeInTheDocument();
+    expect(screen.queryByText(/Current Rank/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Chapter Leader/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Gold Member/i)).not.toBeInTheDocument();
+  });
 });

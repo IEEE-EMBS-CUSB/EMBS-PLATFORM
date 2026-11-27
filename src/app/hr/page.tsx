@@ -175,7 +175,8 @@ export default async function HrOverviewPage() {
         ? dbMembers.filter(
             (m) =>
               operationalCommitteeId !== null &&
-              m.committeeId === operationalCommitteeId
+              m.committeeId === operationalCommitteeId &&
+              (profile.role !== "committee_head" || m.role === "member")
           )
         : directorTrackCommitteeIds
           ? dbMembers.filter(

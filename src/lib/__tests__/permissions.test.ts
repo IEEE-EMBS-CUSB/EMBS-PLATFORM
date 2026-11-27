@@ -816,5 +816,17 @@ describe("RBAC Permissions Engine", () => {
         })
       ).toBe(false);
     });
+
+    it("restricts committee_head feedback and bonus awards strictly to regular members (never co-heads or leadership)", () => {
+      expect(canGiveFeedback(headAiUser, commAi, "member")).toBe(true);
+      expect(canGiveFeedback(headAiUser, commAi, "committee_head")).toBe(false);
+      expect(canGiveFeedback(headAiUser, commAi, "hr_admin")).toBe(false);
+      expect(canGiveFeedback(headAiUser, commAi, "director")).toBe(false);
+
+      expect(canAwardBonus(headAiUser, commAi, "member")).toBe(true);
+      expect(canAwardBonus(headAiUser, commAi, "committee_head")).toBe(false);
+      expect(canAwardBonus(headAiUser, commAi, "hr_admin")).toBe(false);
+      expect(canAwardBonus(headAiUser, commAi, "director")).toBe(false);
+    });
   });
 });

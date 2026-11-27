@@ -109,7 +109,9 @@ export async function addManualLedgerEntryAsActor(
             ? "Unauthorized: Directors have read-only access to the points ledger and cannot edit points."
             : actor.profile.role === "hr_member" && member.role !== "member"
               ? "Unauthorized: HR members cannot modify points for committee heads or leadership."
-              : "Unauthorized: cannot award points to this member.",
+              : actor.profile.role === "committee_head" && member.role !== "member"
+                ? "Unauthorized: Committee Heads cannot modify points for other heads or leadership."
+                : "Unauthorized: cannot award points to this member.",
       };
     }
 

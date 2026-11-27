@@ -157,11 +157,12 @@ export interface MemberTaskSummary {
 export interface MemberEngagementMetrics {
   attendanceStreak: number;
   livePoints: number;
-  currentRank: number;
+  currentRank: number | null;
   pointsToNextRank: number | null;
   targetRank: number | null;
   activityTier: "Diamond" | "Gold" | "Silver" | "Bronze" | "Member";
   committeeCompletionRate: number;
+  roleLabel?: MemberRole;
 }
 
 export interface MemberDashboardData {

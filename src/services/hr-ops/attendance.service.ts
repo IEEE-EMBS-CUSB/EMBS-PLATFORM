@@ -1038,10 +1038,15 @@ export async function getSessionAttendanceRosterAsActor(
       existingRecords.map((r) => [r.membershipId, r])
     );
 
+    const scopedRawMembers =
+      actor.profile.role === "committee_head"
+        ? rawMembers.filter((m) => m.role === "member")
+        : rawMembers;
+
     // Deduplicate branch-wide sessions by personId so each human appears once
     const allowedIds = new Set(
       deduplicateRecipientsByPerson(
-        rawMembers.map((m) => ({
+        scopedRawMembers.map((m) => ({
           id: m.id,
           personId: m.personId,
           role: m.role as MembershipRole,
@@ -1049,11 +1054,15 @@ export async function getSessionAttendanceRosterAsActor(
       )
     );
     // Keep any membership that already has an attendance record for this session
+    // (still excluding non-members when viewed by a committee_head)
+    const scopedIdSet = new Set(scopedRawMembers.map((m) => m.id));
     for (const rec of existingRecords) {
-      allowedIds.add(rec.membershipId);
+      if (actor.profile.role !== "committee_head" || scopedIdSet.has(rec.membershipId)) {
+        allowedIds.add(rec.membershipId);
+      }
     }
 
-    const roster: SessionRosterRow[] = rawMembers
+    const roster: SessionRosterRow[] = scopedRawMembers
       .filter((m) => allowedIds.has(m.id))
       .map((m) => {
         const rec = recordByMembership.get(m.id);
@@ -1153,6 +1162,13 @@ export async function setSessionMemberAttendanceAsActor(
         ok: false,
         error:
           "Unauthorized: HR members cannot modify attendance points for committee heads or leadership.",
+      };
+    }
+    if (actor.profile.role === "committee_head" && member.role !== "member") {
+      return {
+        ok: false,
+        error:
+          "Unauthorized: Committee Heads can only record attendance for regular members in their committee.",
       };
     }
 

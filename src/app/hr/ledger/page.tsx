@@ -74,6 +74,9 @@ export default async function HrLedgerPage() {
 
       const visibleMembers = allSeasonMembers.filter((m) => {
         if (!m.isActive || m.role === "attendee") return false;
+        if (profile.role === "committee_head" && m.role !== "member") {
+          return false;
+        }
         if (isCommitteeScoped) {
           return (
             operationalCommitteeId !== null &&

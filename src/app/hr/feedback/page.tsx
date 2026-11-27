@@ -117,6 +117,9 @@ export default async function HrFeedbackPage() {
       const targetableMembers = allSeasonMembers.filter((m) => {
         if (!m.isActive || !m.personActive) return false;
         if (ownMembershipIdSet.has(m.id)) return false;
+        if (profile.role === "committee_head" && m.role !== "member") {
+          return false;
+        }
         if (isCommitteeScoped) {
           return (
             operationalCommitteeId !== null &&

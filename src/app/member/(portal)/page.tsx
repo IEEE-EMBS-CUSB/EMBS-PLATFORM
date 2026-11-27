@@ -44,14 +44,18 @@ async function MemberDashboardContent() {
   ).length;
 
   const { profile, currentMonthScore } = dashboard;
+  const isRankedMember =
+    profile.role === "Member" || profile.role === "HR Member";
 
   const overallRankText =
+    isRankedMember &&
     currentMonthScore?.overallRank !== null &&
     currentMonthScore?.overallRank !== undefined
       ? `#${currentMonthScore.overallRank}`
       : "-";
 
   const committeeRankText =
+    isRankedMember &&
     currentMonthScore?.committeeRank !== null &&
     currentMonthScore?.committeeRank !== undefined
       ? `#${currentMonthScore.committeeRank}`
@@ -59,6 +63,7 @@ async function MemberDashboardContent() {
 
   const firstName = profile.fullName.split(" ")[0];
   const rankClimb =
+    isRankedMember &&
     currentMonthScore?.overallRank !== null &&
     currentMonthScore?.overallRank !== undefined &&
     currentMonthScore.previousOverallRank !== null
@@ -106,7 +111,13 @@ async function MemberDashboardContent() {
         aria-label="Monthly standing"
         className="overflow-hidden rounded-lg border border-border bg-white"
       >
-        <div className="grid grid-cols-2 divide-y divide-border sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+        <div
+          className={`grid grid-cols-2 divide-border ${
+            isRankedMember
+              ? "divide-y sm:grid-cols-4 sm:divide-x sm:divide-y-0"
+              : "divide-x"
+          }`}
+        >
           <div className="p-5">
             <p className="text-xs font-medium text-muted-foreground">
               Monthly score
@@ -116,33 +127,37 @@ async function MemberDashboardContent() {
             </p>
           </div>
 
-          <div className="p-5">
-            <p className="text-xs font-medium text-muted-foreground">
-              Overall rank
-            </p>
-            <p className="mt-1.5 font-heading text-2xl font-bold text-[#002855] tabular-nums">
-              {overallRankText}
-              {currentMonthScore?.overallTotal && (
-                <span className="ml-1 text-xs font-normal text-muted-foreground">
-                  / {currentMonthScore.overallTotal}
-                </span>
-              )}
-            </p>
-          </div>
+          {isRankedMember && (
+            <>
+              <div className="p-5">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Overall rank
+                </p>
+                <p className="mt-1.5 font-heading text-2xl font-bold text-[#002855] tabular-nums">
+                  {overallRankText}
+                  {currentMonthScore?.overallTotal && (
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      / {currentMonthScore.overallTotal}
+                    </span>
+                  )}
+                </p>
+              </div>
 
-          <div className="p-5">
-            <p className="text-xs font-medium text-muted-foreground">
-              {profile.committee.shortName} rank
-            </p>
-            <p className="mt-1.5 font-heading text-2xl font-bold text-[#00629b] tabular-nums">
-              {committeeRankText}
-              {currentMonthScore?.committeeTotal && (
-                <span className="ml-1 text-xs font-normal text-muted-foreground">
-                  / {currentMonthScore.committeeTotal}
-                </span>
-              )}
-            </p>
-          </div>
+              <div className="p-5">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {profile.committee.shortName} rank
+                </p>
+                <p className="mt-1.5 font-heading text-2xl font-bold text-[#00629b] tabular-nums">
+                  {committeeRankText}
+                  {currentMonthScore?.committeeTotal && (
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      / {currentMonthScore.committeeTotal}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </>
+          )}
 
           <div className="p-5">
             <p className="text-xs font-medium text-muted-foreground">Bonuses</p>

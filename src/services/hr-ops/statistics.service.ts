@@ -327,6 +327,9 @@ export async function getAdminStatisticsDatasetForActor(input: {
   const scopedMembers = dbAllSeasonMembers.filter((m) => {
     if (!allowedCommitteeSet) return true;
     if (isCommitteeScoped) {
+      if (actor.role === "committee_head" && m.role !== "member") {
+        return false;
+      }
       return m.committeeId !== null && allowedCommitteeSet.has(m.committeeId);
     }
     // Track Director sees members of committees in their track + HR members tracking those committees

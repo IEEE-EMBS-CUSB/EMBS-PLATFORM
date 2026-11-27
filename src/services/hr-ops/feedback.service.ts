@@ -135,7 +135,9 @@ export function validateFeedbackPointsDelta(input: {
           ? "Unauthorized: Directors cannot modify member points."
           : actor.role === "hr_member" && targetRole !== "member"
             ? "Unauthorized: HR members cannot award or deduct points for committee heads or leadership."
-            : "Unauthorized: you do not have permission to award or deduct points for this member.",
+            : actor.role === "committee_head" && targetRole !== "member"
+              ? "Unauthorized: Committee Heads can only award or deduct points for regular members in their committee."
+              : "Unauthorized: you do not have permission to award or deduct points for this member.",
     };
   }
 
@@ -213,10 +215,13 @@ export async function addHrFeedbackAsActor(
       committeeId: actor.profile.committeeId,
       trackedCommitteeId: actor.profile.trackedCommitteeId,
     };
-    if (!canGiveFeedback(permCtx, member.committeeId)) {
+    if (!canGiveFeedback(permCtx, member.committeeId, member.role as MembershipRole)) {
       return {
         ok: false,
-        error: "Unauthorized: cannot submit feedback for this member.",
+        error:
+          actor.profile.role === "committee_head" && member.role !== "member"
+            ? "Unauthorized: Committee Heads can only submit feedback for regular members in their committee."
+            : "Unauthorized: cannot submit feedback for this member.",
       };
     }
 

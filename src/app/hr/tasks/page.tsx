@@ -201,7 +201,9 @@ export default async function HrTasksPage() {
       const scopedMembers =
         isCommitteeScoped && !operationalCommitteeId
           ? []
-          : directorTrackCommitteeIds
+          : profile.role === "committee_head"
+            ? dbMembers.filter((m) => m.role === "member")
+            : directorTrackCommitteeIds
             ? dbMembers.filter((m) => {
                 const effectiveCommId =
                   m.committeeId ??

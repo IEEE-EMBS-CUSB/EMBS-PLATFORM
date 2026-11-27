@@ -352,6 +352,9 @@ export function canAwardBonus(
     return scopeId !== null && scopeId === targetMemberCommitteeId;
   }
   if (user.role === "committee_head") {
+    if (targetMemberRole && targetMemberRole !== "member") {
+      return false;
+    }
     const scopeId = getOperationalCommitteeScope(user);
     return scopeId !== null && scopeId === targetMemberCommitteeId;
   }
@@ -391,7 +394,8 @@ export function canViewHiddenFeedback(role: MembershipRole): boolean {
  */
 export function canGiveFeedback(
   user: UserPermissionContext,
-  targetMemberCommitteeId: string | null
+  targetMemberCommitteeId: string | null,
+  targetMemberRole?: MembershipRole
 ): boolean {
   if (
     user.role === "master_admin" ||
@@ -400,7 +404,14 @@ export function canGiveFeedback(
   ) {
     return true;
   }
-  if (user.role === "committee_head" || user.role === "hr_member") {
+  if (user.role === "committee_head") {
+    if (targetMemberRole && targetMemberRole !== "member") {
+      return false;
+    }
+    const scopeId = getOperationalCommitteeScope(user);
+    return scopeId !== null && scopeId === targetMemberCommitteeId;
+  }
+  if (user.role === "hr_member") {
     const scopeId = getOperationalCommitteeScope(user);
     return scopeId !== null && scopeId === targetMemberCommitteeId;
   }

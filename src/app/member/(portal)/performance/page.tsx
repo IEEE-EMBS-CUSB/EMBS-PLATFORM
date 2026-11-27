@@ -62,6 +62,9 @@ async function MemberPerformanceContent({
     (requestedMonth
       ? scores.find((record) => record.month === requestedMonth)
       : undefined) ?? scores[0];
+  const hasRankings = scores.some(
+    (record) => record.overallRank !== null || record.committeeRank !== null
+  );
 
   return (
     <div className="space-y-6">
@@ -77,8 +80,9 @@ async function MemberPerformanceContent({
           aria-hidden="true"
         />
         <p>
-          Monthly activity scores track ongoing participation across attendance,
-          tasks, assignments, and HR adjustments for monthly leaderboard standings.
+          {hasRankings
+            ? "Monthly activity scores track ongoing participation across attendance, tasks, assignments, and HR adjustments for monthly leaderboard standings."
+            : "Monthly activity scores track your personal participation across attendance, tasks, assignments, and HR adjustments."}
         </p>
       </div>
 
@@ -120,7 +124,7 @@ async function MemberPerformanceContent({
 
       <div className="space-y-3">
         <h2 className="font-heading text-lg font-bold text-[#002855]">
-          Historical monthly standings
+          {hasRankings ? "Historical monthly standings" : "Monthly score history"}
         </h2>
         <div className="overflow-hidden rounded-lg border border-border bg-white">
           <div className="overflow-x-auto">
@@ -130,12 +134,16 @@ async function MemberPerformanceContent({
                   <TableHead className="pl-4 font-semibold text-[#002855]">
                     Month
                   </TableHead>
-                  <TableHead className="font-semibold text-[#002855]">
-                    Overall rank
-                  </TableHead>
-                  <TableHead className="font-semibold text-[#002855]">
-                    Committee rank
-                  </TableHead>
+                  {hasRankings && (
+                    <>
+                      <TableHead className="font-semibold text-[#002855]">
+                        Overall rank
+                      </TableHead>
+                      <TableHead className="font-semibold text-[#002855]">
+                        Committee rank
+                      </TableHead>
+                    </>
+                  )}
                   <TableHead className="pr-4 text-right font-semibold text-[#002855]">
                     Monthly score
                   </TableHead>
@@ -147,17 +155,22 @@ async function MemberPerformanceContent({
                     <TableCell className="pl-4 py-3.5 font-semibold text-foreground">
                       {record.monthLabel}
                     </TableCell>
-                    <TableCell className="py-3.5 text-sm text-muted-foreground tabular-nums">
-                      {record.overallRank !== null && record.overallTotal !== null
-                        ? `#${record.overallRank} of ${record.overallTotal}`
-                        : "Unranked"}
-                    </TableCell>
-                    <TableCell className="py-3.5 text-sm text-muted-foreground tabular-nums">
-                      {record.committeeRank !== null &&
-                      record.committeeTotal !== null
-                        ? `#${record.committeeRank} of ${record.committeeTotal}`
-                        : "Unranked"}
-                    </TableCell>
+                    {hasRankings && (
+                      <>
+                        <TableCell className="py-3.5 text-sm text-muted-foreground tabular-nums">
+                          {record.overallRank !== null &&
+                          record.overallTotal !== null
+                            ? `#${record.overallRank} of ${record.overallTotal}`
+                            : "Unranked"}
+                        </TableCell>
+                        <TableCell className="py-3.5 text-sm text-muted-foreground tabular-nums">
+                          {record.committeeRank !== null &&
+                          record.committeeTotal !== null
+                            ? `#${record.committeeRank} of ${record.committeeTotal}`
+                            : "Unranked"}
+                        </TableCell>
+                      </>
+                    )}
                     <TableCell className="pr-4 py-3.5 text-right font-heading text-base font-bold text-[#002855] tabular-nums">
                       {record.totalScore}
                     </TableCell>

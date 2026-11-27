@@ -38,8 +38,9 @@ describe("member.service (Database-Backed & Privacy Guarded)", () => {
     expect(dashboard).not.toBeNull();
     expect(dashboard?.currentMonthScore?.month).toBe("2026-10");
     expect(dashboard?.currentMonthScore?.totalScore).toBe(62);
-    expect(dashboard?.currentMonthScore?.overallRank).toBe(1);
-    expect(dashboard?.currentMonthScore?.committeeRank).toBe(1);
+    // Salma is a Committee Head, so she is never ranked against regular members
+    expect(dashboard?.currentMonthScore?.overallRank).toBeNull();
+    expect(dashboard?.currentMonthScore?.committeeRank).toBeNull();
 
     const attendance = await getMemberAttendance(salmaId);
     expect(attendance.length).toBeGreaterThan(0);

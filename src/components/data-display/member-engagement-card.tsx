@@ -4,11 +4,12 @@ import { Card } from "@/components/ui/card";
 export interface MemberEngagementProps {
   attendanceStreak: number;
   livePoints: number;
-  currentRank: number;
+  currentRank: number | null;
   pointsToNextRank: number | null;
   targetRank: number | null;
   activityTier: "Diamond" | "Gold" | "Silver" | "Bronze" | "Member";
   committeeCompletionRate: number;
+  roleLabel?: string;
 }
 
 const TIER_STYLES: Record<
@@ -45,30 +46,44 @@ export function MemberEngagementCard({
   targetRank,
   activityTier,
   committeeCompletionRate,
+  roleLabel,
 }: MemberEngagementProps) {
+  const isRanked = currentRank !== null;
   const tierStyle = TIER_STYLES[activityTier] ?? TIER_STYLES.Member;
 
   return (
     <Card className="overflow-hidden border-border bg-white shadow-xs">
-      {/* Top summary row: tier emblem, live points, and rank */}
+      {/* Top summary row: tier/role emblem, live points, and (for ranked members) rank */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-5">
         <div className="flex items-center gap-3.5">
           <div
-            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${tierStyle.iconWrap}`}
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${
+              isRanked
+                ? tierStyle.iconWrap
+                : "bg-[#f5edf7] text-[#772583]"
+            }`}
           >
             <Award className="h-6 w-6" aria-hidden="true" />
           </div>
 
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold ${tierStyle.badge}`}
-              >
-                {activityTier} Member
-              </span>
-              <span className="text-xs font-medium text-muted-foreground tabular-nums">
-                Current Rank: #{currentRank}
-              </span>
+              {isRanked ? (
+                <>
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold ${tierStyle.badge}`}
+                  >
+                    {activityTier} Member
+                  </span>
+                  <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                    Current Rank: #{currentRank}
+                  </span>
+                </>
+              ) : (
+                <span className="inline-flex items-center rounded-full border border-[#772583]/25 bg-[#f5edf7] px-2.5 py-0.5 text-xs font-bold text-[#5a1b63]">
+                  {roleLabel ? `${roleLabel} · Personal Activity` : "Personal Activity"}
+                </span>
+              )}
             </div>
 
             <div className="mt-1 flex items-baseline gap-2">
@@ -84,7 +99,11 @@ export function MemberEngagementCard({
       </div>
 
       {/* Bottom progress strip: single unified surface with dividers (no nested boxes) */}
-      <div className="grid divide-y divide-border border-t border-border bg-[#f8f9fb] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <div
+        className={`grid divide-y divide-border border-t border-border bg-[#f8f9fb] sm:divide-x sm:divide-y-0 ${
+          isRanked ? "sm:grid-cols-3" : "sm:grid-cols-2"
+        }`}
+      >
         <div className="flex items-center gap-3 px-5 py-3.5 text-xs">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f5edf7] text-[#772583]">
             <Flame className="h-4 w-4" aria-hidden="true" />
@@ -97,23 +116,25 @@ export function MemberEngagementCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 px-5 py-3.5 text-xs">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
-            <Target className="h-4 w-4" aria-hidden="true" />
+        {isRanked && (
+          <div className="flex items-center gap-3 px-5 py-3.5 text-xs">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#ebf3f8] text-[#00629b]">
+              <Target className="h-4 w-4" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              {currentRank === 1 || pointsToNextRank === null ? (
+                <p className="font-semibold text-[#00629b]">
+                  Rank #1 · Chapter Leader
+                </p>
+              ) : (
+                <p className="font-semibold text-[#00629b] tabular-nums">
+                  {pointsToNextRank} pts needed to reach Rank #{targetRank}
+                </p>
+              )}
+              <p className="text-muted-foreground">Rank milestone</p>
+            </div>
           </div>
-          <div className="min-w-0">
-            {currentRank === 1 || pointsToNextRank === null ? (
-              <p className="font-semibold text-[#00629b]">
-                Rank #1 · Chapter Leader
-              </p>
-            ) : (
-              <p className="font-semibold text-[#00629b] tabular-nums">
-                {pointsToNextRank} pts needed to reach Rank #{targetRank}
-              </p>
-            )}
-            <p className="text-muted-foreground">Rank milestone</p>
-          </div>
-        </div>
+        )}
 
         <div className="flex items-center gap-3 px-5 py-3.5 text-xs">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#eaf5dd] text-[#1e6b0a]">

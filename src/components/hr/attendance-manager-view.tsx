@@ -941,7 +941,12 @@ export function AttendanceManagerView({
     async (row: SessionRosterRow, nextStatus: SessionAttendanceStatus) => {
       if (!sheetSession) return;
       if (!canManageSession(sheetSession)) return;
-      if (currentUserRole === "hr_member" && row.role !== "member") return;
+      if (
+        (currentUserRole === "hr_member" ||
+          currentUserRole === "committee_head") &&
+        row.role !== "member"
+      )
+        return;
       if (row.status === nextStatus) return;
 
       const prevRows = rosterRows;
@@ -2239,8 +2244,9 @@ export function AttendanceManagerView({
                               {ALL_STATUSES.map((st) => {
                                 const active = row.status === st;
                                 const meta = STATUS_META[st];
-                                const rowLockedForHrMember =
-                                  currentUserRole === "hr_member" &&
+                                const rowLockedForActor =
+                                  (currentUserRole === "hr_member" ||
+                                    currentUserRole === "committee_head") &&
                                   row.role !== "member";
                                 return (
                                   <button
@@ -2248,12 +2254,14 @@ export function AttendanceManagerView({
                                     type="button"
                                     disabled={
                                       !editable ||
-                                      rowLockedForHrMember ||
+                                      rowLockedForActor ||
                                       isRowSaving
                                     }
                                     title={
-                                      rowLockedForHrMember
-                                        ? "HR members cannot change attendance points for committee heads"
+                                      rowLockedForActor
+                                        ? currentUserRole === "committee_head"
+                                          ? "Committee heads can only record attendance for regular committee members"
+                                          : "HR members cannot change attendance points for committee heads"
                                         : undefined
                                     }
                                     aria-pressed={active}
